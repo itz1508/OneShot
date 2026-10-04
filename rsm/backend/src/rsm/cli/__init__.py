@@ -1,0 +1,1 @@
+"""Thin RPC-style CLI."""

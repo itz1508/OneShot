@@ -1,0 +1,13 @@
+{
+  "name": "rsm-v1",
+  "version": "0.0.0",
+  "private": true,
+  "description": "RSM V1 monorepo root. Scripts only; no runtime deps.",
+  "scripts": {
+    "frontend:dev": "pnpm --filter ./frontend/web dev",
+    "frontend:build": "pnpm --filter ./frontend/web build",
+    "backend:install": "python -m pip install -e .[dev]",
+    "backend:test": "pytest"
+  },
+  "packageManager": "pnpm@9"
+}

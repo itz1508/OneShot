@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+uv.lock.bak
+
+# Build/packaging artifacts (generated, not source)
+auto-rsm-0.3.3-export.zip
+new-rsm.zip
+rsm-ui-*.vsix
+
+# RSM working folder: contains a built .vsix plus the installer/test sources.
+# The .vsix is ignored above; the scripts are real source and stay tracked.
+rsm-0.3.3-fixed/FIXED-SHA.txt
+rsm-0.3.3-fixed/*.log
+

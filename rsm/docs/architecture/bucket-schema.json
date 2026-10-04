@@ -1,0 +1,4 @@
+{
+  "note": "This file is generated from backend/src/rsm/bucket/schema.py.",
+  "regenerate_with": "python -c 'import json; from rsm.bucket.schema import canonical_schema; print(json.dumps(canonical_schema(), indent=2))'"
+}

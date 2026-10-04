@@ -1,0 +1,29 @@
+# Annotated example of V1 §10 configuration.
+# Fail-closed: unknown keys and type violations raise at load time.
+
+[daemon]
+# Loopback bind only — never a public interface.
+host = "127.0.0.1"
+port = 8787
+
+[persistence]
+# One of: "fs", "sqlite".
+backend = "fs"
+root = "./.rsm-store"
+
+[boundaries]
+# §10 fail-closed boundaries. Any violation aborts ingestion rather than
+# producing a partial/opaque bucket silently.
+max_source_bytes          = 134217728   # 128 MiB per source
+max_folder_depth          = 16
+max_folder_file_count     = 20000
+archive_entry_bytes       = 67108864    # 64 MiB per archive entry
+archive_total_bytes       = 536870912   # 512 MiB cumulative per archive
+max_pdf_pages             = 2000
+
+[transports]
+http_enabled  = true
+mcp_enabled   = false  # resources only when enabled; see spec §11
+
+[logging]
+level = "INFO"
