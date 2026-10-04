@@ -10,6 +10,9 @@ importers:
 
   frontend/web:
     dependencies:
+      '@oneshot/rsm-client':
+        specifier: workspace:*
+        version: link:../../packages/rsm-client
       next:
         specifier: 16.3.8
         version: 16.3.8(@babel/core@7.29.7)(@types/node@20.19.43)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -47,6 +50,8 @@ importers:
       typescript:
         specifier: ^5
         version: 5.9.3
+
+  packages/rsm-client: {}
 
 packages:
 

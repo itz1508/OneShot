@@ -1,0 +1,8 @@
+{
+  "name": "@oneshot/rsm-client",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/rsm-client.ts",
+  "types": "src/rsm-client.ts",
+  "dependencies": {}
+}

@@ -10,6 +10,9 @@ port = 8787
 # One of: "fs", "sqlite".
 backend = "fs"
 root = "./.rsm-store"
+# Production (monorepo layout): point the store at the repo-level store/ tree:
+#   root = "./store/buckets"
+# and set [loading] attachment_dir = "./store/attachments".
 
 [boundaries]
 # §10 fail-closed boundaries. Any violation aborts ingestion rather than

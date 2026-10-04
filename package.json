@@ -1,13 +1,13 @@
 {
-  "name": "rsm-v1",
+  "name": "oneshot",
   "version": "0.0.0",
   "private": true,
-  "description": "RSM V1 monorepo root. Scripts only; no runtime deps.",
+  "description": "OneShot monorepo root. Scripts only; no runtime deps.",
   "scripts": {
     "frontend:dev": "pnpm --filter ./frontend/web dev",
     "frontend:build": "pnpm --filter ./frontend/web build",
-    "backend:install": "python -m pip install -e .[dev]",
-    "backend:test": "pytest"
+    "backend:install": "uv sync",
+    "backend:test": "uv run --package rsm pytest apps/rsm/tests"
   },
-  "packageManager": "pnpm@9"
+  "packageManager": "pnpm@9.15.0"
 }
