@@ -1,0 +1,7 @@
+name: deploy
+on: workflow_dispatch
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No deploy target configured in v6.1. See docs/architecture/overview.md."

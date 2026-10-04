@@ -1,0 +1,26 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --all-packages
+      - run: uv run --package rsm pytest -q apps/rsm/tests
+      - run: uv run python tools/verification/check_boundaries.py
+      - run: uv run python tools/verification/check_forbidden_deps.py
+      - run: uv run python tools/verification/check_pymupdf_import.py
+      - run: uv run python tools/verification/check_no_agent_tools.py
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend/web
+      - run: pnpm exec tsc --noEmit --skipLibCheck
+        working-directory: frontend/web
+      - run: pnpm exec eslint "src/**/*.{ts,tsx}"
+        working-directory: frontend/web
