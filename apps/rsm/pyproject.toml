@@ -1,0 +1,28 @@
+[project]
+name = "rsm"
+version = "0.0.0"
+description = "RSM V6.1 — Replay State Memory authoritative daemon."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi[standard] >= 0.142",
+  "pydantic >= 2.13",
+  "pymupdf >= 1.28",
+  "mcp >= 2.2",
+]
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy", "httpx"]
+
+[project.scripts]
+rsm = "rsm.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
