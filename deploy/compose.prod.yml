@@ -1,0 +1,17 @@
+# Production override for docker-compose.yml — deploy/compose.prod.yml.
+#
+# Replaces the build-based local images with registry images pinned by
+# IMAGE_TAG (docs/deployment.md; driven by deploy/deploy.sh):
+#
+#   RSM_IMAGE=ghcr.io/<owner>/oneshot-rsm \
+#   WEB_IMAGE=ghcr.io/<owner>/oneshot-web \
+#   IMAGE_TAG=sha-abc123 \
+#   docker compose -f docker-compose.yml -f deploy/compose.prod.yml pull
+#
+# Base topology (loopback port publishes, healthcheck, rsm-store volume) is
+# inherited unchanged from docker-compose.yml.
+services:
+  rsm:
+    image: ${RSM_IMAGE:?RSM_IMAGE must be set}:${IMAGE_TAG:?IMAGE_TAG must be set}
+  web:
+    image: ${WEB_IMAGE:?WEB_IMAGE must be set}:${IMAGE_TAG:?IMAGE_TAG must be set}

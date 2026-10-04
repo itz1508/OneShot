@@ -20,6 +20,7 @@ D:\OneShot\
 ├── packages/rsm-client/     typed TS client (@oneshot/rsm-client)
 ├── frontend/web/            Next.js UI (App Router)
 ├── docs/                    architecture / api / decisions / lifecycle / security
+├── deploy/                  Dockerfiles · compose production override · deploy.sh (ADR 0018)
 ├── tools/                   dev · build · verification (4 CI gates)
 ├── tests/                   cross-app integration + shared fixtures
 └── store/                   attachments · buckets · snapshots (runtime data)
@@ -30,7 +31,7 @@ D:\OneShot\
 ```bash
 # Backend (uv workspace)
 uv sync
-uv run --package rsm pytest -q apps/rsm/tests        # expect 323 passed, 1 skipped
+uv run --package rsm pytest -q apps/rsm/tests        # expect 339 passed, 1 skipped
 uv run python tools/verification/check_boundaries.py
 uv run python tools/verification/check_forbidden_deps.py
 uv run python tools/verification/check_pymupdf_import.py
@@ -48,6 +49,17 @@ uv run rsm --store-root ./store/buckets --eventlog-path ./store/events.log repla
 cd frontend/web && pnpm install && pnpm build
 ```
 
+## Deploy (single host, Docker Compose)
+
+```bash
+docker compose up --build -d           # daemon 127.0.0.1:8787, UI 127.0.0.1:3000
+curl -fsS http://127.0.0.1:8787/healthz
+```
+
+Nothing is published beyond loopback (ADR 0001). Releases are pushed to GHCR
+and deployed through the gated workflow (smoke test + automatic rollback):
+`.github/workflows/deploy.yml`. Full guide: `docs/deployment.md`.
+
 ## Spec
 
 Governing spec: `RSMFInalStructure.txt` (frozen). ADRs under `docs/decisions/`.
@@ -64,13 +76,16 @@ Governing spec: `RSMFInalStructure.txt` (frozen). ADRs under `docs/decisions/`.
 | MCP resource transport (`rsm://bucket/<id>`) | **VERIFIED** |
 | Transport parity (HTTP · MCP · JSON export · stdout) | **VERIFIED** |
 | CI gates (boundaries · forbidden deps · pymupdf · no-agent-tools) | **VERIFIED** |
-| Tests | **323 passed, 1 skipped** |
+| Tests | **339 passed, 1 skipped** |
 | Frontend code (Next.js App Router + typed client + real pages) | AUTHORED |
-| Frontend install / build / Playwright | **PENDING STANDARD-FILESYSTEM VERIFICATION** |
+| Frontend build (`next build`, Next 16 · Turbopack) | **VERIFIED** (exit 0; `tsc`/`eslint` 0 findings; Playwright suite collects 9 tests) |
+| Playwright chat-intake specs A–I | **VERIFIED** (9/9 green against the composed containers) |
+| Deploy path (compose · GHCR · gated deploy + rollback) | **VERIFIED locally** (images build + stack serves + fail-closed CORS; ADR 0018, `docs/deployment.md`) · GHCR/deploy job awaiting first runner run |
 
-AC-11 (local-first Next.js UI builds and renders) remains **BLOCKED** on this
-host (overlayfs returns `EIO` on cross-dir `rename` → `create-next-app`
-aborts; `pnpm install` and `npm install` stall during `node_modules`
-materialisation). Not a code defect. Dev-host recovery procedure is in
-`frontend/web/HAND_AUTHORED.md`.
+AC-11 (local-first Next.js UI builds and renders) is **verified on the
+current dev host** (standard filesystem): the production `next build` exits 0,
+typecheck/lint are clean, and the Playwright suite is green end-to-end against
+the composed stack (`docker compose up -d`, see `docs/deployment.md`). The
+earlier overlayfs `EIO` blocker applied to the legacy sandbox host only; its
+recovery notes remain in `frontend/web/HAND_AUTHORED.md`.
 

@@ -1,0 +1,8 @@
+# Repository line-ending policy: LF in the repository for every text file,
+# including Windows checkouts — deploy/deploy.sh runs under bash, and
+# Dockerfiles, compose files and CI YAML stay byte-identical across platforms.
+* text=auto eol=lf
+
+# Binary artifacts (never normalized).
+*.zip binary
+*.vsix binary

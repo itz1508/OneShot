@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+# RSM daemon image (docs/deployment.md). Build context = repo root:
+#   docker build -f deploy/Dockerfile.api -t oneshot-rsm:local .
+FROM python:3.14-slim
+
+# uv binary pinned to the same version as the dev host (uv 0.12.13).
+COPY --from=ghcr.io/astral-sh/uv:0.12.13 /uv /uvx /bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    RSM_CONFIG=/etc/rsm/rsm.conf.toml
+
+WORKDIR /app
+
+# Layer 1 — manifests only: third-party dependencies, cached until the lock
+# file or a workspace manifest changes.
+COPY pyproject.toml uv.lock ./
+COPY apps/rsm/pyproject.toml apps/rsm/pyproject.toml
+COPY apps/oneshot/pyproject.toml apps/oneshot/pyproject.toml
+RUN uv sync --frozen --all-packages --no-install-workspace --no-dev
+
+# Layer 2 — workspace sources; installs the rsm + oneshot packages themselves.
+COPY apps/rsm apps/rsm
+COPY apps/oneshot apps/oneshot
+RUN uv sync --frozen --all-packages --no-dev
+
+# Non-root runtime user. /data pre-created and chowned so the named volume
+# mounted there (docker-compose.yml) inherits rsm-writable ownership.
+RUN useradd --create-home --uid 10001 rsm \
+    && mkdir -p /data \
+    && chown -R rsm:rsm /data
+USER rsm
+
+EXPOSE 8787
+
+# 0.0.0.0 is container-internal only — compose publishes 127.0.0.1:8787 on
+# the host (loopback posture, ADR 0001/0018). Direct venv entrypoint: no
+# `uv run` at start, so nothing is re-synced and no root writes are needed.
+CMD ["/app/.venv/bin/uvicorn", "rsm.api.app:create_app", "--factory", \
+     "--host", "0.0.0.0", "--port", "8787"]

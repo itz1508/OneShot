@@ -1,10 +1,22 @@
 # Annotated example of V1 §10 configuration.
 # Fail-closed: unknown keys and type violations raise at load time.
+#
+# How the daemon finds this file (rsm.config.runtime — first match wins):
+#   1. explicit argument to create_app(config=...)   (programmatic/tests)
+#   2. RSM_CONFIG=/path/to/rsm.conf.toml             (environment variable;
+#                                                     the only env var RSM reads)
+#   3. ./rsm.conf.toml in the working directory
+#   4. built-in defaults (identical to this file's values)
 
 [daemon]
 # Loopback bind only — never a public interface.
 host = "127.0.0.1"
 port = 8787
+# CORS: only these exact origins may read daemon responses (fail-closed —
+# a foreign origin gets NO Access-Control-Allow-Origin header). Defaults are
+# the two Next.js dev origins; a deployment adds its UI origin here:
+#   allowed_origins = ["http://localhost:3000", "https://rsm.example.internal"]
+# allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 [persistence]
 # One of: "fs", "sqlite".
@@ -12,7 +24,11 @@ backend = "fs"
 root = "./.rsm-store"
 # Production (monorepo layout): point the store at the repo-level store/ tree:
 #   root = "./store/buckets"
-# and set [loading] attachment_dir = "./store/attachments".
+# (Attachment staging is a local-CLI concern: --attachment-root
+#  ./store/attachments — there is NO [loading] config section; the schema
+#  fails closed on unknown sections.)
+# Production (container, see docker-compose.yml): the compose file sets
+#   RSM_CONFIG=/etc/rsm/rsm.conf.toml with root = "/data" (a named volume).
 
 [boundaries]
 # §10 fail-closed boundaries. Any violation aborts ingestion rather than

@@ -1,14 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { RsmClient } from "@/lib/rsm-client";
+import { createRsmClient } from "@/lib/rsm";
 import { useChatIntake } from "./useChatIntake";
 import { AttachmentChips } from "./AttachmentChips";
 import { Composer } from "./Composer";
 import { ChatLog } from "./ChatLog";
 
 export function ChatScreen() {
-  const rsm = useMemo(() => new RsmClient(), []);
+  const rsm = useMemo(() => createRsmClient(), []);
   const intake = useChatIntake(rsm);
 
   return (

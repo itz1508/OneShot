@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RsmClient, RsmHttpError } from "@/lib/rsm-client";
+import { RsmHttpError } from "@/lib/rsm-client";
+import { createRsmClient } from "@/lib/rsm";
 import type { InteractionRecord, StreamPayload } from "@/types/bucket";
 import { getInteractionId } from "./rsmInteractionId";
 import { ReplayStreamingSurface, type StreamStage } from "./ReplayStreamingSurface";
 
-const rsm = new RsmClient();
+const rsm = createRsmClient();
 
 type Props = {
   /** When true, the rail opens the ephemeral stream surface on mount (V3 auto-delivery). */

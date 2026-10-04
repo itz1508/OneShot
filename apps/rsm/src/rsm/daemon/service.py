@@ -292,7 +292,12 @@ _default_daemon: DaemonService | None = None
 
 
 def _default_root() -> Path:
-    return Path.cwd() / ".rsm-store"
+    # Active config (see rsm.config.runtime); "./.rsm-store" is the default,
+    # preserving the pre-wiring behaviour when no config file is present.
+    from ..config import get_active_config
+
+    root = Path(get_active_config().persistence.root)
+    return root if root.is_absolute() else Path.cwd() / root
 
 
 def get_daemon() -> DaemonService:

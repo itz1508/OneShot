@@ -15,6 +15,13 @@ class Daemon(BaseModel):
     model_config = ConfigDict(extra="forbid")
     host: str = "127.0.0.1"
     port: int = Field(default=8787, ge=1, le=65535)
+    # CORS: only these exact origins may read daemon responses. Fail-closed —
+    # a foreign origin gets no Access-Control-Allow-Origin header at all
+    # (GAP-0007). Defaults are the two Next.js dev origins; deployment
+    # overrides this via rsm.conf.toml (docs/deployment.md).
+    allowed_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://127.0.0.1:3000"]
+    )
 
 
 class Persistence(BaseModel):

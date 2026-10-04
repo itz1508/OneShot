@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RsmClient, RsmHttpError } from "@/lib/rsm-client";
+import { RsmHttpError } from "@/lib/rsm-client";
+import { createRsmClient } from "@/lib/rsm";
 import type { FailureInfo, ReaderTrace } from "@/types/bucket";
 import { summarizeTrace } from "./traceSummary";
 
-const rsm = new RsmClient();
+const rsm = createRsmClient();
 
 type Props = {
   /** Bucket to observe. When null the surface collapses to its idle label. */

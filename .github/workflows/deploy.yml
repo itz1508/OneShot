@@ -1,7 +1,90 @@
 name: deploy
-on: workflow_dispatch
+
+# Image build/push (GHCR) runs on version tags and on manual dispatch. The
+# deploy job targets the deployment host through a SELF-HOSTED RUNNER labeled
+# `oneshot` (outbound-only — no inbound ports; docs/deployment.md), sits behind
+# the `production` environment gate, and runs deploy/deploy.sh
+# (deploy → smoke → automatic rollback).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image tag to deploy (e.g. sha-abc123 or a release tag). Empty = build and deploy the current commit."
+        required: false
+        default: ""
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
 jobs:
-  noop:
+  build-push:
+    name: build & push images (GHCR)
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || inputs.version == ''
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - run: echo "No deploy target configured in v6.1. See docs/architecture/overview.md."
+      - uses: actions/checkout@v4
+      - name: Derive image namespace and tag
+        id: meta
+        run: |
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build & push daemon image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.api
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/oneshot-rsm:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/oneshot-rsm:latest
+          cache-from: type=gha,scope=rsm
+          cache-to: type=gha,scope=rsm,mode=max
+      - name: Build & push UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.web
+          push: true
+          tags: |
+            ghcr.io/${{ steps.meta.outputs.owner }}/oneshot-web:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/oneshot-web:latest
+          build-args: |
+            NEXT_PUBLIC_RSM_BASE_URL=${{ vars.NEXT_PUBLIC_RSM_BASE_URL || 'http://127.0.0.1:8787' }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  deploy:
+    name: deploy (self-hosted host)
+    needs: build-push
+    if: always() && github.event_name == 'workflow_dispatch' && (inputs.version != '' || needs.build-push.result == 'success')
+    environment: production
+    runs-on: [self-hosted, linux, oneshot]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Deploy + smoke (auto-rollback on failure)
+        env:
+          IMAGE_TAG: ${{ inputs.version != '' && inputs.version || needs.build-push.outputs.tag }}
+          RSM_IMAGE: ghcr.io/${{ github.repository_owner }}/oneshot-rsm
+          WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/oneshot-web
+        run: bash deploy/deploy.sh

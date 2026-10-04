@@ -1,0 +1,27 @@
+# Build-context exclusions — the images need manifests + source only
+# (docker build still resolves everything; this keeps the context small
+# and prevents host artifacts leaking into image layers).
+.git
+.venv
+.tmp
+.rsm-store
+.ruff_cache
+.pytest_cache
+.mypy_cache
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+node_modules
+**/node_modules
+frontend/web/.next
+frontend/web/tsconfig.tsbuildinfo
+**/.turbo
+store
+tests
+**/tests
+docs
+.aflow
+.github
+*.zip
+*.vsix
+*.log

@@ -1,26 +1,77 @@
 name: ci
+
 on:
   push: { branches: [main] }
   pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ── Python: tests, verification gates, lint ──────────────────────────────
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
-      - run: uv sync --all-packages
-      - run: uv run --package rsm pytest -q apps/rsm/tests
-      - run: uv run python tools/verification/check_boundaries.py
-      - run: uv run python tools/verification/check_forbidden_deps.py
-      - run: uv run python tools/verification/check_pymupdf_import.py
-      - run: uv run python tools/verification/check_no_agent_tools.py
+      - name: Sync workspace (frozen lockfile)
+        run: uv sync --frozen --all-packages
+      - name: RSM test suite
+        run: uv run --package rsm pytest -q apps/rsm/tests
+      - name: Cross-app tests
+        run: uv run pytest -q tests
+      - name: OneShot test suite
+        run: uv run pytest -q apps/oneshot/tests
+      - name: Verification gate — boundaries
+        run: uv run python tools/verification/check_boundaries.py
+      - name: Verification gate — forbidden deps
+        run: uv run python tools/verification/check_forbidden_deps.py
+      - name: Verification gate — pymupdf import
+        run: uv run python tools/verification/check_pymupdf_import.py
+      - name: Verification gate — no agent tools
+        run: uv run python tools/verification/check_no_agent_tools.py
+      - name: Lint — syntax / undefined-name gate (ruff)
+        run: uv run ruff check --select E9,F63,F7,F82 .
+
+  # ── Frontend: types, lint, production build, e2e spec integrity ──────────
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: { version: 9 }
+        with:
+          run_install: false
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: pnpm install --frozen-lockfile
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck — web
+        run: pnpm exec tsc --noEmit --skipLibCheck
         working-directory: frontend/web
-      - run: pnpm exec tsc --noEmit --skipLibCheck
+      - name: Lint — web
+        run: pnpm exec eslint "src/**/*.{ts,tsx}"
         working-directory: frontend/web
-      - run: pnpm exec eslint "src/**/*.{ts,tsx}"
+      - name: Typecheck — @oneshot/rsm-client
+        run: pnpm exec tsc -p tsconfig.json
+        working-directory: packages/rsm-client
+      - name: Production build — web (Next 16; turbopack is the default)
+        run: pnpm --filter ./frontend/web build
+      - name: E2E spec integrity (playwright --list; compiles/collects only)
+        run: pnpm exec playwright test --list --config ../../tests/frontend/e2e/playwright.config.ts
         working-directory: frontend/web
+
+  # ── Containers: compose validity + image builds (the deploy path) ────────
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose config validation
+        run: docker compose config --quiet
+      - name: Build daemon image
+        run: docker build -f deploy/Dockerfile.api -t oneshot-rsm:ci .
+      - name: Build UI image
+        run: docker build -f deploy/Dockerfile.web -t oneshot-web:ci .

@@ -30,7 +30,20 @@ export class RsmHttpError extends Error {
 async function _assertOk(r: Response, op: string): Promise<void> {
   if (r.ok) return;
   let body: RsmErrorBody | null = null;
-  try { body = (await r.json()) as RsmErrorBody; } catch { body = null; }
+  try {
+    const raw: unknown = await r.json();
+    // Two daemon error shapes reach the browser:
+    //   * `RSMError` handler      -> flat    {"code", "message", "details"}
+    //   * FastAPI `HTTPException` -> nested  {"detail": {"code", "message"}}
+    //     (bare framework errors may carry a plain-string `detail`).
+    // Normalise both to the canonical `RsmErrorBody` so `RsmHttpError.code`
+    // always carries the daemon error code.
+    const detail = (raw as { detail?: unknown } | null)?.detail;
+    body =
+      typeof detail === "object" && detail !== null && "code" in detail
+        ? (detail as RsmErrorBody)
+        : (raw as RsmErrorBody);
+  } catch { body = null; }
   throw new RsmHttpError(r.status, body, `${op} failed: ${r.status}${body?.code ? " " + body.code : ""}`);
 }
 

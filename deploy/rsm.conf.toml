@@ -1,0 +1,38 @@
+# Container configuration for docker-compose.yml (docs/deployment.md).
+# Mounted read-only at /etc/rsm/rsm.conf.toml and selected via RSM_CONFIG
+# (the only environment variable RSM reads).
+
+[daemon]
+# Container-internal bind; compose publishes 127.0.0.1:8787 on the host
+# (loopback posture — ADR 0001/0018). uvicorn flags own the actual bind;
+# these values document the intent.
+host = "0.0.0.0"
+port = 8787
+# Fail-closed CORS: the exact origins that may READ daemon responses. The UI
+# is served on host loopback :3000. Add the host's LAN origin here when
+# browsing via an IP, e.g. "http://192.168.1.10:3000".
+allowed_origins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+]
+
+[persistence]
+backend = "fs"
+# Named volume `rsm-store` mounted at /data → /data/buckets + /data/events.log.
+root = "/data"
+
+[boundaries]
+# §10 fail-closed boundaries (same values as rsm.conf.toml.example).
+max_source_bytes      = 134217728   # 128 MiB per source
+max_folder_depth      = 16
+max_folder_file_count = 20000
+archive_entry_bytes   = 67108864    # 64 MiB per archive entry
+archive_total_bytes   = 536870912   # 512 MiB cumulative per archive
+max_pdf_pages         = 2000
+
+[transports]
+http_enabled = true
+mcp_enabled  = false  # resources only when enabled; see spec §11
+
+[logging]
+level = "INFO"

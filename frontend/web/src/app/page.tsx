@@ -21,11 +21,12 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { RsmClient, RsmHttpError } from "@/lib/rsm-client";
+import { RsmHttpError } from "@/lib/rsm-client";
+import { createRsmClient } from "@/lib/rsm";
 import { getInteractionId } from "@/features/rsm-rail/rsmInteractionId";
 import { ReaderTraceSurface } from "@/features/rsm-rail/ReaderTraceSurface";
 
-const rsm = new RsmClient();
+const rsm = createRsmClient();
 
 type HostState = {
   daemon: "unknown" | "ok" | "unreachable";

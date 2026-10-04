@@ -26,6 +26,12 @@ node_modules/
 .next/
 .turbo/
 
+# Playwright run artifacts (generated; fixtures under tests/ are committed)
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # OS/editor
 .DS_Store
 .idea/
@@ -41,4 +47,7 @@ rsm-ui-*.vsix
 # The .vsix is ignored above; the scripts are real source and stay tracked.
 rsm-0.3.3-fixed/FIXED-SHA.txt
 rsm-0.3.3-fixed/*.log
+
+# Deploy rollback bookkeeping written on the deployment host by deploy/deploy.sh
+.deploy-prev-tag
 

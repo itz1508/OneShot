@@ -1,0 +1,53 @@
+# OneShot — single-host deployment (docs/deployment.md; ADR 0018).
+#
+# Topology: the daemon is published on HOST LOOPBACK ONLY (127.0.0.1) — the
+# browser on this host is the client and reads it cross-origin through the
+# fail-closed CORS allow-list in deploy/rsm.conf.toml. Never publish 8787 on
+# 0.0.0.0. The UI is likewise published on loopback; change the ports mapping
+# deliberately if LAN access is required (and add that origin to allowed_origins).
+name: oneshot
+
+services:
+  rsm:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: oneshot-rsm:local
+    restart: unless-stopped
+    environment:
+      RSM_CONFIG: /etc/rsm/rsm.conf.toml
+    volumes:
+      - ./deploy/rsm.conf.toml:/etc/rsm/rsm.conf.toml:ro
+      - rsm-store:/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    healthcheck:
+      test:
+        - CMD
+        - /app/.venv/bin/python
+        - -c
+        - "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8787/healthz',timeout=3).status==200 else 1)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_RSM_BASE_URL: ${NEXT_PUBLIC_RSM_BASE_URL:-http://127.0.0.1:8787}
+    image: oneshot-web:local
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      rsm:
+        condition: service_healthy
+
+volumes:
+  rsm-store:
