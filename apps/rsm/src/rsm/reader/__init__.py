@@ -14,7 +14,7 @@ Boundaries (see docs/rsm-v3-reader-processor.md):
                 failures do NOT fail the whole Reader operation.
 
     This module imports only stdlib + pydantic + rsm.bucket; the boundary
-    gate (`backend/tools/check_boundaries.py`) must list `rsm.reader` with
+    gate (`tools/verification/check_boundaries.py`) must list `rsm.reader` with
     the same restriction set as `rsm.classification`/`rsm.execution`.
 
     PROCESSOR and REPLAY live elsewhere (`rsm.snapshot` is the current

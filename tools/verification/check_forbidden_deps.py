@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Forbidden-dependency gate (Spec §6, gate 2 + §5.2).
 
-FAILS the build if any file under backend/src/rsm/ or frontend/web/src/
+FAILS the build if any file under apps/rsm/src/rsm/ or frontend/web/src/
 imports or references any of the forbidden AI/model/provider libraries.
 """
 

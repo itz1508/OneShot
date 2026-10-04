@@ -13,7 +13,7 @@ Bucket content. Enforcement lives at the HTTP layer (`rsm.api.routers.interactio
 and the opt-in `interaction_id` parameter on `/replay` and `/snapshot`).
 
 This module imports from stdlib + pydantic only. Boundary gate
-(`backend/tools/check_boundaries.py`) must list `rsm.interaction` with a
+(`tools/verification/check_boundaries.py`) must list `rsm.interaction` with a
 forbidden set equivalent to the other domain packages — see that file.
 """
 

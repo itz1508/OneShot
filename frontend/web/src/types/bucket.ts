@@ -1,4 +1,4 @@
-/** TS mirror of the canonical bucket payload (see backend/src/rsm/bucket/model.py). */
+/** TS mirror of the canonical bucket payload (see apps/rsm/src/rsm/bucket/model.py). */
 export type SchemaVersion = "1";
 
 export type BucketOrigin =

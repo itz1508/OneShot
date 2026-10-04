@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Agent-tool subsystem gate (companion to check_forbidden_deps + ADR 0002/0008/0017).
 
-FAILS the build if any Python file under backend/src/rsm/ introduces an
+FAILS the build if any Python file under apps/rsm/src/rsm/ introduces an
 *agent-tool subsystem* shape — Bash/Scan/Write/Summary/Read tool classes,
 tool-registration mechanics (``tool_registry``, ``BaseTool``, ``@tool``
 decorators), execution surfaces (``handle_tool``, ``execute_tool``,
@@ -36,7 +36,7 @@ Everything else — docstrings, comments, English prose, test identifiers
 that only *mention* the word ``tool`` in a string — is deliberately NOT
 flagged. This is why the gate parses AST rather than regexp-ing text.
 
-Default scan root: ``<repo>/backend/src/rsm``. The gate accepts an
+Default scan root: ``<repo>/apps/rsm/src/rsm``. The gate accepts an
 override ``--root`` for the negative-test case; otherwise it is identical
 to the three sibling gates.
 """
@@ -206,7 +206,7 @@ def main() -> int:
     parser.add_argument(
         "--root",
         default=str(DEFAULT_SRC),
-        help="Directory to scan (default: backend/src/rsm).",
+        help="Directory to scan (default: apps/rsm/src/rsm).",
     )
     args = parser.parse_args()
 

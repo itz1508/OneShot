@@ -16,7 +16,7 @@ D. Reader output is RSM-sourced, not Agent output — replay envelope stamps
 E. Agent/provider boundary — grep every module file under rsm/ for
    forbidden SDK names; also confirm rsm.reader / rsm.snapshot /
    rsm.replay / rsm.interaction do not import any provider SDK (reinforces
-   `backend/tools/check_forbidden_deps.py`).
+   `tools/verification/check_forbidden_deps.py`).
 F. Reader failure isolation — one failed File must not fail the whole
    Reader operation; already covered by test_reader.py; this freezes the
    invariant text.

@@ -12,7 +12,7 @@ def extract_pdf(pdf_bytes: bytes, *, source_uri: str | None = None) -> Bucket:
     """Deterministic text extraction from a PDF.
 
     Import rule (ADR 0007): `import pymupdf`. The `fitz` PyPI distribution
-    is explicitly forbidden by backend/tools/check_boundaries.py and spec §5.2.
+    is explicitly forbidden by tools/verification/check_boundaries.py and spec §5.2.
     """
     import pymupdf  # noqa: F401  (deliberate: the import gate checks for the right module)
 

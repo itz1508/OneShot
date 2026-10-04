@@ -1,4 +1,4 @@
-"""Release-validation matrix (parametrized over tests/backend/fixtures/scenarios).
+"""Release-validation matrix (parametrized over tests/fixtures/scenarios).
 
 Each scenario is run through the full pipeline (where applicable):
 

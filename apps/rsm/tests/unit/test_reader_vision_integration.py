@@ -3,7 +3,7 @@
 
 Fakes a `VisionProvider` in-process so no NVIDIA credential is required.
 The real `HttpChatVisionProvider` is covered independently in
-`tests/backend/unit/test_vision.py` (24 tests).
+`tests/unit/test_vision.py` (24 tests).
 
 What this suite freezes:
 

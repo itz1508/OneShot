@@ -11,11 +11,11 @@ Pydantic model, a ``@tool``-decorated function, a module-level
 ``tool_registry``, or a ``subprocess`` import.
 
 This test enforces the invariant by reusing the single
-``backend/tools/check_no_agent_tools.py`` scanner. The scanner is strict
+``tools/verification/check_no_agent_tools.py`` scanner. The scanner is strict
 (AST-driven, code-token-only — docstrings and prose are not flagged) so
 the test is deterministic and cheap. Three guarantees:
 
-1. The RSM Core tree (``backend/src/rsm/``) is clean.
+1. The RSM Core tree (``apps/rsm/src/rsm/``) is clean.
 2. The scanner can detect a representative violation (so the test's
    silence on the real tree is meaningful).
 3. The scanner's clean verdict matches the preceding research pass
@@ -52,7 +52,7 @@ def test_scanner_exists_at_known_path() -> None:
 
 
 def test_rsm_core_has_no_agent_tool_subsystem() -> None:
-    """backend/src/rsm/ must be clean under the scanner."""
+    """apps/rsm/src/rsm/ must be clean under the scanner."""
     mod = _load_scanner()
     violations = mod.scan_tree(_RSM_SRC)
     assert violations == [], (

@@ -2,7 +2,7 @@
 """PyMuPDF import gate (Spec §6, gate 3 + ADR 0007).
 
 FAILS if:
-  - any .py under backend/src/rsm imports `fitz` (as a module name), OR
+  - any .py under apps/rsm/src/rsm imports `fitz` (as a module name), OR
   - pyproject.toml declares `fitz` as a dependency.
 
 The accepted install is `pymupdf`; `import pymupdf` is the only form permitted.
