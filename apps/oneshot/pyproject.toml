@@ -1,0 +1,28 @@
+[project]
+name = "oneshot"
+version = "0.0.0"
+description = "OneShot — host application shell over RSM."
+requires-python = ">=3.11"
+dependencies = [
+  "rsm",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff", "mypy"]
+
+[project.scripts]
+oneshot = "oneshot.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.uv.sources]
+rsm = { workspace = true }
