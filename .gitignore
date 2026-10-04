@@ -15,6 +15,16 @@ wheels/
 .mypy_cache/
 uv.lock.bak
 
+# Node
+node_modules/
+.next/
+.turbo/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
 # Build/packaging artifacts (generated, not source)
 auto-rsm-0.3.3-export.zip
 new-rsm.zip

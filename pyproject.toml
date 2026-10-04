@@ -1,26 +1,12 @@
-[project]
-name = "oneshot"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-authors = [
-    { name = "Minh Le", email = "cs1508.4ever@gmail.com" }
-]
-requires-python = ">=3.14"
-dependencies = [
-    "fastapi>=0.142.2",
-    "uvicorn>=0.54.0",
-]
+[tool.uv.workspace]
+members = ["apps/rsm", "apps/oneshot"]
 
-[project.scripts]
-oneshot = "oneshot:main"
+[tool.ruff]
+line-length = 100
+target-version = "py311"
 
-[build-system]
-requires = ["uv_build>=0.12.13,<0.13.0"]
-build-backend = "uv_build"
-
-[dependency-groups]
-dev = [
-    "pytest>=9.1.1",
-    "ruff>=0.16.9",
-]
+[tool.pytest.ini_options]
+# per-app pytest configs live in apps/*/pyproject.toml;
+# this root key is for the cross-app tests/ tree only.
+testpaths = ["tests"]
+asyncio_mode = "auto"
