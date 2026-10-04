@@ -1,5 +1,0 @@
-{"actor":"daemon","at":"2026-10-04T07:02:29.915636Z","bucket_id":"bkt_d78711c1429e49639f350021c640da5a","from_state":null,"note":null,"to_state":"RECEIVED"}
-{"actor":"daemon","at":"2026-10-04T07:02:29.925923Z","bucket_id":"bkt_d78711c1429e49639f350021c640da5a","from_state":"RECEIVED","note":null,"to_state":"STAGED"}
-{"actor":"daemon","at":"2026-10-04T07:02:29.934298Z","bucket_id":"bkt_d78711c1429e49639f350021c640da5a","from_state":"STAGED","note":null,"to_state":"STORED"}
-{"actor":"daemon","at":"2026-10-04T07:02:29.943915Z","bucket_id":"bkt_d78711c1429e49639f350021c640da5a","from_state":"STORED","note":null,"to_state":"ACTIVATED"}
-{"actor":"daemon","at":"2026-10-04T07:02:29.953574Z","bucket_id":"bkt_d78711c1429e49639f350021c640da5a","from_state":"ACTIVATED","note":null,"to_state":"RELEASED"}
