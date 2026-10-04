@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RsmClient, RsmHttpError } from "@/lib/rsm-client";
 import type { FailureInfo, ReaderTrace } from "@/types/bucket";
+import { summarizeTrace } from "./traceSummary";
 
 const rsm = new RsmClient();
 
@@ -100,7 +101,7 @@ export function ReaderTraceSurface({ bucketId, pollMs = 1500 }: Props) {
   if (state.kind === "loading" || state.kind === "idle") {
     return (
       <section aria-label="RSM Reader trace" aria-busy="true" className="mt-4 rounded border px-4 py-3 text-xs">
-        <ReaderBar discovered={0} latest={0} compact label="Preparing Reader\u2026" />
+        <ReaderBar discovered={0} latest={0} compact label={"Preparing Reader\u2026"} />
       </section>
     );
   }
@@ -114,6 +115,7 @@ export function ReaderTraceSurface({ bucketId, pollMs = 1500 }: Props) {
   }
 
   const t = state.trace;
+  const sum = summarizeTrace(t);
   return (
     <section
       aria-label="RSM Reader trace"
@@ -121,9 +123,36 @@ export function ReaderTraceSurface({ bucketId, pollMs = 1500 }: Props) {
       aria-atomic="false"
       className="mt-4 rounded border px-4 py-3 text-xs"
     >
+      <h2 className="mb-2 font-medium">Reader</h2>
       <ReaderBar discovered={t.discovered} latest={t.latest_index} />
-      <ReaderCounts trace={t} />
+      <p className="mt-2 opacity-70">
+        Files observed:{" "}
+        <strong className="tabular-nums">{sum.observed.toLocaleString()}</strong>
+        {" / "}
+        <strong className="tabular-nums">{sum.discovered.toLocaleString()}</strong>
+      </p>
+      {t.partial_count > 0 && (
+        <p className="mt-1 opacity-70">
+          Partial:{" "}
+          <strong className="tabular-nums">{t.partial_count.toLocaleString()}</strong>{" "}
+          files
+        </p>
+      )}
       {t.failures.length > 0 && <FailuresList failures={t.failures} />}
+      <p className="mt-2 flex gap-4 opacity-70">
+        <span>
+          Vision:{" "}
+          <strong className="tabular-nums">{sum.vision.toLocaleString()}</strong>{" "}
+          files
+        </span>
+        <span>
+          Text: <strong className="tabular-nums">{sum.text.toLocaleString()}</strong>{" "}
+          files
+        </span>
+      </p>
+      <p className="mt-2 opacity-70">
+        Status: <strong>{sum.status}</strong>
+      </p>
     </section>
   );
 }
@@ -167,48 +196,25 @@ function ReaderBar({
   );
 }
 
-function ReaderCounts({ trace }: { trace: ReaderTrace }) {
-  return (
-    <p className="mt-2 flex gap-4 opacity-70">
-      <span>
-        observed <strong className="tabular-nums">{trace.observed_count}</strong>
-      </span>
-      {trace.partial_count > 0 && (
-        <span>
-          partial <strong className="tabular-nums">{trace.partial_count}</strong>
-        </span>
-      )}
-      {trace.failed_count > 0 && (
-        <span>
-          failed <strong className="tabular-nums">{trace.failed_count}</strong>
-        </span>
-      )}
-      <span className="ml-auto opacity-50">
-        {trace.complete ? "complete" : "reading\u2026"}
-      </span>
-    </p>
-  );
-}
-
 function FailuresList({ failures }: { failures: FailureInfo[] }) {
-  // Keep the UI small: list the latest 8 failures (full list is in the
-  // backend's trace).
+  // Always visible (flat), but capped: a 10,000-File source must not render
+  // 10,000 rows. The full list stays authoritative in the backend trace.
   const latest = failures.slice(-8).reverse();
   return (
-    <details className="mt-2 opacity-80">
-      <summary className="cursor-pointer select-none">
-        Failures ({failures.length})
-      </summary>
+    <div className="mt-2">
+      <p className="opacity-70">Failures:</p>
       <ul className="mt-1 space-y-0.5 font-mono text-[11px] opacity-70">
         {latest.map((f) => (
           <li key={f.file_id}>
-            {f.index.toLocaleString()} \u2014 {f.reason}
+            {f.index.toLocaleString()} {"\u2014"} {f.reason}
           </li>
         ))}
         {failures.length > latest.length && (
-          <li className="opacity-50">\u2026 {failures.length - latest.length} earlier</li>
+          <li className="opacity-50">
+            {"\u2026"} {failures.length - latest.length} earlier
+          </li>
         )}
       </ul>
-    </details>
+    </div>
   );
 }

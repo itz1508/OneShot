@@ -270,7 +270,7 @@ export function RsmRail({ autoStreamOnMount = false }: Props) {
               className="mt-1 w-full rounded border px-2 py-1 text-xs"
               disabled={!record}
             >
-              <option value="">\u2014 none \u2014</option>
+              <option value="">{"\u2014 none \u2014"}</option>
               {state.buckets.map((b) => (
                 <option key={b} value={b}>{b}</option>
               ))}

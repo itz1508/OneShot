@@ -15,6 +15,9 @@ wheels/
 .mypy_cache/
 uv.lock.bak
 
+# RSM runtime store (default ./ .rsm-store root — state, never source)
+.rsm-store/
+
 # Scratch (local TEMP override used for pytest on this host)
 .tmp/
 
@@ -31,6 +34,7 @@ node_modules/
 # Build/packaging artifacts (generated, not source)
 auto-rsm-0.3.3-export.zip
 new-rsm.zip
+rsm-v1.zip
 rsm-ui-*.vsix
 
 # RSM working folder: contains a built .vsix plus the installer/test sources.
