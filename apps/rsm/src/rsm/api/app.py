@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from .errors import RSMError
-from .routers import assessment, buckets, events, interactions, prov, reader
+from .routers import assessment, buckets, events, health, interactions, prov, reader
 
 
 def create_app() -> FastAPI:
@@ -26,9 +26,6 @@ def create_app() -> FastAPI:
     app.include_router(interactions.router, prefix="/v1/interactions", tags=["interactions"])
     app.include_router(reader.router, prefix="/v1/buckets", tags=["reader"])
     app.include_router(assessment.router, prefix="/v1/buckets", tags=["assessment"])
-
-    @app.get("/healthz")
-    async def healthz() -> dict:
-        return {"status": "ok", "schema_version": "1"}
+    app.include_router(health.router)
 
     return app
