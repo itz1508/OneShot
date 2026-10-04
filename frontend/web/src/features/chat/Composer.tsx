@@ -18,7 +18,7 @@ function supportsDirectoryPicker(): boolean {
 export function Composer({ intake }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
-  const supportsDir = useMemo(supportsDirectoryPicker, []);
+  const supportsDir = useMemo(() => supportsDirectoryPicker(), []);
   const canSubmit = useMemo(() => {
     if (intake.state.submitting) return false;
     if (intake.state.draftText.trim().length > 0) return true;

@@ -4,5 +4,8 @@
   "type": "module",
   "main": "src/rsm-client.ts",
   "types": "src/rsm-client.ts",
-  "dependencies": {}
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5"
+  }
 }

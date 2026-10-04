@@ -16,11 +16,9 @@ let _failed = 0;
 function expect(label: string, cond: unknown): void {
   if (cond) {
     _passed += 1;
-    // eslint-disable-next-line no-console
     console.log(`  ok  — ${label}`);
   } else {
     _failed += 1;
-    // eslint-disable-next-line no-console
     console.error(`  NOT OK — ${label}`);
   }
 }
