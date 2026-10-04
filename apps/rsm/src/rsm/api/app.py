@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .errors import RSMError
 from .routers import assessment, buckets, events, health, interactions, prov, reader
+
+# Dev origins for the Next.js UI (http://localhost:3000). The daemon binds
+# loopback only, and CORS here widens nothing else: only these two exact
+# origins get readable responses; everything else gets no ACAO header.
+_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 def create_app() -> FastAPI:
@@ -14,6 +20,13 @@ def create_app() -> FastAPI:
         title="RSM Daemon",
         version="0.0.0",
         description="RSM V1 authoritative HTTP transport.",
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_DEV_ORIGINS,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     @app.exception_handler(RSMError)
