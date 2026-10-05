@@ -1,4 +1,4 @@
-# frontend/web — hand-authored RSM UI (verified on this host)
+# apps/web — hand-authored RSM UI (verified on this host)
 
 The authored Next.js 16 / App Router / TypeScript / Tailwind UI is the real
 RSM client. All components call the authoritative daemon through
@@ -27,9 +27,9 @@ RSM client. All components call the authoritative daemon through
 ## Dev-host recovery (exact procedure)
 
 ```bash
-cd frontend/web
+cd apps/web
 pnpm install              # or: npm install  (both work)
-pnpm --filter ./frontend/web build
+pnpm --filter ./apps/web build
 pnpm start                # or: npm start
 
 # Separate terminal

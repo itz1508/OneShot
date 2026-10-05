@@ -39,6 +39,12 @@ def test_shared_root_artifacts_exist() -> None:
     assert (ROOT / "packages" / "rsm-client" / "tsconfig.json").is_file()
 
 
+def test_web_app_layout() -> None:
+    assert (ROOT / "apps" / "web" / "package.json").is_file()
+    assert (ROOT / "apps" / "web" / "src" / "app" / "layout.tsx").is_file()
+    assert (ROOT / "apps" / "web" / "tests" / "e2e" / "playwright.config.ts").is_file()
+
+
 def test_store_scaffolding_committed() -> None:
     for rel in ("store/buckets/.gitkeep", "store/snapshots/.gitkeep"):
         assert (ROOT / rel).is_file(), rel
