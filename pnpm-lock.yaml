@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  frontend/web:
+  apps/web:
     dependencies:
       '@oneshot/rsm-client':
         specifier: workspace:*
