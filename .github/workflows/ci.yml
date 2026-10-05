@@ -51,18 +51,18 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck — web
         run: pnpm exec tsc --noEmit --skipLibCheck
-        working-directory: frontend/web
+        working-directory: apps/web
       - name: Lint — web
         run: pnpm exec eslint "src/**/*.{ts,tsx}"
-        working-directory: frontend/web
+        working-directory: apps/web
       - name: Typecheck — @oneshot/rsm-client
         run: pnpm exec tsc -p tsconfig.json
         working-directory: packages/rsm-client
       - name: Production build — web (Next 16; turbopack is the default)
-        run: pnpm --filter ./frontend/web build
+        run: pnpm --filter ./apps/web build
       - name: E2E spec integrity (playwright --list; compiles/collects only)
-        run: pnpm exec playwright test --list --config ../../tests/frontend/e2e/playwright.config.ts
-        working-directory: frontend/web
+        run: pnpm exec playwright test --list --config ../../apps/web/tests/e2e/playwright.config.ts
+        working-directory: apps/web
 
   # ── Containers: compose validity + image builds (the deploy path) ────────
   docker:
