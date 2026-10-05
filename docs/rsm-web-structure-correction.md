@@ -15,21 +15,21 @@ than RSM-as-control-surface.
 ### Removed (standalone-RSM navigation)
 
 ```
-frontend/web/src/app/buckets/           (deleted)
-frontend/web/src/app/buckets/[id]/      (deleted)
-frontend/web/src/app/ingest/            (deleted)
-frontend/web/src/app/lifecycle/         (deleted)
-frontend/web/src/app/replay/            (deleted)
-frontend/web/src/features/buckets/      (deleted)
-frontend/web/src/features/ingestion/    (deleted)
-frontend/web/src/features/lifecycle/    (deleted)
-frontend/web/src/features/replay/       (deleted)
+apps/web/src/app/buckets/           (deleted)
+apps/web/src/app/buckets/[id]/      (deleted)
+apps/web/src/app/ingest/            (deleted)
+apps/web/src/app/lifecycle/         (deleted)
+apps/web/src/app/replay/            (deleted)
+apps/web/src/features/buckets/      (deleted)
+apps/web/src/features/ingestion/    (deleted)
+apps/web/src/features/lifecycle/    (deleted)
+apps/web/src/features/replay/       (deleted)
 ```
 
 ### Replaced
 
 ```
-frontend/web/src/app/page.tsx           host workspace shell
+apps/web/src/app/page.tsx           host workspace shell
                                          - "Workspace" area as the hero
                                          - no bucket/ingest/replay links
                                          - "Capture external context" is a
@@ -41,15 +41,15 @@ frontend/web/src/app/page.tsx           host workspace shell
 ### Preserved
 
 ```
-frontend/web/src/app/layout.tsx         mounts <RsmRail /> as a secondary
+apps/web/src/app/layout.tsx         mounts <RsmRail /> as a secondary
                                          right rail on every page
-frontend/web/src/features/rsm-rail/     ON/OFF switch, source selector,
+apps/web/src/features/rsm-rail/     ON/OFF switch, source selector,
                                          Snapshot/Representation/Context
                                          readouts, manual Replay button,
                                          ephemeral ReplayStreaming surface
-frontend/web/src/lib/rsm-client.ts      typed fetch wrapper for the real
+apps/web/src/lib/rsm-client.ts      typed fetch wrapper for the real
                                          daemon API
-frontend/web/src/types/bucket.ts        TS mirrors of the backend contract
+apps/web/src/types/bucket.ts        TS mirrors of the backend contract
 ```
 
 ### Added
