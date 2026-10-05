@@ -22,7 +22,7 @@ FORBIDDEN = [
 
 SCAN_DIRS = [
     ROOT / "apps" / "rsm" / "src" / "rsm",
-    ROOT / "frontend" / "web" / "src",
+    ROOT / "apps" / "web" / "src",
     ROOT / "packages" / "rsm-client" / "src",
 ]
 
