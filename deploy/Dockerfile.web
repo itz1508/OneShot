@@ -20,22 +20,22 @@ USER node
 # Layer 1 — manifests only: dependencies cached until a lockfile/manifest
 # changes.
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY --chown=node:node frontend/web/package.json frontend/web/package.json
+COPY --chown=node:node apps/web/package.json apps/web/package.json
 COPY --chown=node:node packages/rsm-client/package.json packages/rsm-client/package.json
 RUN pnpm install --frozen-lockfile
 
 # Layer 2 — sources.
-COPY --chown=node:node frontend/web frontend/web
+COPY --chown=node:node apps/web apps/web
 COPY --chown=node:node packages/rsm-client packages/rsm-client
 
-# NEXT_PUBLIC_* is inlined at build time (frontend/web/src/lib/rsm.ts).
+# NEXT_PUBLIC_* is inlined at build time (apps/web/src/lib/rsm.ts).
 # Default = host loopback, matching the compose port publish of the daemon.
 ARG NEXT_PUBLIC_RSM_BASE_URL=http://127.0.0.1:8787
 ENV NEXT_PUBLIC_RSM_BASE_URL=${NEXT_PUBLIC_RSM_BASE_URL}
 
-RUN pnpm --filter ./frontend/web build
+RUN pnpm --filter ./apps/web build
 
 ENV PORT=3000 \
     HOSTNAME=0.0.0.0
 EXPOSE 3000
-CMD ["pnpm", "--filter", "./frontend/web", "start"]
+CMD ["pnpm", "--filter", "./apps/web", "start"]
