@@ -35,6 +35,6 @@ pnpm start                # or: npm start
 # Separate terminal
 uvicorn rsm.api.app:create_app --factory --host 127.0.0.1 --port 8787
 
-# Then from tests/frontend/e2e/
+# Then from apps/web/tests/e2e/
 #   point Playwright at http://127.0.0.1:3000
 ```
