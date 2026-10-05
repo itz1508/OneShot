@@ -18,7 +18,7 @@ D:\OneShot\
 │   │   └── tests/           unit · integration · security · e2e
 │   └── oneshot/             OneShot shell (empty placeholder in v6.1)
 ├── packages/rsm-client/     typed TS client (@oneshot/rsm-client)
-├── frontend/web/            Next.js UI (App Router)
+├── apps/web/            Next.js UI (App Router)
 ├── docs/                    architecture / api / decisions / lifecycle / security
 ├── deploy/                  Dockerfiles · compose production override · deploy.sh (ADR 0018)
 ├── tools/                   dev · build · verification (4 CI gates)
@@ -46,7 +46,7 @@ uv run rsm --store-root ./store/buckets --attachment-root ./store/attachments \
 uv run rsm --store-root ./store/buckets --eventlog-path ./store/events.log replay-local <bucket_id>
 
 # Frontend
-cd frontend/web && pnpm install && pnpm build
+cd apps/web && pnpm install && pnpm build
 ```
 
 ## Deploy (single host, Docker Compose)
@@ -87,5 +87,5 @@ current dev host** (standard filesystem): the production `next build` exits 0,
 typecheck/lint are clean, and the Playwright suite is green end-to-end against
 the composed stack (`docker compose up -d`, see `docs/deployment.md`). The
 earlier overlayfs `EIO` blocker applied to the legacy sandbox host only; its
-recovery notes remain in `frontend/web/HAND_AUTHORED.md`.
+recovery notes remain in `apps/web/HAND_AUTHORED.md`.
 
