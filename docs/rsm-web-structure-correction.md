@@ -152,7 +152,7 @@ next build --webpack                               success (BUILD_ID written)
 ```
 
 Browser E2E (Playwright) remains NOT RUN — the Playwright directory is a
-placeholder (`tests/frontend/e2e/README.md`), and this sandbox cannot keep
+placeholder (`apps/web/tests/e2e/README.md`), and this sandbox cannot keep
 `next start` + `uvicorn` alive across tool calls. Reported honestly as a
 coverage gap, not as a PASS.
 
