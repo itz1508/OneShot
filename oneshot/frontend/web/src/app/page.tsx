@@ -23,8 +23,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { RsmHttpError } from "@/lib/rsm-client";
 import { createRsmClient } from "@/lib/rsm";
-import { getInteractionId } from "@/features/rsm-rail/rsmInteractionId";
-import { ReaderTraceSurface } from "@/features/rsm-rail/ReaderTraceSurface";
+import { getInteractionId } from "@/apps/features/rsm/rsmInteractionId";
+import { ReaderTraceSurface } from "@/apps/features/rsm/ReaderTraceSurface";
 
 const rsm = createRsmClient();
 

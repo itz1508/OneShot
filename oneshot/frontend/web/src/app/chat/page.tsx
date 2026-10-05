@@ -1,4 +1,4 @@
-import { ChatScreen } from "@/features/chat/ChatScreen";
+import { ChatScreen } from "@/apps/features/chat/ChatScreen";
 
 export const metadata = {
   title: "RSM — Chat intake",

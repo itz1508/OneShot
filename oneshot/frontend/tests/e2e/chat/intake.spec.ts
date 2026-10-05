@@ -5,9 +5,9 @@
  *   # Terminal 1:
  *   uvicorn rsm.api.app:create_app --factory --host 127.0.0.1 --port 8787
  *   # Terminal 2:
- *   cd frontend/web && pnpm dev
+ *   cd oneshot/frontend/web && pnpm dev
  *   # Terminal 3:
- *   cd tests/frontend/e2e && pnpm playwright test
+ *   cd oneshot/frontend/tests/e2e && pnpm playwright test
  *
  * The sandbox cannot run them (overlayfs blocks `next build`).
  */

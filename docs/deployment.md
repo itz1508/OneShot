@@ -55,7 +55,7 @@ Serving beyond loopback (deliberate, documented change):
   surface and is meant to be reached only by the browser and local tooling.
 
 The UI's daemon base URL (`NEXT_PUBLIC_RSM_BASE_URL`, default
-`http://127.0.0.1:8787`) is **inlined at build time** (`frontend/web/src/lib/rsm.ts`);
+`http://127.0.0.1:8787`) is **inlined at build time** (`oneshot/frontend/web/src/lib/rsm.ts`);
 changing it requires rebuilding the web image with the build-arg/`vars` value.
 
 ## CI (every push / PR)

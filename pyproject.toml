@@ -1,12 +1,12 @@
 [tool.uv.workspace]
-members = ["apps/rsm", "apps/oneshot"]
+members = ["oneshot/backend", "oneshot"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.pytest.ini_options]
-# per-app pytest configs live in apps/*/pyproject.toml;
-# this root key is for the cross-app tests/ tree only.
-testpaths = ["tests"]
+# per-app pytest configs live in oneshot/*/pyproject.toml;
+# this root key is for the workspace contract tests under oneshot/tests/.
+testpaths = ["oneshot/tests"]
 asyncio_mode = "auto"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Forbidden-dependency gate (Spec §6, gate 2 + §5.2).
 
-FAILS the build if any file under apps/rsm/src/rsm/ or frontend/web/src/
+FAILS the build if any file under oneshot/backend/src/rsm/ or oneshot/frontend/web/src/
 imports or references any of the forbidden AI/model/provider libraries.
 """
 
@@ -21,9 +21,9 @@ FORBIDDEN = [
 ]
 
 SCAN_DIRS = [
-    ROOT / "apps" / "rsm" / "src" / "rsm",
-    ROOT / "frontend" / "web" / "src",
-    ROOT / "packages" / "rsm-client" / "src",
+    ROOT / "oneshot" / "backend" / "src" / "rsm",
+    ROOT / "oneshot" / "frontend" / "web" / "src",
+    ROOT / "oneshot" / "frontend" / "packages" / "rsm-client" / "src",
 ]
 
 EXTS = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs"}

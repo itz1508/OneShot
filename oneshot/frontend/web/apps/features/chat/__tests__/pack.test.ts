@@ -2,9 +2,9 @@
  * Inline-stub tests for `pack.ts` (no vitest, no new dev dependency).
  *
  * Run with:
- *     bun run src/features/chat/__tests__/pack.test.ts
+ *     bun run apps/features/chat/__tests__/pack.test.ts
  *   or:
- *     npx tsx frontend/web/src/features/chat/__tests__/pack.test.ts
+ *     npx tsx frontend/web/apps/features/chat/__tests__/pack.test.ts
  *
  * The test file itself is the harness — one `expect(label, cond)` per assertion.
  */

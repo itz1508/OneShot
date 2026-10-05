@@ -15,21 +15,21 @@ than RSM-as-control-surface.
 ### Removed (standalone-RSM navigation)
 
 ```
-frontend/web/src/app/buckets/           (deleted)
-frontend/web/src/app/buckets/[id]/      (deleted)
-frontend/web/src/app/ingest/            (deleted)
-frontend/web/src/app/lifecycle/         (deleted)
-frontend/web/src/app/replay/            (deleted)
-frontend/web/src/features/buckets/      (deleted)
-frontend/web/src/features/ingestion/    (deleted)
-frontend/web/src/features/lifecycle/    (deleted)
-frontend/web/src/features/replay/       (deleted)
+oneshot/frontend/web/src/app/buckets/           (deleted)
+oneshot/frontend/web/src/app/buckets/[id]/      (deleted)
+oneshot/frontend/web/src/app/ingest/            (deleted)
+oneshot/frontend/web/src/app/lifecycle/         (deleted)
+oneshot/frontend/web/src/app/replay/            (deleted)
+oneshot/frontend/web/src/features/buckets/      (deleted)
+oneshot/frontend/web/src/features/ingestion/    (deleted)
+oneshot/frontend/web/src/features/lifecycle/    (deleted)
+oneshot/frontend/web/src/features/replay/       (deleted)
 ```
 
 ### Replaced
 
 ```
-frontend/web/src/app/page.tsx           host workspace shell
+oneshot/frontend/web/src/app/page.tsx           host workspace shell
                                          - "Workspace" area as the hero
                                          - no bucket/ingest/replay links
                                          - "Capture external context" is a
@@ -41,15 +41,15 @@ frontend/web/src/app/page.tsx           host workspace shell
 ### Preserved
 
 ```
-frontend/web/src/app/layout.tsx         mounts <RsmRail /> as a secondary
+oneshot/frontend/web/src/app/layout.tsx         mounts <RsmRail /> as a secondary
                                          right rail on every page
-frontend/web/src/features/rsm-rail/     ON/OFF switch, source selector,
+oneshot/frontend/web/src/apps/features/rsm/     ON/OFF switch, source selector,
                                          Snapshot/Representation/Context
                                          readouts, manual Replay button,
                                          ephemeral ReplayStreaming surface
-frontend/web/src/lib/rsm-client.ts      typed fetch wrapper for the real
+oneshot/frontend/web/src/lib/rsm-client.ts      typed fetch wrapper for the real
                                          daemon API
-frontend/web/src/types/bucket.ts        TS mirrors of the backend contract
+oneshot/frontend/web/src/types/bucket.ts        TS mirrors of the backend contract
 ```
 
 ### Added
@@ -93,7 +93,7 @@ application USES.
 - [x] Main application/workspace remains primary. — host workspace is the
       hero; the rail is a fixed-position aside.
 - [x] RSM is a secondary control surface. — mounted via `layout.tsx`,
-      scoped to `features/rsm-rail/`.
+      scoped to `apps/features/rsm/`.
 - [x] No Bucket/Ingest/Replay primary navigation. — those routes are
       deleted; there is no sidebar.
 - [x] No second chat. — the workspace area is explicitly a demonstration

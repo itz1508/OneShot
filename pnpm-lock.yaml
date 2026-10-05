@@ -8,7 +8,7 @@ importers:
 
   .: {}
 
-  frontend/web:
+  oneshot/frontend/web:
     dependencies:
       '@oneshot/rsm-client':
         specifier: workspace:*
@@ -54,7 +54,7 @@ importers:
         specifier: ^5
         version: 5.9.3
 
-  packages/rsm-client:
+  oneshot/frontend/packages/rsm-client:
     devDependencies:
       typescript:
         specifier: ^5

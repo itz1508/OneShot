@@ -11,19 +11,23 @@ a vector database, a prompt orchestrator, or a long-term memory system.
 ## Repository layout
 
 ```
-D:\OneShot\
-├── apps/
-│   ├── rsm/                 RSM daemon (Python ≥3.11, uv workspace member)
-│   │   ├── src/rsm/         domain + delivery packages (see docs/architecture/)
-│   │   └── tests/           unit · integration · security · e2e
-│   └── oneshot/             OneShot shell (empty placeholder in v6.1)
-├── packages/rsm-client/     typed TS client (@oneshot/rsm-client)
-├── frontend/web/            Next.js UI (App Router)
-├── docs/                    architecture / api / decisions / lifecycle / security
-├── deploy/                  Dockerfiles · compose production override · deploy.sh (ADR 0018)
-├── tools/                   dev · build · verification (4 CI gates)
-├── tests/                   cross-app integration + shared fixtures
-└── store/                   attachments · buckets · snapshots (runtime data)
+D:\\OneShot\\
+├── oneshot/
+│   ├── src/                       OneShot host application package
+│   ├── tests/                     OneShot/workspace tests
+│   ├── backend/                   RSM daemon (Python ≥3.11)
+│   │   ├── src/rsm/               authoritative RSM domain + delivery
+│   │   └── tests/                 backend unit · integration · security · e2e
+│   └── frontend/
+│       ├── web/                   Next.js 16 App Router application
+│       │   ├── src/app/            routes/layouts only
+│       │   └── apps/features/      feature modules (rsm, chat)
+│       ├── tests/                 frontend E2E tests
+│       └── packages/rsm-client/    typed TS client
+├── docs/                           architecture / api / decisions / lifecycle / security
+├── deploy/                         Dockerfiles · compose · deploy.sh
+├── tools/                          dev · build · verification gates
+└── store/                          attachments · buckets · snapshots (runtime data)
 ```
 
 ## Quickstart
@@ -31,7 +35,7 @@ D:\OneShot\
 ```bash
 # Backend (uv workspace)
 uv sync
-uv run --package rsm pytest -q apps/rsm/tests        # expect 339 passed, 1 skipped
+uv run --package rsm pytest -q oneshot/backend/tests        # expect 339 passed, 1 skipped
 uv run python tools/verification/check_boundaries.py
 uv run python tools/verification/check_forbidden_deps.py
 uv run python tools/verification/check_pymupdf_import.py
@@ -46,7 +50,7 @@ uv run rsm --store-root ./store/buckets --attachment-root ./store/attachments \
 uv run rsm --store-root ./store/buckets --eventlog-path ./store/events.log replay-local <bucket_id>
 
 # Frontend
-cd frontend/web && pnpm install && pnpm build
+cd oneshot/frontend/web && pnpm install && pnpm build
 ```
 
 ## Deploy (single host, Docker Compose)
@@ -65,7 +69,7 @@ and deployed through the gated workflow (smoke test + automatic rollback):
 Governing spec: `RSMFInalStructure.txt` (frozen). ADRs under `docs/decisions/`.
 
 
-## Status (this build)
+## Baseline status before re-architecture
 
 | Area | State |
 |---|---|
@@ -87,5 +91,5 @@ current dev host** (standard filesystem): the production `next build` exits 0,
 typecheck/lint are clean, and the Playwright suite is green end-to-end against
 the composed stack (`docker compose up -d`, see `docs/deployment.md`). The
 earlier overlayfs `EIO` blocker applied to the legacy sandbox host only; its
-recovery notes remain in `frontend/web/HAND_AUTHORED.md`.
+recovery notes remain in `oneshot/frontend/web/HAND_AUTHORED.md`.
 

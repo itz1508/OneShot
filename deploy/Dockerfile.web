@@ -5,7 +5,7 @@ FROM node:20-bookworm-slim
 
 # pnpm exactly as pinned by the root package.json "packageManager" field
 # (pnpm@9.15.0), activated through corepack. Playwright browsers are NOT
-# downloaded: E2E runs on the host (tests/frontend/e2e), never in this image.
+# downloaded: E2E runs on the host (oneshot/frontend/tests), never in this image.
 RUN corepack enable
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -20,22 +20,22 @@ USER node
 # Layer 1 — manifests only: dependencies cached until a lockfile/manifest
 # changes.
 COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY --chown=node:node frontend/web/package.json frontend/web/package.json
-COPY --chown=node:node packages/rsm-client/package.json packages/rsm-client/package.json
+COPY --chown=node:node oneshot/oneshot/frontend/web/package.json oneshot/oneshot/frontend/web/package.json
+COPY --chown=node:node oneshot/frontend/oneshot/frontend/packages/rsm-client/package.json oneshot/frontend/oneshot/frontend/packages/rsm-client/package.json
 RUN pnpm install --frozen-lockfile
 
 # Layer 2 — sources.
-COPY --chown=node:node frontend/web frontend/web
-COPY --chown=node:node packages/rsm-client packages/rsm-client
+COPY --chown=node:node oneshot/oneshot/frontend/web oneshot/oneshot/frontend/web
+COPY --chown=node:node oneshot/frontend/oneshot/frontend/packages/rsm-client oneshot/frontend/oneshot/frontend/packages/rsm-client
 
-# NEXT_PUBLIC_* is inlined at build time (frontend/web/src/lib/rsm.ts).
+# NEXT_PUBLIC_* is inlined at build time (oneshot/oneshot/frontend/web/src/lib/rsm.ts).
 # Default = host loopback, matching the compose port publish of the daemon.
 ARG NEXT_PUBLIC_RSM_BASE_URL=http://127.0.0.1:8787
 ENV NEXT_PUBLIC_RSM_BASE_URL=${NEXT_PUBLIC_RSM_BASE_URL}
 
-RUN pnpm --filter ./frontend/web build
+RUN pnpm --filter ./oneshot/oneshot/frontend/web build
 
 ENV PORT=3000 \
     HOSTNAME=0.0.0.0
 EXPOSE 3000
-CMD ["pnpm", "--filter", "./frontend/web", "start"]
+CMD ["pnpm", "--filter", "./oneshot/oneshot/frontend/web", "start"]

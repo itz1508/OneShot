@@ -18,11 +18,9 @@ jobs:
       - name: Sync workspace (frozen lockfile)
         run: uv sync --frozen --all-packages
       - name: RSM test suite
-        run: uv run --package rsm pytest -q apps/rsm/tests
-      - name: Cross-app tests
-        run: uv run pytest -q tests
+        run: uv run --package rsm pytest -q oneshot/backend/tests
       - name: OneShot test suite
-        run: uv run pytest -q apps/oneshot/tests
+        run: uv run pytest -q oneshot/tests
       - name: Verification gate — boundaries
         run: uv run python tools/verification/check_boundaries.py
       - name: Verification gate — forbidden deps
@@ -51,18 +49,18 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Typecheck — web
         run: pnpm exec tsc --noEmit --skipLibCheck
-        working-directory: frontend/web
+        working-directory: oneshot/frontend/web
       - name: Lint — web
         run: pnpm exec eslint "src/**/*.{ts,tsx}"
-        working-directory: frontend/web
+        working-directory: oneshot/frontend/web
       - name: Typecheck — @oneshot/rsm-client
         run: pnpm exec tsc -p tsconfig.json
-        working-directory: packages/rsm-client
+        working-directory: oneshot/frontend/packages/rsm-client
       - name: Production build — web (Next 16; turbopack is the default)
-        run: pnpm --filter ./frontend/web build
+        run: pnpm --filter ./oneshot/frontend/web build
       - name: E2E spec integrity (playwright --list; compiles/collects only)
-        run: pnpm exec playwright test --list --config ../../tests/frontend/e2e/playwright.config.ts
-        working-directory: frontend/web
+        run: pnpm exec playwright test --list --config ../tests/playwright.config.ts
+        working-directory: oneshot/frontend/web
 
   # ── Containers: compose validity + image builds (the deploy path) ────────
   docker:

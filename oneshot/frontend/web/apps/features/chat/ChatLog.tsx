@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import type { ChatMessage } from "./useChatIntake";
 import { RsmClient } from "@/lib/rsm-client";
-import { getInteractionId } from "@/features/rsm-rail/rsmInteractionId";
+import { getInteractionId } from "@/apps/features/rsm/rsmInteractionId";
 
 type Props = {
   messages: ChatMessage[];

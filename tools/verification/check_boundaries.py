@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2] / "apps" / "rsm" / "src" / "rsm"
+ROOT = Path(__file__).resolve().parents[2] / "oneshot" / "backend" / "src" / "rsm"
 
 FORBIDDEN = {
     "rsm.bucket":         {"rsm.cli", "rsm.api", "rsm.mcp_server", "rsm.daemon", "rsm.transports", "rsm.extraction", "rsm.interaction"},

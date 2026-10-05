@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { RsmRail } from "@/features/rsm-rail/RsmRail";
+import { RsmRail } from "@/apps/features/rsm/RsmRail";
 
 export const metadata: Metadata = {
   title: "RSM — Replay State Memory",

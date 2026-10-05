@@ -1,6 +1,6 @@
 /**
  * Ad-hoc test for traceSummary — same runner convention as chat/__tests__/pack.test.ts:
- *   cd frontend/web && pnpm dlx tsx src/features/rsm-rail/__tests__/traceSummary.test.ts
+ *   cd oneshot/frontend/web && pnpm dlx tsx apps/features/rsm/__tests__/traceSummary.test.ts
  */
 import { summarizeTrace } from "../traceSummary";
 import type { FileCoverage, ReaderTrace } from "@/types/bucket";

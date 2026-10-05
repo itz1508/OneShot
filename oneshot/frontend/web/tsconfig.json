@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/lib/rsm-client": ["../../packages/rsm-client/src/rsm-client.ts"],
+      "@/lib/rsm-client": ["../packages/rsm-client/src/rsm-client.ts"],
+      "@/apps/*": ["./apps/*"],
       "@/*": ["./src/*"]
     }
   },
