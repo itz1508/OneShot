@@ -4,8 +4,8 @@
   "private": true,
   "description": "OneShot monorepo root. Scripts only; no runtime deps.",
   "scripts": {
-    "frontend:dev": "pnpm --filter ./frontend/web dev",
-    "frontend:build": "pnpm --filter ./frontend/web build",
+    "frontend:dev": "pnpm --filter ./apps/web dev",
+    "frontend:build": "pnpm --filter ./apps/web build",
     "backend:install": "uv sync",
     "backend:test": "uv run --package rsm pytest apps/rsm/tests"
   },
