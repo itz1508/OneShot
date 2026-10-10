@@ -1,0 +1,269 @@
+---
+name: OneShot Rebuild
+overview: Rebuild OneShot from scratch at D:\OneShot as a Python 3.11 FastAPI + SQLite + Vite React workspace. Set requires-python before uv lock. Jobs and Runs are separate HTTP APIs. Fake provider for tests; a narrow real-provider adapter exists without Pydantic AI. Deliver working local + Docker + tests + ZIP.
+todos:
+  - id: root-toolchain
+    content: Inspect D:\OneShot; switch Cursor workspace first; init only if empty; requires-python then uv lock; verify python --version
+    status: in_progress
+  - id: files-folders
+    content: After workspace switch, create the canonical D:\OneShot files/folders tree (no mcp/, no memory/)
+    status: pending
+  - id: backend-core
+    content: Implement settings, contracts, SQLite store, blobstore, FastAPI health/OpenAPI
+    status: pending
+  - id: primary-workflow
+    content: Ingest, read, summarize to output.json with fake provider, events, persist-before-complete
+    status: pending
+  - id: jobs-trace-otel
+    content: Conversation-scoped jobs/artifacts; Run API; Coder adapters; draft revision 409; Trace; OTel; replay
+    status: pending
+  - id: frontend-workspace
+    content: Run Mobbin search_flows/screens/sections, inspect refs, then Source/Chat/Viewer + drafts
+    status: pending
+  - id: verify-package
+    content: Verify all gates, write docs/BUILD.md, then commit, git archive, SHA-256, extract-verify
+    status: pending
+isProject: false
+---
+
+# OneShot rebuild at D:\OneShot (Python 3.11)
+
+The Downloads workspace is the **wrong build**. Do **not** copy the existing Vite stub. The external sandbox is not the authoritative environment.
+
+**Before any `uv init` or implementation writes:** inspect the physical directory.
+
+```
+Set-Location D:\OneShot
+Get-Location
+Get-ChildItem -Force
+git status --short
+```
+
+- If `D:\OneShot` **does not exist** or is genuinely empty: create it, **switch Cursor to `D:\OneShot` first** (`move_agent_to_root`, or open that folder and verify cwd), then initialize.
+- If it already contains an active OneShot implementation: **do not** run `uv init --bare`, recreate files, or replace Git without inspection and explicit authorization.
+- Never continue writing inside Downloads.
+
+Override every runbook snippet that says **Python 3.12**. Docker uses `FROM python:3.11-slim`. Pin is not enough: **set `requires-python` in `pyproject.toml` before `uv add` / `uv lock`.**
+
+Do **not** install Pydantic AI, FastMCP, Harness, or AG-UI unless a verified consumer appears. Default `ONESHOT_PROVIDER_MODE=fake`. Tests never require paid API calls. A narrow real-provider adapter still exists in Coder; live-provider verification is a **separate gate**, not implied by fake-model success.
+
+## Canonical files and folders (`D:\OneShot`)
+
+Do **not** add `systems/mcp/` or `systems/memory/`. Runtime data under `data/` is gitignored. This tree is the implementation contract; owners stay as in Architecture below.
+
+```
+D:\OneShot\
+  .python-version
+  .gitignore
+  .dockerignore
+  .env.example
+  pyproject.toml
+  uv.lock
+  compose.yaml
+  Dockerfile
+  README.md
+  docs\
+    BUILD.md                 # written after verification, before archive
+    HTTP.md                  # canonical conversation-scoped routes
+  scripts\
+    start-backend.ps1
+    start-frontend.ps1
+  data\                      # gitignored: oneshot.sqlite, blobs\
+  systems\
+    __init__.py
+    __main__.py              # uvicorn systems.transport:app
+    settings.py
+    contract.py
+    errors.py
+    store.py
+    transport.py             # FastAPI routes only
+    ingest.py
+    jobs.py                  # six actions; invokes Runs
+    runs.py                  # Run lifecycle
+    events.py
+    replay.py
+    drafts.py
+    trace.py
+    tools\
+      __init__.py
+    instrumentation\
+      __init__.py
+      tracing.py
+  capabilities\
+    __init__.py
+    blobstore.py
+    filesystem.py            # read_source_context
+    coder.py                 # fake + real HTTP adapter
+  tests\
+    conftest.py
+    test_contract.py
+    test_blobstore.py
+    test_store.py
+    test_source_ingestion.py
+    test_scan_read.py
+    test_summarize.py
+    test_jobs.py
+    test_runs.py
+    test_drafts.py
+    test_events_replay.py
+    test_http.py
+    test_health.py
+  frontend\
+    package.json
+    package-lock.json
+    vite.config.ts
+    tsconfig.json
+    playwright.config.ts
+    Dockerfile
+    nginx.conf
+    index.html
+    e2e\
+      workspace.spec.ts
+      source-jobs.spec.ts
+      drafts.spec.ts
+    src\
+      main.tsx
+      App.tsx
+      api\
+        oneshot.ts
+      components\
+        WorkspaceLayout.tsx
+        SourcePanel.tsx
+        SourceTree.tsx
+        ConversationStream.tsx
+        MessageComposer.tsx
+        JobStatus.tsx
+        ArtifactCard.tsx
+        FileViewer.tsx
+        FileEditor.tsx
+        ResizeHandle.tsx
+        TraceView.tsx
+```
+
+Route owners (path → module): health/conversations/messages/sources/artifacts/jobs/drafts/events/replay in `systems/transport.py` calling `ingest`, `jobs`, `drafts`, `events`, `replay`; Run routes call `systems/runs.py`. Coder is only used from Runs, not from Jobs directly except through a Run.
+
+```mermaid
+flowchart TD
+  ExternalSource --> IngestPreserve
+  IngestPreserve --> ScannerReader
+  ScannerReader --> Summarize
+  Summarize --> OutputJson
+  OutputJson --> PersistResult
+  PersistResult --> JobCompleted
+  JobCompleted --> MainChatSourcePanel
+```
+
+## Architecture (authoritative owners)
+
+- **Transport**: [`systems/transport.py`](D:\OneShot\systems\transport.py) — FastAPI + CORS + OpenTelemetry FastAPI instrumentor. Unprefixed routes. Health must check SQLite + blob root, not just process up.
+- **Contract**: [`systems/contract.py`](D:\OneShot\systems\contract.py) — Pydantic v2 `extra="forbid"`. Summarize artifact is **exactly** `{"summary": "Non-empty summary text"}`. Also: Conversation, Message, Artifact, Job, Run, Event, Trace, API error, Draft.
+- **Store**: [`systems/store.py`](D:\OneShot\systems\store.py) — SQLite transactions. Conversations, messages, artifacts, jobs, runs, drafts, `conversation_events` with **atomic sequence**, Trace records. No in-memory durability.
+- **Blobs**: [`capabilities/blobstore.py`](D:\OneShot\capabilities\blobstore.py) — SHA-256 content-addressed files under `ONESHOT_DATA_DIR/blobs`. Atomic write + hash verify. Never expose physical paths as filenames.
+- **Runs vs Jobs**: **Run** owns model/capability execution and its string result. **Job** owns conversation action dispatch, artifact creation, and completion. A Summarize Job may invoke a Run; they must not share one HTTP interface. Every mutating or blob read verifies **conversation ownership** even when a Run id is global.
+- **Coder**: [`capabilities/coder.py`](D:\OneShot\capabilities\coder.py) — `fake` deterministic provider for all automated tests; `real` is a narrow HTTP/SDK adapter behind `ONESHOT_MODEL_ENDPOINT` / `ONESHOT_MODEL_NAME`. No Pydantic AI. Fake success does **not** count as production model integration.
+- **Jobs**: one executor (e.g. `systems/jobs.py`). Actions: `scan`, `summarize`, `rewrite`, `review`, `fix`, `validate`. Persist artifact **before** `job.completed`.
+- **Events / replay / Trace**: durable event names from the spec, including **draft.created**. Each save is a **new immutable draft artifact**; replay reconstructs the revision chain. Do not re-run models or regenerate blobs. OTel spans are **not** OneShot Trace.
+- **Frontend client**: [`frontend/src/api/oneshot.ts`](D:\OneShot\frontend\src\api\oneshot.ts) talks to `/api...` (Vite/nginx strip `/api`). Types from live `openapi.json`. No `contract_pending`.
+
+Dev proxy: browser `/api/conversations` → FastAPI `/conversations`. Compose nginx same mapping. Bind UI to `127.0.0.1:8080` in Docker.
+
+## HTTP surface (implement for real)
+
+**Canonical HTTP contract (Conversation-scoped; document in OpenAPI before frontend work).** Global `/jobs` and `/artifacts/{id}/blob` are **not** used.
+
+- `GET /health`
+- `POST /conversations`, `GET /conversations/{conversation_id}`
+- `POST /conversations/{conversation_id}/messages`
+- `POST /conversations/{conversation_id}/sources` — pasted body (`text/plain` → `source.txt`, `text/markdown` → `source.md`)
+- `POST /conversations/{conversation_id}/artifacts` — multipart upload; preserve safe logical name + original bytes
+- `GET /conversations/{conversation_id}/artifacts/{artifact_id}`
+- `GET /conversations/{conversation_id}/artifacts/{artifact_id}/blob`
+- `POST /conversations/{conversation_id}/jobs`
+- `GET /conversations/{conversation_id}/jobs/{job_id}`
+- `POST /runs`, `GET /runs/{run_id}`, `GET /runs/{run_id}/result`, `GET /runs/{run_id}/events` (body/query includes `conversation_id`; ownership checked)
+- `GET /conversations/{conversation_id}/events`, `POST /conversations/{conversation_id}/replay`
+- `POST /conversations/{conversation_id}/drafts`
+- `GET /conversations/{conversation_id}/drafts/{draft_artifact_id}`
+- Optional SSE for job/run progress if used by the UI; otherwise poll status honestly
+
+Reject requests whose resource `conversation_id` does not match the path (or the Run's owning conversation).
+
+### Draft-save contract
+
+`POST /conversations/{conversation_id}/drafts` fields:
+
+- `source_artifact_id` — original (immutable)
+- `source_sha256` — provenance of that original; mismatch is a **400**, not a concurrent-edit conflict
+- `expected_draft_revision` — current head draft artifact id (or null for first save); **stale value → HTTP 409**
+- body content — bytes of the new draft
+
+Each successful save creates a **new** `draft_artifact_id` (immutable revision). Do **not** mutate the original artifact and do **not** overwrite an earlier draft blob/row. Persist `draft.created` with the new id so replay/restart reconstructs the full revision list.
+
+Ingest **does not** summarize. Oversized / unsupported / empty-per-policy fail with typed API errors.
+
+## Frontend (Mobbin-informed, not copied)
+
+Before UI implementation, the builder must call all three Mobbin tools (`search_flows`, `search_screens`, `search_sections`), **inspect returned imagery**, and record in `docs/BUILD.md`: observed pattern, OneShot applicability, what must not be copied, selected implementation. Names/URLs alone are not evidence of an interaction.
+
+Desktop three-pane workspace: **Source | Main Chat | File Viewer**. Source rail toggles closed; chat stays usable. File viewer: View / Edit / Expand / Close. Edit creates a **new immutable draft revision**; never overwrite originals or prior drafts.
+
+Patterns already inspected during planning (re-verify in the `D:\OneShot` environment before coding UI):
+
+- Flows: [Claude uploading a file to chat](https://mobbin.com/flows/c3c3fe5e-482b-4c51-8b9d-a055b24f6d53)
+- Screens: [Google AI Studio workspace](https://mobbin.com/screens/faaf5715-9acb-462b-bc58-166d46848d87), [unsaved Discard/Save](https://mobbin.com/screens/e08be76a-5ff4-4da0-b6a8-5b63021880dc), [Dropbox Dash summary](https://mobbin.com/screens/fc54be30-29ff-430c-9554-7858c47373e8)
+- Sections: [Notion sidebar groups](https://mobbin.com/sites/sections/2310aa63-78ac-4b1d-ac41-f5f2699f8bf2)
+
+Visual direction (selected reconstruction design, **not** a recovered historical OneShot UI): **industrial document bench** — warm ink on paper, amber job status, IBM Plex Sans + Source Serif (not Inter/purple-gradient). All files in the tree come from the API.
+
+Require Node **20.19+ or 22.12+** before Vite scaffold.
+
+Playwright in `frontend/e2e` against real backend (no mocked HTTP). Config starts Vite; backend must already be running or be started by a documented test harness.
+
+## Execution sequence (gates; fix before advancing)
+
+1. **Inspect, switch workspace, then init only if empty.** Inspection (2026-10-08): `D:\OneShot` **does not exist** — treat as empty. Create the directory, switch Cursor workspace **before** `uv init` / first source file, then:
+
+```
+uv python install 3.11
+uv init --bare
+uv python pin 3.11
+```
+
+Edit `[project]` so it is exactly `name = "oneshot"`, `version = "0.1.0"`, `requires-python = ">=3.11,<3.12"`. Then `uv add` / `uv lock` / `uv sync --locked` / `uv run --locked python --version`. Do not create backend implementation files until this gate passes. If a later inspect finds existing work, stop.
+3. **Scaffold**: packages, settings, transport health, `python -m systems`, `/health` + `/openapi.json`.
+4. **Contract + store + blobstore** with tests (`test_contract.py` first).
+5. **Ingest → read → summarize → `output.json`** (fake provider) + persistence-before-complete + restart test.
+6. **Remaining five jobs**, Run HTTP API, Coder real adapter (untested live), events including drafts, replay, Trace, OTel spans (no raw source in telemetry).
+7. **Frontend**: re-run Mobbin `search_flows` / `search_screens` / `search_sections` and inspect; verify Node; Vite scaffold; conversation-scoped client; workspace UI; `expected_draft_revision` 409 handling.
+8. **Playwright E2E** + Docker (3.11 image, pin uv digest if possible) + `compose.yaml` health via `/api/health`.
+9. **Package order** (do not archive before BUILD.md):
+
+```
+Run all verification
+        ↓
+Write docs/BUILD.md
+        ↓
+Review final source
+        ↓
+Stage authorized files
+        ↓
+Commit
+        ↓
+git archive
+        ↓
+SHA-256
+        ↓
+Extract and verify archive
+```
+
+The ZIP must contain final documentation and recorded test evidence. No extra architecture or extra systems.
+
+Local run (PowerShell): `uv run --locked python -m systems` and `npm run dev` in `frontend` (127.0.0.1:5173). Compose: `http://127.0.0.1:8080`.
+
+## Out of scope unless a consumer appears
+
+MCP server, Pydantic AI, autonomous agents, Postgres/Redis, public internet bind, auth (Compose stays loopback; document that auth is required before any wider expose). Paid live-provider E2E is **deferred as a separately reported gate**; the real adapter is still implemented and unit-tested with a local fake HTTP endpoint, not a vendor API.
+
+## Acceptance
+
+Do not mark READY until G01–G18 evidence exists: locked installs, contract tests, restart persistence, six jobs over conversation-scoped HTTP, Run endpoints, draft `expected_draft_revision` 409 + immutable revisions + replay, real UI against API, Playwright, Compose, BUILD.md then ZIP reinstall. Fake-provider workflow PASS does not mark real-provider integration PASS. Record actual gate outcomes. Missing sandbox tools do not invalidate tests run inside `D:\OneShot`.

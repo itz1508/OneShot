@@ -1,0 +1,82 @@
+{
+  "desktopView": {
+    "agentPressed": "true",
+    "agentVisible": false,
+    "agentDisplay": "none"
+  },
+  "styles": {
+    "placeholder": {
+      "color": "rgb(109, 114, 103)",
+      "opacity": "0.85",
+      "background": "rgb(252, 252, 248)",
+      "font": "12px"
+    },
+    "status": {
+      "color": "rgb(109, 114, 103)",
+      "background": "rgb(244, 243, 238)",
+      "font": "10px"
+    },
+    "filters": [
+      {
+        "label": "All files",
+        "pressed": null,
+        "selected": null
+      },
+      {
+        "label": "Text",
+        "pressed": null,
+        "selected": null
+      },
+      {
+        "label": "Visuals",
+        "pressed": null,
+        "selected": null
+      }
+    ]
+  },
+  "attachment": {
+    "savedNotes": [
+      {
+        "text": "Please use this prepared context.",
+        "time": "2026-10-10T00:30:41.428Z"
+      }
+    ],
+    "globalAttachment": "1bc51df3-48b4-4434-bf9f-28992c7f8188",
+    "banner": "Attached to draft: context-1.md · completed",
+    "bannerVisible": true
+  },
+  "revision": {
+    "sourceSaved": "Version two: approved delivery date is Friday.",
+    "sourceStatus": "completed",
+    "outputContainsMonday": true,
+    "outputContainsFriday": false,
+    "resultFields": [
+      "id",
+      "name",
+      "path",
+      "type",
+      "blob",
+      "original",
+      "saved",
+      "draft",
+      "generated",
+      "outcome",
+      "runId",
+      "position"
+    ],
+    "notice": "Requested output availableExtract text: 1/1 sources inspected. 0 findings. Coverage applies to this requested task.Open task output →",
+    "sourceStatusTitle": "completed"
+  },
+  "summary": {
+    "notice": "Understand and summarize — request rejectedSemantic understanding and summarization need a connected processing service. Choose local inspection or inventory.",
+    "processVisible": false
+  },
+  "historyDialog": "- dialog:\n  - button \"Close activity history\"\n  - paragraph: WORKSPACE RECORD\n  - heading \"Activity history\" [level=2]\n  - paragraph: Completed runs and their recorded findings.\n  - article:\n    - heading \"Understand and summarize · rejected 05:30:41 PM\" [level=3]\n    - paragraph: Source inspection · 0 / 1 sources · 0 decoded characters · 1 findings\n    - group: Recorded events and findings\n  - article:\n    - heading \"Extract text · completed 05:30:41 PM\" [level=3]\n    - paragraph: Source inspection · 1 / 1 sources · 46 decoded characters · 0 findings\n    - group: Recorded events and findings\n    - button \"Open task output →\"\n  - article:\n    - heading \"Input text · completed 05:30:41 PM\" [level=3]\n    - paragraph: Source management · 1 / 1 sources · 0 decoded characters · 0 findings\n    - group: Recorded events and findings\n  - button \"Download activity JSON\"",
+  "afterWheel": {
+    "windowScroll": 0,
+    "workbenchScroll": 0,
+    "sourcePanelScroll": 0,
+    "startTop": 630,
+    "height": 640
+  }
+}

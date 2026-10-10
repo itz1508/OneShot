@@ -1,0 +1,79 @@
+you need to understand the separation. everything must be thinking mode, elephenal , event loading, do not HARD CORE.
+
+[ [1{]AGENT CHAT SCREEN}] [[2] {SYSTEM CHAT SCREEN}] [[3]{ATTACHMENT SCREEN}] [{***CLICK ON FILE OPEN/CLOSE*** [>] [{4}{EDITOR/REVIEW SCREEN} [WHEN USER CLICK ON START-BUTTON BANNER on [3] =>AUTO CLOSED [{4}] & OPEN {[5]}SCREEN-DISPLAY PROCESS}}&#x20;
+[3] {[OPEN DRAWER SOURCE ATTACHED] } | [>]|  [ext.source].txt,.pdf.".."]                               [Edit]  |
+\|----------------------|                                     |  [ [v] [folderfiles.tree]    ] |                                          |
+\|                                 |                                      |  [ [..]                              ] |   [SAVE] [DIFF REVIEW]     |
+\|                                 |                                      |                                        |                                          |
+\|                                 |                                       [click to expand drop list]                                          |
+\|                                 |                                       |\_ ==============\_|                                          |
+\|   LEAVE THIS            |                                [{3}] [{START/PAUSE}]              |                                         | |        ALONE              |                     $["..."]  =  [1 ===  100 files]               |                                         |
+\|                                 |                                     [{SCAN}] ["..."]                    |                                         |
+\|                                 |                                     [{READ}] ["..."]                    |                                         |&#x20;
+\|                                 |                                     [{ANALYSIS}] ["..."]             |                                         | &#x20;
+\|                                 |                                    [{NORMALIZATION}] ["..."] |                                          | |                                 |                      and  so on[{...}]                                 |                                          |
+\|                                 |                       [COUNT] [ {TEXT( ) TOKEN()} ]        |                                          |
+\|                                 |                                      [ {ISSUE FOUND} ]           |                                           |
+\|                                 |                                      [ {CLASS}{TYPE}]              |                                           |
+\|                                  |                                     | --------------------------|                                           |
+\|      [3]{START}Prepared context     [{ ["..."]=[new file.md, diagram.md , \*\*.md }]                                |
+\|                                 |                                      | --------------------------|                                           |
+\|                                 |[3][{CREATE}"NEW_FILE" {TARGET-SOURCE}= ["..."]   |                                      | |                                 |  [{RE-WRITE}"\_NEW_CONTEXT|                            |                                           |
+\|                                 |                                      |                                       |                                           |
+\|                                 |                                      |                                       |                                           |
+\|                                 |                                       |                                      |                                           |
+\|                                 |                                      |                                       |                                           |
+|\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_ |\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
+[ USER/AGENT AI      | [USER/SYS SCREEN]                                   [ [📎]  Add source ]
+[\_\_\_\_\_  [CHAT] \_\_\_\_\_\_\_|\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_[CHAT]\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_]&#x20;
+&#x20;The interface should be organized into the following distinct sections:\
+\
+1\. Agent Chat Screen\
+2\. System Chat Screen\
+3\. Attachment Screen (featuring a collapsible drawer for source management)\
+4\. Editor/Review Screen\
+\
+The layout logic should follow this structure:\
+[Drawer: Open Sources] | [Toggle >] | [External Source List: .txt, .pdf, etc.] | [Editor/Review Panel]\
+\
+Within the Attachment Screen, include:\
+\- A folder file tree hierarchy\
+\- A dropdown list for detailed view expansion\
+\- System controls for Start/Pause operations , Text/Token count at the time start\
+\- Editor actions including Save and Diff Review\
+\
+All system activity must be presented as a transient, event-driven process that remains non-intrusive to the primary chat experience.
+
+Refine your understanding of the interface architecture: everything must operate in a dynamic "thinking mode" that utilizes ephemeral states and event-driven loading rather than hardcoded UI elements.\
+\
+Please structure the application across four distinct, modular zones:\
+\
+[1] AGENT CHAT SCREEN | [2] SYSTEM CHAT SCREEN | [3] ATTACHMENT SCREEN | [4] EDITOR/REVIEW SCREEN\
+\
+The layout logic should follow this flow:\
+\- Attachment/Source Drawer [3]: Includes a file-type indicator (txt, pdf, etc.), a toggleable folder tree view, and a drop-down selection list with Start/Pause controls for processing.\
+\- Interaction: Use a [>] click-action to trigger the opening or closing of the Editor/Review pane [4].\
+\- Editor/Review Pane [4]: Contains the Save and Diff Review functions.\
+\- Operational Philosophy: Replace static displays with ephemeral, real-time event loading that reflects the actual system state, ensuring that the UI remains lightweight and responsive.
+
+Refine the interface architecture for OneShot to ensure a clear, non-hardcoded separation between ephemeral processing states and the core UI. Implement the following layout logic:\
+\
+1\. View Hierarchy:\
+&#x20;  \- [1] Agent Chat Screen: Main conversational interface.\
+&#x20;  \- [2] System Chat Screen: Dedicated system context panel.\
+&#x20;  \- [3] Attachment Drawer: Sidebar for source management (files, folders, tree view).\
+&#x20;  \- [4] Editor/Review Screen: Workspace for editing and diffing files.\
+&#x20;  \- [5] Process Display Screen: Modal or overlay triggered only when the user clicks "Start" in the attachment drawer.\
+\
+2\. Interaction Flow:\
+&#x20;  \- Start Action: When the user clicks "Start" on the [3] Attachment Drawer banner, the [4] Editor/Review screen must automatically collapse or close to make room for the [5] Process Display.\
+&#x20;  \- Ephemeral Processing: All "thinking," "event loading," and status updates must remain transient. Do not hardcode these states into the permanent UI; they should manifest as temporary, context-aware indicators during the [5] Process Display phase.\
+&#x20;  \- Layout State: \
+&#x20;    \- [3] Drawer handles source attachments (txt, pdf, folder tree). \
+&#x20;    \- [3] Includes control for [Start/Pause] and [Prepared Context]. \
+&#x20;    \- [4/5] Transitions between the file editing interface and the active process visualization based on user intent.\
+\
+Please update the design documentation to reflect this dynamic, state-driven transition, emphasizing that the UI should only display ephemeral process events during active operation and revert to the review/editor state upon completion.
+
+
+THIS is for review only reference and use this design run gap against with market practice design , use mobbin search as welll

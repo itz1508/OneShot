@@ -1,0 +1,257 @@
+# OneShot — UI Architecture Gap Review
+
+October 2026 · Market-practice comparison · Design review only
+
+Verdict: The proposed architecture is viable, but it is not yet interaction-complete. The strongest part of the design is the separation between Agent Chat, System Chat, source management, editing, and temporary processing. The main gaps concern transitions between those views, preservation of user work, real-time event behavior, and responsive layout.
+
+The most important correction is that [5] Process Display is a temporary operating mode, not a fifth permanent column.
+
+## 1. Preserve the proposed five-view hierarchy
+
+[1] Agent Chat
+
+Independent agent conversation
+
+[2] System Chat
+
+System-facing context and interaction
+
+[3] Attachments
+
+Import, file tree, selection, Start/Pause
+
+[4] Editor / Review
+
+Inspect, edit, Save, Diff Review
+
+Temporary replacement of [4] only
+
+[5] Process Display
+
+Opened by Start in [3]; event-driven, temporary, disappears when processing ends
+
+The recommended behavior is that starting processing temporarily changes the detail-display slot from Editor/Review to Process Display. It does not reset either chat, discard edits, or rebuild the entire application.
+
+This aligns with Visual Studio Code's customizable, collapsible workbench regions and Claude's contextual artifact editing beside conversations.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://code.visualstudio.com\&sz=32)
+
+code.visualstudio.com
+
++1
+
+
+
+## 2. Mobbin references retrieved
+
+| Reference                                                                                           | Relevant design behavior to examine                                 |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| [Claude — Customizing an artifact](https://mobbin.com/flows/f5b00168-552d-4315-9a67-c5a313800cf8)   | Transitioning between conversation, opened content, and editing     |
+| [Claude — Viewing an artifact chat](https://mobbin.com/flows/89641121-854f-458b-afae-1d062c20c6a5)  | Contextual content visibility without a permanent additional screen |
+| [Claude — Uploading a file to chat](https://mobbin.com/flows/c3c3fe5e-482b-4c51-8b9d-a055b24f6d53)  | Source intake within an existing conversational product             |
+| [Claude — Uploading an image](https://mobbin.com/flows/113a72d6-1b6d-482a-9b71-4f7becd2d986)        | Source-specific attachment interaction                              |
+| [GitHub — Editor/review reference](https://mobbin.com/screens/72783a50-4cc2-4e3d-83f9-048f9a2455cf) | File review and code-change inspection                              |
+
+These are actual Mobbin search results. The image previews were not accessible for reliable visual inspection, so the links are reference candidates, not proof of their precise dimensions, animations, or control placement. The behavioral comparison below is additionally grounded in official product and design-system documentation.
+
+## 3. Gap matrix against market practice
+
+P0 = resolve before implementing this interaction; P1 = resolve during detailed UI design.
+
+| ID  | Area                      | Gap or risk in the reference                                               | Recommended correction                                                                                                 | Priority |
+| --- | ------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------- |
+| G01 | View ownership            | Four screens and a process view could become five competing columns        | Keep [1], [2], [3] modular; let [4] and [5] share a detail slot                                                        | P0       |
+| G02 | Start behavior            | Start opens processing, but its source scope is not fully defined          | Start operates on the currently selected files, folder, or prepared source set                                         | P0       |
+| G03 | Editor state              | Automatically closing [4] could destroy unsaved work                       | Preserve dirty edits, selected file, cursor, and review position before showing [5]                                    | P0       |
+| G04 | Pause                     | A Pause button may only stop visual playback, not actual processing        | Pause must affect the underlying operation and receive confirmation; otherwise do not present it as functional         | P0       |
+| G05 | Event truthfulness        | Fixed `SCAN → READ → ANALYSIS` could fabricate steps                       | Render only operations reported by the actual system; parallel or skipped steps must be represented accurately         | P0       |
+| G06 | Completion                | “Return to Editor” does not define which content should open               | Restore the previous editor context, with prepared results available for review                                        | P0       |
+| G07 | System/Agent boundary     | Two chats could appear to own the same operation                           | [2] reports system preparation; [1] stays independent, with no automatic Agent execution                               | P0       |
+| G08 | Source hierarchy          | A dropdown alone may be inadequate for 100+ files                          | Expandable folder tree, selected-source scope, file status, and independent scrolling                                  | P1       |
+| G09 | Text/token counts         | Counts can be misleading if content is only partially inspected            | Separate known input counts, processed counts, and estimated token counts                                              | P1       |
+| G10 | Save/Diff                 | Source versus generated content is not distinguished                       | Compare original against a working revision; do not silently overwrite originals                                       | P0       |
+| G11 | Failed/partial processing | Automatic closure could conceal errors                                     | Preserve a visible failure/partial result and offer review or retry                                                    | P0       |
+| G12 | Responsive layout         | Four regions can make all content too narrow                               | Collapse or overlay auxiliary regions at smaller widths                                                                | P1       |
+| G13 | Keyboard/accessibility    | Arrow-only controls and continuous animations are difficult to operate     | Named controls, focus restoration, live status announcements, reduced-motion support                                   | P1       |
+| G14 | Ephemeral behavior        | Temporary UI could accidentally imply that operation history is disposable | Make the animated presentation transient; preserve completed work and evidence according to existing product contracts | P1       |
+
+Market evidence: VS Code supports customizable panels and preserving unsaved editor changes; GitHub separates file diffs from review decisions; Carbon distinguishes measurable from indeterminate progress; Atlassian documents responsive, resizable and collapsible panels.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://code.visualstudio.com\&sz=32)
+
+code.visualstudio.com
+
++3
+
+
+
+## 4. The correct state-driven transition
+
+This is the central behavior that should replace hardcoded screens.
+
+\#chatgpt-mermaid-\_r_691\_{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;fill:rgb(237, 237, 237);}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#chatgpt-mermaid-\_r_691\_ .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_691\_ .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#chatgpt-mermaid-\_r_691\_ .error-icon{fill:rgb(48, 48, 48);}#chatgpt-mermaid-\_r_691\_ .error-text{fill:rgb(237, 237, 237);stroke:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .edge-thickness-normal{stroke-width:1px;}#chatgpt-mermaid-\_r_691\_ .edge-thickness-thick{stroke-width:3.5px;}#chatgpt-mermaid-\_r_691\_ .edge-pattern-solid{stroke-dasharray:0;}#chatgpt-mermaid-\_r_691\_ .edge-thickness-invisible{stroke-width:0;fill:none;}#chatgpt-mermaid-\_r_691\_ .edge-pattern-dashed{stroke-dasharray:3;}#chatgpt-mermaid-\_r_691\_ .edge-pattern-dotted{stroke-dasharray:2;}#chatgpt-mermaid-\_r_691\_ .marker{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ .marker.cross{stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ svg{font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";font-size:16px;}#chatgpt-mermaid-\_r_691\_ p{margin:0;}#chatgpt-mermaid-\_r_691\_ defs [id$="-barbEnd"]{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ g.stateGroup text{fill:rgb(31, 78, 148);stroke:none;font-size:10px;}#chatgpt-mermaid-\_r_691\_ g.stateGroup text{fill:rgb(237, 237, 237);stroke:none;font-size:10px;}#chatgpt-mermaid-\_r_691\_ g.stateGroup .state-title{font-weight:bolder;fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ g.stateGroup rect{fill:rgb(9, 23, 44);stroke:rgb(31, 78, 148);}#chatgpt-mermaid-\_r_691\_ g.stateGroup line{stroke:rgb(175, 175, 175);stroke-width:1;}#chatgpt-mermaid-\_r_691\_ .transition{stroke:rgb(175, 175, 175);stroke-width:1;fill:none;}#chatgpt-mermaid-\_r_691\_ .stateGroup .composit{fill:transparent;border-bottom:1px;}#chatgpt-mermaid-\_r_691\_ .stateGroup .alt-composit{fill:#e0e0e0;border-bottom:1px;}#chatgpt-mermaid-\_r_691\_ .state-note{stroke:rgb(58, 132, 63);fill:rgb(48, 48, 48);}#chatgpt-mermaid-\_r_691\_ .state-note text{fill:rgb(237, 237, 237);stroke:none;font-size:10px;}#chatgpt-mermaid-\_r_691\_ .stateLabel .box{stroke:none;stroke-width:0;fill:rgb(9, 23, 44);opacity:0.5;}#chatgpt-mermaid-\_r_691\_ .edgeLabel .label rect{fill:rgb(9, 23, 44);opacity:0.5;}#chatgpt-mermaid-\_r_691\_ .edgeLabel{background-color:rgb(0, 0, 0);text-align:center;}#chatgpt-mermaid-\_r_691\_ .edgeLabel p{background-color:rgb(0, 0, 0);}#chatgpt-mermaid-\_r_691\_ .edgeLabel rect{opacity:0.5;background-color:rgb(0, 0, 0);fill:rgb(0, 0, 0);}#chatgpt-mermaid-\_r_691\_ .edgeLabel .label text{fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .label div .edgeLabel{color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .stateLabel text{fill:rgb(237, 237, 237);font-size:10px;font-weight:bold;}#chatgpt-mermaid-\_r_691\_ .node circle.state-start{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ .node .fork-join{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ .node circle.state-end{fill:rgb(31, 78, 148);stroke:transparent;stroke-width:1.5;}#chatgpt-mermaid-\_r_691\_ .end-state-inner{fill:transparent;stroke-width:1.5;}#chatgpt-mermaid-\_r_691\_ .node rect{fill:rgb(9, 23, 44);stroke:rgb(31, 78, 148);stroke-width:1px;}#chatgpt-mermaid-\_r_691\_ .node polygon{fill:rgb(9, 23, 44);stroke:rgb(31, 78, 148);stroke-width:1px;}#chatgpt-mermaid-\_r_691\_ [id$="-barbEnd"]{fill:rgb(175, 175, 175);}#chatgpt-mermaid-\_r_691\_ .statediagram-cluster rect{fill:rgb(9, 23, 44);stroke:rgb(31, 78, 148);stroke-width:1px;}#chatgpt-mermaid-\_r_691\_ .cluster-label,#chatgpt-mermaid-\_r_691\_ .nodeLabel{color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .statediagram-cluster rect.outer{rx:5px;ry:5px;}#chatgpt-mermaid-\_r_691\_ .statediagram-state .divider{stroke:rgb(31, 78, 148);}#chatgpt-mermaid-\_r_691\_ .statediagram-state .title-state{rx:5px;ry:5px;}#chatgpt-mermaid-\_r_691\_ .statediagram-cluster.statediagram-cluster .inner{fill:transparent;}#chatgpt-mermaid-\_r_691\_ .statediagram-cluster.statediagram-cluster-alt .inner{fill:rgb(48, 48, 48);}#chatgpt-mermaid-\_r_691\_ .statediagram-cluster .inner{rx:0;ry:0;}#chatgpt-mermaid-\_r_691\_ .statediagram-state rect.basic{rx:5px;ry:5px;}#chatgpt-mermaid-\_r_691\_ .statediagram-state rect.divider{stroke-dasharray:10,10;fill:rgb(48, 48, 48);}#chatgpt-mermaid-\_r_691\_ .note-edge{stroke-dasharray:5;}#chatgpt-mermaid-\_r_691\_ .statediagram-note rect{fill:rgb(48, 48, 48);stroke:rgb(58, 132, 63);stroke-width:1px;rx:0;ry:0;}#chatgpt-mermaid-\_r_691\_ .statediagram-note rect{fill:rgb(48, 48, 48);stroke:rgb(58, 132, 63);stroke-width:1px;rx:0;ry:0;}#chatgpt-mermaid-\_r_691\_ .statediagram-note text{fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .statediagram-note .nodeLabel{color:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ .statediagram .edgeLabel{color:red;}#chatgpt-mermaid-\_r_691\_ [id$="-dependencyStart"],#chatgpt-mermaid-\_r_691\_ [id$="-dependencyEnd"]{fill:rgb(175, 175, 175);stroke:rgb(175, 175, 175);stroke-width:1;}#chatgpt-mermaid-\_r_691\_ .statediagramTitleText{text-anchor:middle;font-size:18px;fill:rgb(237, 237, 237);}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].statediagram-cluster rect{fill:rgb(9, 23, 44);stroke:url(#chatgpt-mermaid-\_r_691\_-gradient);stroke-width:1;}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].statediagram-cluster rect.outer{rx:5px;ry:5px;filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ .node .neo-node{stroke:rgb(31, 78, 148);}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node rect,#chatgpt-mermaid-\_r_691\_ [data-look="neo"].cluster rect,#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node polygon{stroke:url(#chatgpt-mermaid-\_r_691\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].swimlane.cluster rect{filter:none;}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node path{stroke:url(#chatgpt-mermaid-\_r_691\_-gradient);stroke-width:1px;}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node .neo-line path{stroke:rgb(31, 78, 148);filter:none;}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node circle{stroke:url(#chatgpt-mermaid-\_r_691\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].node circle .state-start{fill:#000000;}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].icon-shape .icon{fill:url(#chatgpt-mermaid-\_r_691\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ [data-look="neo"].icon-shape .icon-neo path{stroke:url(#chatgpt-mermaid-\_r_691\_-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#chatgpt-mermaid-\_r_691\_ :root{--mermaid-font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif,"Segoe UI Emoji","Segoe UI Symbol";}SourceManagementEditorReviewStartingProcessDisplayPausingPausedFile selected / [>]Close reviewStart selected scopeStart selected scopeOperation acceptedStart rejectedPause requestedPause confirmedPause failedResume confirmedCompleted / Partial / FailedStopped and finalizedClose review
+
+The crucial separation is that the diagram describes detail-slot state, not navigation across five separate applications.
+
+### Required transition behavior
+
+| Trigger                  | [3] Attachment Drawer        | [4] Editor/Review                | [5] Process Display                         | [1]/[2] Chat                          |
+| ------------------------ | ---------------------------- | -------------------------------- | ------------------------------------------- | ------------------------------------- |
+| Import source            | Add item to source tree      | Unchanged                        | Hidden                                      | Unchanged                             |
+| Click file `[>]`         | Select/expand file           | Opens selected file              | Hidden                                      | Unchanged                             |
+| Edit file                | Selection retained           | Editable, dirty state tracked    | Hidden                                      | Unchanged                             |
+| Click Start              | Display active source scope  | Visually closes; draft retained  | Opens when start accepted                   | Unchanged                             |
+| Processing event arrives | Update relevant source state | Preserved                        | Update active operations                    | Optional minimal system status in [2] |
+| Click Pause              | Maintain selection           | Preserved                        | Request pause; show pending until confirmed | Unchanged                             |
+| Click Resume             | Maintain selection           | Preserved                        | Continue event display after confirmation   | Unchanged                             |
+| Completed                | Show prepared results        | Reopens with previous state      | Closes                                      | No automatic Agent action             |
+| Partial/failed           | Mark affected sources        | Reopens with reviewable findings | Closes after terminal state is acknowledged | No invented success message           |
+
+One specific improvement: avoid making [5] a blocking modal by default. A context-sensitive process panel replacing [4] is better aligned with your instruction to leave the chat areas alone. Modal presentation should be reserved for operations genuinely requiring exclusive attention.
+
+## 5. Ephemeral thinking mode — what should actually be dynamic?
+
+Your requirement for thinking mode is better understood as transient presentation of live system activity, not a fixed checklist or an Agent's internal reasoning transcript.
+
+[5] Process Display — illustrative running state
+
+Processing selected sources
+
+Running
+
+project/
+
+42 / 100 files
+
+Source inventory completed
+
+100 files discovered
+
+Inspecting source content
+
+42 files inspected · 58 remaining
+
+2 issues recorded
+
+View findings when available
+
+Example counts — not live telemetry
+
+Pause
+
+The example intentionally omits fake percentages for Analysis or Normalization. A count of inspected files is a valid measure of file coverage; it is not necessarily a measure of total processing completion.
+
+Carbon's progress guidance explicitly differentiates determinable progress from indeterminate operations.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://www.carbondesignsystem.com\&sz=32)
+
+Carbon Design System
+
+
+
+### Live event behavior
+
+The process display should react to actual operation events. The following fields represent information the UI may need, not a proposed mandatory backend JSON schema.
+
+| Event information             | Why the UI needs it                                                |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Operation identity and source | Associate an update with the correct file or active preparation    |
+| Sequence and timestamp        | Order events, reconcile reconnects, and prevent duplicate playback |
+| Operation type                | Display the actual activity rather than predetermined phases       |
+| Status                        | Distinguish running, completed, failed, or interrupted operations  |
+| Counts, if measurable         | Display genuine inspected coverage                                 |
+| Result reference              | Open the prepared context or affected file for review              |
+| Failure or limitation         | Explain why an item could not be processed                         |
+
+This follows the event and operation-tracing distinctions in OpenTelemetry, where spans represent operations and timestamped events represent occurrences within them.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://opentelemetry.io\&sz=32)
+
+OpenTelemetry
+
+
+
+The visual dot, pulse, or loading animation is merely a rendering of that information.
+
+Do not use animation timers to invent Scan, Read, Analysis, or Normalization progress.
+
+## 6. Editor/Review needs a stronger safety boundary
+
+The largest product risk is the transition from editing to processing.
+
+Your design specifies that clicking Start automatically closes the editor. Visually that is reasonable; destroying the editor's state would not be.
+
+A market-aligned correction is to preserve a recoverable working revision. VS Code retains unsaved editing state, while its diff editor distinguishes changes from earlier versions.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://code.visualstudio.com\&sz=32)
+
+code.visualstudio.com
+
++1
+
+
+
+For OneShot, the recommended behavior is:
+
+- Start uses an explicitly determined source snapshot. If unsaved edits exist, their inclusion must be clear.
+- Opening [5] hides [4] but does not discard the working revision.
+- Completion restores the file and editing position the user was viewing.
+- Generated prepared context is displayed as a separate reviewable result.
+- Save and Diff Review remain deliberate editing actions, not automatic source mutation.
+
+This preserves your separation between system preparation and user-controlled editing.
+
+## 7. Responsive behavior and accessibility
+
+Atlassian's modern navigation system treats side navigation and contextual panels as independently collapsible and resizable, switching to overlays at smaller viewport widths.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://atlassian.design\&sz=32)
+
+Atlassian Design
+
+
+
+For OneShot, the layout could adapt without changing its logical ownership:
+
+| Display          | Recommended presentation                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Wide desktop     | [1] Agent Chat, [2] System Chat, [3] Attachments, [4/5] active detail slot; user-controlled widths and visibility |
+| Standard desktop | Chat remains dominant; auxiliary regions collapse when not needed                                                 |
+| Tablet           | One primary conversation with selectable system/source/detail drawers                                             |
+| Mobile           | One primary screen at a time, preserving state as views change                                                    |
+
+The `[>]` controls must support keyboard activation and communicate expanded state. Temporary status changes should use non-disruptive accessible announcements. Animations should respect reduced-motion preferences.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://www.w3.org\&sz=32)
+
+W3C
+
++2
+
+
+
+## 8. Final design assessment
+
+| Design dimension                              | Assessment                                                          |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Separation of Agent and System Chat           | Keep — essential product distinction                                |
+| Attachment drawer and hierarchical sources    | Keep — appropriate for multiple and nested files                    |
+| Single paperclip import entry                 | Keep — compact and consistent                                       |
+| Click file to open Editor/Review              | Keep — supports direct inspection                                   |
+| Start swaps Editor/Review for Process Display | Keep, with state preservation                                       |
+| Start/Pause and live operation updates        | Needs a verified control contract                                   |
+| Ephemeral thinking and event loading          | Keep, driven by real events                                         |
+| Save and Diff Review                          | Keep, with non-destructive revision handling                        |
+| Automatic return to Editor/Review             | Keep, with defined completion/error behavior                        |
+| Four permanently visible equal-width columns  | Reject — allow responsive and collapsible regions                   |
+| Permanent workflow graph inside either chat   | Reject — it conflicts with the intended lightweight conversation UI |
+
+Recommended disposition: Accept the modular direction for continued design, but do not treat the interaction specification as implementation-ready until G01–G07, G10, and G11 have defined and testable behavior.
+
+The governing UI model is:
+
+Four independent product zones, one temporary processing view, and one actual system-event stream.
+
+System preparation may be complex internally, but its presentation should remain lightweight, transient, and contextual. Agent Chat and System Chat retain their independent roles while the attachment and review surfaces transition according to user actions.
+
+No repository modifications or design-file changes were made; this is a market-informed review of the supplied reference.

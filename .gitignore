@@ -1,0 +1,7 @@
+.playwright-cli/
+.review/
+.rollback/
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]

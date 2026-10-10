@@ -1,0 +1,505 @@
+# OneShot — Market Practice Gap Analysis
+
+Conditional approval
+
+Assessment: The proposed OneShot architecture is a sound foundation for a single-host, low-to-moderate workload application. It uses an appropriate technology stack and avoids unnecessary distributed infrastructure.
+
+However, comparing the approved plan and proposed folder structure against current FastAPI, SQLite, OpenTelemetry, Docker, Playwright, and security practices reveals several gaps that should be resolved before the builder declares the architecture complete.
+
+Scope: This is an architecture and specification audit, not a physical inspection of `D:\OneShot`. The findings identify requirements missing or insufficiently defined in the plan; they are not claims that the builder has implemented them incorrectly.
+
+## 1. Overall assessment
+
+| Architecture area           | Market-practice verdict                 | Decision                                   |
+| --------------------------- | --------------------------------------- | ------------------------------------------ |
+| Python 3.11 + uv            | Appropriate                             | Keep                                       |
+| FastAPI + Pydantic v2       | Appropriate                             | Keep                                       |
+| SQLite                      | Appropriate for single host             | Strengthen concurrency and migration rules |
+| Content-addressed Blobstore | Appropriate                             | Strengthen atomicity and recovery          |
+| Six Job actions             | Appropriate                             | Clarify execution and recovery             |
+| Run separate from Job       | Appropriate                             | Keep                                       |
+| Event sourcing and replay   | Appropriate for the stated requirements | Keep lean                                  |
+| OpenTelemetry               | Appropriate                             | Keep separate from durable Trace           |
+| React + Vite                | Appropriate                             | Keep                                       |
+| Source / Chat / File Viewer | Appropriate                             | Keep                                       |
+| Playwright                  | Appropriate                             | Improve automated environment management   |
+| Docker Compose              | Appropriate                             | Keep                                       |
+| MCP / autonomous Agents     | No demonstrated need                    | Defer                                      |
+
+The largest concerns are not missing frameworks. They concern how persistent Jobs execute, how the system recovers from interruption, how SQLite evolves, and how the frontend retrieves authoritative state.
+
+## 2. Gap matrix
+
+Priority: P0 = required for reliable core execution; P1 = required before declaring the complete local rebuild ready; P2 = improvement when justified.
+
+| Priority | Gap                                                                                | Recommended correction                                     |
+| -------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| P0       | Durable Job records exist, but the execution/recovery mechanism is underspecified  | Add a single-host durable Job runner                       |
+| P0       | Artifact and event transaction failure handling is insufficiently defined          | Enforce atomic state transitions and crash recovery        |
+| P0       | Source panel requires artifact discovery, but the read/list contract is incomplete | Define an authoritative artifact-list projection           |
+| P0       | SQLite connection, locking, and schema evolution policy is missing                 | Add connection policy and versioned migrations             |
+| P1       | Repeated HTTP requests may create duplicate Jobs/results                           | Add idempotency and retry semantics                        |
+| P1       | Durable storage has no documented backup-and-restore procedure                     | Add coordinated SQLite + blob backups                      |
+| P1       | Model input and file preview trust boundaries need more specificity                | Add input isolation and safe rendering rules               |
+| P1       | Frontend types are described as OpenAPI-derived but regeneration is unspecified    | Add reproducible schema generation and drift checks        |
+| P1       | Playwright depends on manually starting the backend                                | Add a controlled two-service test harness                  |
+| P2       | One `transport.py` could become overly large                                       | Split HTTP routers only when route complexity justifies it |
+| P2       | Some proposed modules may have no actual consumer                                  | Omit unused files until responsibility is demonstrated     |
+
+## 3. Highest-priority findings
+
+### Gap A — Durable Job execution
+
+Severity: P0
+
+The plan establishes persistent Jobs, but does not define exactly how work moves from `queued` to `running`, who owns execution, or what happens when the process terminates midway.
+
+FastAPI's `BackgroundTasks` is useful for small in-process work, but FastAPI explicitly distinguishes that from heavier background processing requiring stronger execution infrastructure.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://fastapi.tiangolo.com\&sz=32)
+
+FastAPI
+
+
+
+For OneShot, a full Celery/Redis architecture is unnecessary.
+
+The better fit is a small SQLite-backed Job runner.
+
+HTTP request
+
+Validate request and persist queued Job
+
+Durable Job runner
+
+Atomically claim Job and execute selected action
+
+Persist result and terminal state
+
+Artifacts, events, completion or failure
+
+Frontend
+
+Poll actual Job state, or consume an optional SSE projection
+
+Recommended addition:
+
+`systems/worker.py`
+
+It owns execution scheduling and recovery, while `systems/jobs.py` continues to own action dispatch and lifecycle contracts.
+
+Minimum behavior:
+
+- Atomically claim queued Jobs.
+- Prevent concurrent duplicate claims.
+- Run bounded work without blocking HTTP responsiveness.
+- Record terminal outcomes.
+- Reconcile interrupted Jobs on restart.
+- Avoid duplicate artifacts and terminal events.
+- Provide explicit retry behavior.
+
+For the initial rebuild, a single active executor with bounded concurrency is sufficient.
+
+Acceptance: Force-stop the application during a Job, restart it, and prove that no incomplete Job is silently reported as completed.
+
+### Gap B — SQLite production practices
+
+Severity: P0
+
+SQLite remains a good choice for a single-host OneShot deployment.
+
+However, SQLite's write concurrency, connection configuration, and schema evolution should be explicit.
+
+SQLite's WAL mode improves coexistence of readers and writers, but it still permits only one writer at a time and can return `SQLITE_BUSY`. Foreign-key enforcement must also be enabled explicitly per connection in conventional configurations.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://www.sqlite.org\&sz=32)
+
+sqlite.org
+
++1
+
+
+
+Recommended configuration, with values treated as tested defaults rather than mandatory universal settings:
+
+```
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
+PRAGMA journal_mode = WAL;
+```
+
+For transactions that atomically claim Jobs, allocate event sequence numbers, or advance a draft revision:
+
+```
+BEGIN IMMEDIATE;
+-- Validate current state.
+-- Apply conditional updates.
+-- Append corresponding events.
+COMMIT;
+```
+
+Do not share one SQLite connection across multiple threads without a verified thread-safety strategy.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://docs.python.org\&sz=32)
+
+Python 3.14.7 documentation
+
+
+
+Add:
+
+`systems/migrations.py`
+
+Use a minimal, versioned migration process. A dedicated migration framework is optional at this scale.
+
+Acceptance: Parallel Job submissions and draft saves must not produce duplicate sequence numbers, conflicting draft heads, or corrupted state.
+
+### Gap C — Missing artifact-list contract
+
+Severity: P0
+
+The frontend is supposed to show:
+
+```
+Source
+├── Uploaded
+├── Generated
+└── Drafts
+```
+
+The approved HTTP plan defines retrieval of individual artifacts, but not an explicit way to discover the conversation's complete artifact collection.
+
+This is a contract gap, not necessarily a need for another storage system.
+
+Best-use solution:
+
+```
+GET /conversations/{conversation_id}/artifacts
+```
+
+Return a typed, paginated collection containing artifact identifiers, logical names, origins, relationships, media types, and applicable revision information.
+
+Alternatively, the existing Conversation response can provide an equivalent authoritative collection projection. Choose one contract and verify it.
+
+The Source panel should not reconstruct authoritative file lists from incidental chat messages.
+
+The frontend must retrieve the actual artifact body separately.
+
+### Gap D — Crash consistency and backups
+
+Severity: P0 for crash consistency; P1 for backup/recovery
+
+The plan already specifies SHA-256 Blobstore writes and persistence before completion.
+
+That is correct but not sufficient on its own.
+
+Consider these failure windows:
+
+| Failure point                                | Required result                                                     |
+| -------------------------------------------- | ------------------------------------------------------------------- |
+| Blob saved, metadata not committed           | Orphaned blob can be identified and safely recovered or cleaned     |
+| Metadata references missing blob             | Detect integrity failure; never mark Job successful                 |
+| Artifact created, Job completion interrupted | Reconstruct correct nonterminal/terminal state from durable records |
+| Draft save races another save                | Only one expected-head update succeeds                              |
+| Restart during model execution               | Do not fabricate successful output                                  |
+
+The database and Blobstore must be verified together.
+
+For backup, SQLite provides an official online backup API; directly copying an active database file is not the preferred general strategy.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://www.sqlite.org\&sz=32)
+
+sqlite.org
+
+
+
+Add a small backup/restore procedure that captures database state and every blob referenced by that snapshot.
+
+Because the earlier source was lost, recoverability should be treated as an actual product requirement, not only as a packaging concern.
+
+## 4. Security and API best practices
+
+### Uploads and source rendering
+
+The plan's immutable storage and content hashes are good foundations.
+
+OWASP additionally recommends allowlisted file types, bounded file sizes, generated storage filenames, and storage outside the public webroot. MIME declarations alone are not trustworthy.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://cheatsheetseries.owasp.org\&sz=32)
+
+OWASP Cheat Sheet Series
+
+
+
+For OneShot, require safe rendering of uploaded Markdown and generated text. Untrusted content must not gain permission to execute scripts through the file viewer.
+
+Model input must also remain untrusted source data. Text found inside an uploaded file must not become a new system instruction or authorization to mutate files.
+
+The local-only, unauthenticated configuration can remain a deliberate initial constraint, but it must not be exposed publicly.
+
+### Idempotent processing
+
+Consider the user clicking Summarize twice or the browser retrying after a network interruption.
+
+Without a defined policy, the system could create two Jobs and two results for the same logical request.
+
+Recommended behavior:
+
+- An explicit idempotency key for supported mutating requests.
+- A uniqueness constraint scoped to the owning resource.
+- Repeated equivalent requests return the original Job.
+- Same idempotency key with different payload is rejected.
+- Actual retries of failed execution are recorded distinctly.
+
+This does not require a new service.
+
+### API type generation
+
+The plan says TypeScript types come from OpenAPI. Make the process repeatable.
+
+For example, `openapi-typescript` supports generating TypeScript types directly from a local or remote OpenAPI schema.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://github.com\&sz=32)
+
+GitHub
+
+
+
+The builder should generate from a checked-in schema snapshot or a controlled running backend, then check for drift.
+
+Do not manually maintain a competing set of API types.
+
+## 5. Frontend and testing gaps
+
+The Source / Main Chat / File Viewer layout is appropriate.
+
+The user-facing sequence should remain:
+
+```
+Import Source
+      ↓
+Read
+      ↓
+Summarize
+      ↓
+output.json
+      ↓
+Show result
+```
+
+Do not add an agent orchestration interface unless a separate use case requires it.
+
+The primary improvements are practical: authoritative artifact-list retrieval, clear loading/error states, handling unsaved edits, safe Markdown rendering, keyboard navigation, and responsive panel behavior.
+
+For tests, Playwright supports starting multiple web servers directly from its configuration. This is preferable to relying on a developer to manually start FastAPI before executing the browser suite.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://playwright.dev\&sz=32)
+
+Playwright
+
+
+
+Use isolated test data and the deterministic provider. Test the actual backend and frontend without mocking HTTP.
+
+## 6. Recommended final folder structure
+
+I recommend three essential additions to the previous structure:
+
+- `systems/worker.py` — durable local Job execution and restart reconciliation.
+- `systems/migrations.py` — versioned SQLite schema changes.
+- `scripts/backup.py` — verified database/artifact recovery.
+
+FastAPI's official guidance recommends splitting larger applications into `APIRouter` modules; however, this does not require immediately creating a large router hierarchy. Start with `transport.py` and extract route modules when it becomes difficult to maintain.&#x20;
+
+[image](https://www.google.com/s2/favicons?domain=https://fastapi.tiangolo.com\&sz=32)
+
+FastAPI
+
+
+
+```
+
+D:\OneShot\
+│
+├── pyproject.toml
+├── uv.lock
+├── .python-version
+├── .env.example
+├── .gitignore
+├── .dockerignore
+├── README.md
+├── Dockerfile
+├── compose.yaml
+│
+├── systems/
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── settings.py
+│   ├── contract.py
+│   ├── transport.py
+│   │
+│   ├── conversation.py
+│   ├── jobs.py
+│   ├── worker.py              # ADD: durable Job execution
+│   ├── run.py
+│   ├── store.py
+│   ├── migrations.py          # ADD: SQLite schema versioning
+│   ├── trace.py
+│   ├── activity.py
+│   ├── monitoring.py
+│   ├── log.py
+│   │
+│   └── instrumentation/
+│       ├── __init__.py
+│       └── tracing.py
+│
+├── capabilities/
+│   ├── __init__.py
+│   ├── errors.py
+│   ├── filesystem.py
+│   ├── blobstore.py
+│   ├── coder.py
+│   └── advisor.py
+│
+├── frontend/
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── vite.config.ts
+│   ├── playwright.config.ts
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   │
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── main.tsx
+│   │   ├── api/
+│   │   │   └── oneshot.ts
+│   │   ├── types/
+│   │   │   └── api.ts
+│   │   └── components/
+│   │       ├── workspace/
+│   │       │   ├── WorkspaceLayout.tsx
+│   │       │   ├── SourcePanel.tsx
+│   │       │   ├── FileViewer.tsx
+│   │       │   └── FileEditor.tsx
+│   │       ├── chat/
+│   │       │   ├── ConversationStream.tsx
+│   │       │   ├── MessageComposer.tsx
+│   │       │   └── ArtifactCard.tsx
+│   │       └── trace/
+│   │           └── TraceView.tsx
+│   │
+│   └── e2e/
+│       ├── chat.spec.ts
+│       ├── sources.spec.ts
+│       ├── drafts.spec.ts
+│       └── jobs.spec.ts
+│
+├── tests/
+│   ├── conftest.py
+│   ├── test_contract.py
+│   ├── test_ingestion.py
+│   ├── test_reader.py
+│   ├── test_summarize.py
+│   ├── test_jobs.py
+│   ├── test_worker_recovery.py
+│   ├── test_sqlite_transactions.py
+│   ├── test_migrations.py
+│   ├── test_blob_integrity.py
+│   ├── test_events_replay.py
+│   ├── test_draft_concurrency.py
+│   ├── test_api.py
+│   └── test_e2e.py
+│
+├── scripts/
+│   ├── verify.py
+│   └── backup.py            # ADD: backup and restore verification
+│
+├── docs/
+│   ├── architecture.md
+│   ├── api.md
+│   ├── source-processing.md
+│   ├── ui-references.md
+│   ├── reconstruction-ledger.md
+│   └── BUILD.md
+│
+└── data/                    # Gitignored
+    ├── oneshot.sqlite3
+    └── blobs/
+
+```
+
+This is a minimal refinement, not a new architecture.
+
+Do not automatically create `systems/mcp/`, `systems/agents/`, a Redis queue, vector database, or additional orchestration framework.
+
+Similarly, the existing `capabilities/researcher.py` should only be present when an actual Researcher operation is implemented.
+
+## 7. Best-use decisions
+
+| Question                                | Recommended choice                      | Reason                                                  |
+| --------------------------------------- | --------------------------------------- | ------------------------------------------------------- |
+| SQLite or PostgreSQL?                   | SQLite                                  | Sufficient for the intended single-host baseline        |
+| Celery or local durable Job runner?     | Local runner                            | Avoid unnecessary distributed infrastructure            |
+| Separate worker microservice?           | No, initially                           | Single process/host is sufficient with correct recovery |
+| `transport.py` or many routers?         | Start small; split by proven complexity | Avoid boilerplate                                       |
+| REST polling or SSE?                    | Polling initially                       | Easier recovery and fewer transport assumptions         |
+| MCP or direct Python functions?         | Direct Python                           | No demonstrated external MCP consumer                   |
+| Pydantic AI or narrow provider adapter? | Narrow adapter                          | Fits explicit system-controlled execution               |
+| SQLite migrations?                      | Yes, minimal                            | Prevent untracked schema evolution                      |
+| Database/blob backups?                  | Yes                                     | Preserve durable source and generated artifacts         |
+| OpenAPI-derived TypeScript?             | Yes                                     | Prevent frontend/backend contract drift                 |
+| Immutable source and drafts?            | Yes                                     | Clear mutation and provenance boundary                  |
+
+For a small internal deployment, I would not introduce Redis, Celery, PostgreSQL, distributed tracing infrastructure, or autonomous Agents unless load tests or new requirements justify them.
+
+## 8. Addendum for the builder
+
+# OneShot — Market Practice Gap Resolution
+
+Apply the following amendments to the approved OneShot reconstruction plan. Do not redesign the architecture.
+
+## P0 — Required before core readiness
+
+1. Implement a single-host durable Job runner with atomic claiming, bounded execution, terminal event recording, and explicit interrupted-Job handling.
+2. Establish SQLite connection and transaction policies: foreign keys, busy timeout, appropriate journal mode, atomic sequence allocation, and concurrent draft revision protection.
+3. Add versioned SQLite migrations and verify upgrade behavior.
+4. Define an authoritative conversation artifact-list contract for the Source panel. Use either a dedicated endpoint or an explicit Conversation projection; do not reconstruct file identity from chat text.
+5. Verify Blobstore/database crash consistency. A Job cannot complete with missing artifact bytes.
+
+## P1 — Required before full local READY
+
+6. Add idempotency semantics for Job creation and other retry-sensitive operations.
+7. Implement coordinated SQLite and Blobstore backup/restore and verify recovery.
+8. Enforce safe upload parsing, preview rendering, and isolation of untrusted model input.
+9. Automate OpenAPI-to-TypeScript type generation and detect schema drift.
+10. Configure Playwright to control both backend and frontend startup against isolated test storage.
+
+## P2 — Apply only if justified
+
+11. Split FastAPI transport into routers if physical route complexity warrants it.
+12. Remove unconsumed modules, unused hooks, empty directories, and speculative capability abstractions.
+
+## Required evidence
+
+Run focused tests for concurrent Job claims, restart interruption, draft revision conflicts, event ordering, database migration, blob integrity, backup/restore, API type parity, and browser E2E.
+
+Record actual results in `docs/BUILD.md`.
+
+Retain Python 3.11, FastAPI, Pydantic v2, SQLite, uv, React/Vite, OpenTelemetry, Docker Compose, the six Job actions, the accepted `output.json` contract, and the Source / Main Chat / File Viewer UI.
+
+Do not introduce Redis, Celery, MCP, Pydantic AI, or another agent runtime merely to satisfy this market-practice review.
+
+Only mark the complete local build READY after the newly required verification gates pass.
+
+## Final verdict
+
+Architecture direction: VALID.
+
+Market-practice alignment: GOOD, with meaningful operational gaps.
+
+Ready for implementation: YES, with the P0 requirements incorporated into the build plan.
+
+Ready to declare complete: NOT YET VERIFIED.
+
+The correct next step is to apply these targeted changes to the builder's existing plan, rather than rewrite OneShot or expand it into a more complicated platform.

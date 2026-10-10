@@ -1,0 +1,8 @@
+{
+  "name": "oneshot-operation-lifecycle-reference",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test reference/lifecycle.test.mjs reference/lifecycle.e2e.mjs" },
+  "engines": { "node": ">=22" }
+}

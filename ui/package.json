@@ -1,0 +1,8 @@
+{
+  "name": "oneshot-workspace-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "check": "node --check app.js && node --check lib/processing.js && node --check lib/storage.js && node --check server.mjs" },
+  "engines": { "node": ">=22" }
+}

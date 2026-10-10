@@ -1,0 +1,54 @@
+### Result
+{"baseline":{"count":"9","panels":[{"id":"agent-panel","width":341.703125},{"id":"system-panel","width":276.765625},{"id":"sources-panel","width":260},{"id":"detail-panel","width":495.53125}],"url":"http://127.0.0.1:4173/"},"focusBefore":{"tag":"INPUT","label":"Select workflow-diagram.png"},"focusAfter":{"tag":"BODY","label":null},"nextFocus":{"tag":"INPUT","label":"Select folder Design","text":""},"layouts":[{"viewport":{"width":1280,"height":600},"docWidth":1280,"controls":[{"selector":"#sources-panel","x":440.21875,"y":115,"width":240,"height":456,"bottom":571,"centerReachable":true,"overflowY":"visible"},{"selector":"#source-tree","x":440.21875,"y":326,"width":240,"height":115,"bottom":441,"centerReachable":true,"overflowY":"auto"},{"selector":".start-banner","x":440.21875,"y":574,"width":240,"height":241.6875,"bottom":815.6875,"centerReachable":false,"overflowY":"visible"},{"selector":"#start-button","x":455.21875,"y":761.6875,"width":210,"height":39,"bottom":800.6875,"centerReachable":false,"overflowY":"visible"},{"selector":"#add-source","x":440.21875,"y":815.6875,"width":240,"height":45.25,"bottom":860.9375,"centerReachable":false,"overflowY":"visible"},{"selector":".statusbar","x":0,"y":571,"width":1280,"height":29,"bottom":600,"centerReachable":true,"overflowY":"visible"}]},{"viewport":{"width":390,"height":844},"docWidth":390,"controls":[{"selector":"#sources-panel","x":0,"y":106,"width":390,"height":709,"bottom":815,"centerReachable":true,"overflowY":"visible"},{"selector":"#source-tree","x":0,"y":321,"width":390,"height":206.25,"bottom":527.25,"centerReachable":true,"overflowY":"auto"},{"selector":".start-banner","x":0,"y":588.25,"width":390,"height":181.5,"bottom":769.75,"centerReachable":true,"overflowY":"visible"},{"selector":"#start-button","x":204,"y":704.75,"width":166,"height":39,"bottom":743.75,"centerReachable":true,"overflowY":"visible"},{"selector":"#add-source","x":0,"y":769.75,"width":390,"height":45.25,"bottom":815,"centerReachable":true,"overflowY":"visible"},{"selector":".statusbar","x":0,"y":815,"width":390,"height":29,"bottom":844,"centerReachable":true,"overflowY":"visible"}]},{"viewport":{"width":320,"height":640},"docWidth":320,"controls":[{"selector":"#sources-panel","x":0,"y":106,"width":320,"height":505,"bottom":611,"centerReachable":true,"overflowY":"visible"},{"selector":"#source-tree","x":0,"y":321,"width":320,"height":100,"bottom":421,"centerReachable":true,"overflowY":"auto"},{"selector":".start-banner","x":0,"y":482,"width":320,"height":209,"bottom":691,"centerReachable":true,"overflowY":"visible"},{"selector":"#start-button","x":169,"y":614,"width":131,"height":52,"bottom":666,"centerReachable":false,"overflowY":"visible"},{"selector":"#add-source","x":0,"y":691,"width":320,"height":45.25,"bottom":736.25,"centerReachable":false,"overflowY":"visible"},{"selector":".statusbar","x":0,"y":611,"width":320,"height":29,"bottom":640,"centerReachable":true,"overflowY":"visible"}]},{"viewport":{"width":800,"height":450},"docWidth":800,"controls":[{"selector":"#sources-panel","x":0,"y":106,"width":800,"height":315,"bottom":421,"centerReachable":true,"overflowY":"visible"},{"selector":"#source-tree","x":0,"y":321,"width":800,"height":100,"bottom":421,"centerReachable":true,"overflowY":"auto"},{"selector":".start-banner","x":0,"y":482,"width":800,"height":170.5,"bottom":652.5,"centerReachable":false,"overflowY":"visible"},{"selector":"#start-button","x":409,"y":593,"width":371,"height":39,"bottom":632,"centerReachable":false,"overflowY":"visible"},{"selector":"#add-source","x":0,"y":652.5,"width":800,"height":45.25,"bottom":697.75,"centerReachable":false,"overflowY":"visible"},{"selector":".statusbar","x":0,"y":421,"width":800,"height":29,"bottom":450,"centerReachable":true,"overflowY":"visible"}]}],"resize":{"viewport":1440,"docWidth":1440,"panels":[{"id":"agent-panel","x":58,"width":600,"right":658},{"id":"system-panel","x":662,"width":210,"right":872},{"id":"sources-panel","x":872,"width":450,"right":1322},{"id":"detail-panel","x":1326,"width":320,"right":1646}]},"tabAAfterCreate":{"persistedSources":["Architecture.md","workflow-diagram.png","state-driven-transition.png","UI-layout.txt","UI-gap-review.txt","Historical-rebuild-plan.txt","Historical-market-gap.txt","mermaid-diagram (2).png","mermaid-diagram (3).png","market-audit-saved.txt"],"saveStatus":"Workspace saved in this browser"},"tabBAfterDraft":{"persistedSources":["Architecture.md","workflow-diagram.png","state-driven-transition.png","UI-layout.txt","UI-gap-review.txt","Historical-rebuild-plan.txt","Historical-market-gap.txt","mermaid-diagram (2).png","mermaid-diagram (3).png"],"agentDraft":"An unrelated draft in tab B","saveStatus":"Workspace saved in this browser"},"tabAReload":{"sourceCount":"9","lostSource":true}}
+### Ran Playwright code
+```js
+await (async (page) => {
+  const evidence = {};
+  await page.setViewportSize({width:1440,height:900});
+  await page.waitForFunction(() => !document.querySelector('#workbench').inert && document.querySelector('#source-count').textContent === '9');
+  await page.screenshot({path:'output/playwright/gap-desktop.png'});
+  evidence.baseline = await page.evaluate(() => ({count:document.querySelector('#source-count').textContent,panels:[...document.querySelectorAll('.panel')].map(el=>({id:el.id,width:el.getBoundingClientRect().width})),url:location.href}));
+  const checkbox = page.locator('[data-select]').first();
+  await checkbox.focus();
+  evidence.focusBefore = await page.evaluate(() => ({tag:document.activeElement.tagName,label:document.activeElement.getAttribute('aria-label')}));
+  await page.keyboard.press('Space');
+  evidence.focusAfter = await page.evaluate(() => ({tag:document.activeElement.tagName,label:document.activeElement.getAttribute('aria-label')}));
+  await page.keyboard.press('Tab');
+  evidence.nextFocus = await page.evaluate(() => ({tag:document.activeElement.tagName,label:document.activeElement.getAttribute('aria-label'),text:document.activeElement.textContent.slice(0,80)}));
+  evidence.layouts=[];
+  for (const size of [{width:1280,height:600},{width:390,height:844},{width:320,height:640},{width:800,height:450}]) {
+    await page.setViewportSize(size);
+    if(size.width<=960) await page.locator('.view-switcher [data-view="sources"]').click();
+    evidence.layouts.push(await page.evaluate(() => ({viewport:{width:innerWidth,height:innerHeight},docWidth:document.documentElement.scrollWidth, controls:['#sources-panel','#source-tree','.start-banner','#start-button','#add-source','.statusbar'].map(selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect();const x=r.x+r.width/2,y=r.y+r.height/2;const hit=document.elementFromPoint(x,y);return {selector,x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom,centerReachable:!!hit&&(hit===el||el.contains(hit)),overflowY:getComputedStyle(el).overflowY}})})));
+    await page.screenshot({path:`output/playwright/gap-${size.width}x${size.height}.png`});
+  }
+  await page.setViewportSize({width:1440,height:900});
+  await page.locator('[data-resize="agent"]').focus();
+  for(let i=0;i<30;i++) await page.keyboard.press('ArrowRight');
+  await page.locator('[data-resize="sources"]').focus();
+  for(let i=0;i<30;i++) await page.keyboard.press('ArrowRight');
+  evidence.resize=await page.evaluate(() => ({viewport:innerWidth,docWidth:document.documentElement.scrollWidth,panels:[...document.querySelectorAll('.panel')].map(el=>{const r=el.getBoundingClientRect();return {id:el.id,x:r.x,width:r.width,right:r.right}})}));
+  await page.screenshot({path:'output/playwright/gap-resize.png'});
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#workbench').inert);
+  const second = await page.context().newPage();
+  await second.goto('http://127.0.0.1:4173');
+  await second.waitForFunction(()=>!document.querySelector('#workbench').inert);
+  await page.locator('#add-source').click();
+  await page.locator('[data-source-action="input"]').click();
+  await page.locator('#text-source-name').fill('market-audit-saved.txt');
+  await page.locator('#text-source-content').fill('Saved source created in tab A during the market gap audit.');
+  await page.locator('#text-source-form button[type="submit"]').click();
+  await page.waitForFunction(()=>document.querySelector('#source-count').textContent==='10');
+  evidence.tabAAfterCreate=await page.evaluate(async()=>{const {loadWorkspace}=await import('./lib/storage.js');const data=await loadWorkspace();return {persistedSources:data.sources.map(x=>x.name),saveStatus:document.querySelector('#save-status').textContent}});
+  await second.locator('#agent-input').fill('An unrelated draft in tab B');
+  await second.waitForFunction(()=>document.querySelector('#save-status').textContent==='Workspace saved in this browser');
+  evidence.tabBAfterDraft=await second.evaluate(async()=>{const {loadWorkspace}=await import('./lib/storage.js');const data=await loadWorkspace();return {persistedSources:data.sources.map(x=>x.name),agentDraft:data.agentDraft,saveStatus:document.querySelector('#save-status').textContent}});
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#workbench').inert);
+  evidence.tabAReload={sourceCount:await page.locator('#source-count').textContent(),lostSource:await page.locator('[data-file][aria-label="Open market-audit-saved.txt"]').count()===0};
+  await second.close();
+  return evidence;
+}
+)(page);
+```
