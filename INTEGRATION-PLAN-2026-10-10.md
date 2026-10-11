@@ -43,6 +43,21 @@ The interrupted gap-fix work is present on disk but incomplete. For example, `ui
 
 These responsibilities follow the existing implementation boundaries. HTTP contracts will be checked against [OpenAPI](https://spec.openapis.org/oas/v3.1.1.html), backend validation against [Pydantic JSON Schema documentation](https://pydantic.dev/docs/validation/latest/concepts/json_schema/), and serving against [FastAPI static-file documentation](https://fastapi.tiangolo.com/tutorial/static-files/). Exact dependency versions and supported APIs must be resolved from the staged environment before locking them.
 
+### Tracing to carry into integration
+
+The [VS Code Foundry Toolkit tracing guide](https://code.visualstudio.com/docs/intelligentapps/tracing) is useful as a local diagnostic workflow for the reviewed System service. Its collector accepts OpenTelemetry Protocol (OTLP), but the application must emit spans itself. Foundry hosting and Application Insights are separate deployment choices, not prerequisites for local collection. The [OpenTelemetry tracing specification](https://opentelemetry.io/docs/specs/otel/trace/api/) defines spans, events, status, and trace context; its [OTLP configuration](https://opentelemetry.io/docs/languages/sdk-configuration/otlp-exporter/) defines exporter endpoint and protocol behavior.
+
+| OneShot record | Use in the integrated app |
+| --- | --- |
+| Persisted operation events and Activity History | User-visible facts: admission, source revision actually read, state transitions, findings, artifact identity, and final outcome. Retain these through restart and replay. |
+| OpenTelemetry spans | Diagnostic timing and failures across the HTTP request, job admission, worker stages, source reads, provider call if one exists, validation, and artifact commit. A span is not proof that a user-visible commit happened. |
+
+During the service review, identify its existing tracer/provider setup before adding configuration. Configure one provider and an optional OTLP exporter at service startup, before instrumented clients are created. Give each stage a stable span name and carry trace context into background work. Correlate a job or run ID with its trace ID in the service's internal diagnostics while keeping the persisted job/run ID authoritative for the UI. Use the actual provider SDK's documented instrumentation only after its client and wire protocol are verified; avoid duplicate instrumentation of the same call.
+
+Export only bounded operational metadata by default: stage, status, duration, counts, and stable internal IDs where access controls permit. Do not export source text, prompts, generated content, reference URLs, filenames, credentials, or tool arguments. The current browser Activity History can contain names and reference URLs, so it must not be forwarded wholesale as telemetry. Review every SDK and custom attribute for content capture; the Toolkit guide says disabling message capture in an instrumentor is not a general redaction guarantee.
+
+For local verification, start a collector in the environment reachable from the service, run one accepted job and one failed or partial job, and inspect their span trees for stage order, durations, status, and correlation to persisted events. Confirm that stopping the collector leaves job results and Activity History intact. Check the endpoint and exporter protocol from the running environment: `localhost` inside a container refers to that container. Treat local trace storage, deletion, access, and any later cloud retention as separate operational decisions.
+
 ## Conflicts already identified
 
 | Issue | Current build / incoming behavior | Reconciliation required |
