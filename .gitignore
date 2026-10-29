@@ -24,6 +24,7 @@ htmlcov/
 venv/
 env/
 build/
+!build/*.md
 dist/
 *.egg-info/
 *.whl
