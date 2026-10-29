@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Plan(id)",
+  "required": [
+    "type",
+    "id",
+    "request_id",
+    "actions"
+  ],
+  "properties": {
+    "type": {
+      "const": "plan"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "research_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "validation_value_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "validation_value_refs"
+        ]
+      },
+      "then": {
+        "required": [
+          "research_id"
+        ]
+      }
+    }
+  ]
+}

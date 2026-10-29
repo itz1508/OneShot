@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "title": "Build(id)",
+  "required": [
+    "type",
+    "id",
+    "request_id",
+    "plan_id",
+    "execution",
+    "verification",
+    "cleanup"
+  ],
+  "properties": {
+    "type": {
+      "const": "build"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "artifact_refs"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timed_out",
+            "interrupted"
+          ]
+        },
+        "artifact_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "evidence_refs"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "valid",
+            "not_valid",
+            "not_verified"
+          ]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "enum": [
+            "completed",
+            "incomplete",
+            "pending"
+          ]
+        },
+        "remaining_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": {
+              "outcome": {
+                "const": "succeeded"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          }
+        },
+        "required": [
+          "execution"
+        ]
+      },
+      "then": {
+        "properties": {
+          "verification": {
+            "properties": {
+              "outcome": {
+                "const": "valid"
+              },
+              "evidence_refs": {
+                "minItems": 1
+              }
+            },
+            "required": [
+              "outcome",
+              "evidence_refs"
+            ]
+          },
+          "execution": {
+            "properties": {
+              "artifact_refs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
