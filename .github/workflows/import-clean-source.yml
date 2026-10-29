@@ -22,6 +22,9 @@ jobs:
           import base64,io,lzma,tarfile,os
           from pathlib import Path,PurePosixPath
           p=Path('.bootstrap/source.xz.b64')
+          if not p.exists():
+              print('NOTHING_TO_IMPORT')
+              raise SystemExit(0)
           encoded=''.join(p.read_text('ascii').split())
           raw=lzma.decompress(base64.b64decode(encoded,validate=True))
           names=set()
@@ -35,11 +38,12 @@ jobs:
                   assert not str(name).startswith('bridge/'), 'Unexpected bridge file'
                   assert not str(name).startswith('.env'), 'Potential credential file'
                   names.add(str(name))
+                  if str(name)=='.github/workflows/ci.yml':
+                      continue  # CI workflow is installed through GitHub connector, not GITHUB_TOKEN
                   dest=Path(str(name))
                   dest.parent.mkdir(parents=True,exist_ok=True)
                   dest.write_bytes(archive.extractfile(item).read())
           p.unlink()
-          Path('.github/workflows/import-clean-source.yml').unlink()
           Path('.bootstrap').rmdir()
           print(f'IMPORTED_FILES={len(names)}')
           PYCODE
