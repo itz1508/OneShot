@@ -1,7 +1,13 @@
-.playwright-cli/
-.review/
-.rollback/
-**/node_modules/
-**/__pycache__/
-**/.pytest_cache/
-*.py[cod]
+# Local credentials and execution artifacts
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+bridge/keys/
+bridge/requests/
+__pycache__/
+.pytest_cache/
+.venv/
+node_modules/

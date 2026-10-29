@@ -1,0 +1,90 @@
+name: OneShot model encrypted bridge
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/oneshot-model-bridge.yml
+      - bridge/trigger.txt
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  inference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Encrypted model invocation
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PYCODE'
+          import base64,json,os,subprocess,sys,time,urllib.error,urllib.request
+          from pathlib import Path
+          repo=os.environ["GITHUB_REPOSITORY"]
+          run_id=os.environ["GITHUB_RUN_ID"]
+          token=os.environ["GITHUB_TOKEN"]
+          key=Path(os.environ["RUNNER_TEMP"])/"oneshot_ephemeral_private.pem"
+          pub=Path(os.environ["RUNNER_TEMP"])/"oneshot_ephemeral_public.der"
+          subprocess.run(["openssl","genpkey","-algorithm","RSA","-pkeyopt","rsa_keygen_bits:2048","-out",str(key)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          subprocess.run(["openssl","pkey","-in",str(key),"-pubout","-outform","DER","-out",str(pub)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+          print("BRIDGE_RUN_ID="+run_id,flush=True)
+          print("BRIDGE_PUBLIC_KEY_DER_B64="+base64.b64encode(pub.read_bytes()).decode(),flush=True)
+          public_string=base64.b64encode(pub.read_bytes()).decode()
+          key_object=json.dumps({"public_key_der_b64":public_string,"run_id":run_id}).encode()
+          key_put_body=json.dumps({"message":"Publish ephemeral public key for model bridge","content":base64.b64encode(key_object).decode()}).encode()
+          key_url=f"https://api.github.com/repos/{repo}/contents/bridge/keys/{run_id}.json"
+          key_put_req=urllib.request.Request(key_url,data=key_put_body,headers={"Authorization":"Bearer "+token,"Content-Type":"application/json","Accept":"application/vnd.github+json"},method="PUT")
+          with urllib.request.urlopen(key_put_req,timeout=15) as key_upload:
+           print("EPHEMERAL_PUBLIC_KEY_PUBLISHED="+str(key_upload.status),flush=True)
+          headers={"Authorization":"Bearer "+token,"Accept":"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28"}
+          url=f"https://api.github.com/repos/{repo}/contents/bridge/requests/{run_id}.json"
+          payload=None
+          for attempt in range(90):
+           try:
+            req=urllib.request.Request(url,headers=headers)
+            with urllib.request.urlopen(req,timeout=10) as response:
+             obj=json.load(response)
+            payload=json.loads(base64.b64decode(obj["content"]))
+            print("ENCRYPTED_REQUEST_RECEIVED",flush=True)
+            break
+           except urllib.error.HTTPError as exc:
+            if exc.code!=404: print("REQUEST_POLL_HTTP_ERROR="+str(exc.code),flush=True);sys.exit(3)
+           except Exception as exc:
+            print("REQUEST_POLL_ERROR="+type(exc).__name__,flush=True)
+           time.sleep(3)
+          if payload is None:
+           print("REQUEST_TIMEOUT_NO_ENCRYPTED_INPUT",flush=True);sys.exit(4)
+          targets={
+           "baseten":("https://inference.baseten.co/v1/chat/completions","meta-models/muse-spark-open-1026"),
+           "modal":("https://cs1508-4ever-oneshot--ep-qwen3-8-max-vl-thinking-server.us-west.modal.direct/v1/chat/completions","Qwen/Qwen3.8-Max-VL-Thinking")
+          }
+          for item in payload.get("requests",[]):
+           provider=item.get("provider")
+           if provider not in targets:print("UNKNOWN_PROVIDER",flush=True);continue
+           cipher=Path(os.environ["RUNNER_TEMP"])/("sealed_"+provider+".bin")
+           cipher.write_bytes(base64.b64decode(item["sealed_api_key"]))
+           proc=subprocess.run(["openssl","pkeyutl","-decrypt","-inkey",str(key),"-pkeyopt","rsa_padding_mode:oaep","-pkeyopt","rsa_oaep_md:sha256","-pkeyopt","rsa_mgf1_md:sha256","-in",str(cipher)],capture_output=True)
+           cipher.unlink(missing_ok=True)
+           if proc.returncode:print("BRIDGE_RESULT="+json.dumps({"provider":provider,"status":"DECRYPTION_FAILED"}),flush=True);continue
+           api_key=proc.stdout.decode()
+           endpoint,model=targets[provider]
+           body=json.dumps({"model":model,"messages":[{"role":"user","content":str(item.get("prompt") or "Reply with exactly ONESHOT_MODEL_TEST_OK")[:30000]}],"max_tokens":max(256,min(8192,int(item.get("max_tokens",1024)))),"stream":False}).encode()
+           req=urllib.request.Request(endpoint,data=body,headers={"Authorization":"Bearer "+api_key,"Content-Type":"application/json"},method="POST")
+           try:
+            with urllib.request.urlopen(req,timeout=90) as resp:
+             response=json.loads(resp.read(250000))
+             choice=response.get("choices",[{}])[0]
+             message=choice.get("message",{})
+             answer=message.get("content")
+             output={"provider":provider,"configured_model":model,"reported_model":response.get("model"),"http_status":resp.status,"status":"INFERENCE_SUCCEEDED" if isinstance(answer,str) and answer.strip() else "NO_TEXT_CONTENT","answer":str(answer)[:50000],"finish_reason":choice.get("finish_reason"),"message_fields":list(message.keys()),"usage":response.get("usage")}
+           except urllib.error.HTTPError as exc:
+            try: err=exc.read(2500).decode("utf8","replace")
+            except Exception: err=""
+            output={"provider":provider,"configured_model":model,"http_status":exc.code,"status":"HTTP_ERROR","error":err[:600]}
+           except Exception as exc:
+            output={"provider":provider,"configured_model":model,"status":"NETWORK_ERROR","error_type":type(exc).__name__,"detail":str(exc)[:150]}
+           api_key=None
+           print("BRIDGE_RESULT="+json.dumps(output,ensure_ascii=True),flush=True)
+          key.unlink(missing_ok=True)
+          PYCODE
