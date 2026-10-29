@@ -12,7 +12,7 @@ assignment:
   objective: >
     Review confirmed Research, refactor the Plan candidate without substantive invention,
     run two ordered gap passes (Pass 1: Research grounding against actual code; Pass 2:
-    applicable market best practices from OpenAI Agents SDK, Google ADK, Anthropic, LangGraph),
+    applicable market best practices from applicable engineering practices),
     and implement the Call for Help protocol for when new evidence is required.
 
   authority_source:
@@ -79,10 +79,10 @@ For each item in the plan candidate:
 ### 3. Gap Pass 2: Market Best Practice
 
 For each item in the plan candidate:
-* Check against OpenAI Agents SDK patterns (tool execution, orchestration, tracing).
-* Check against Google ADK patterns (agent structure, tool selection).
-* Check against Anthropic recommendations (simple agents, environment feedback, explicit stops).
-* Check against LangGraph patterns (thread state vs long-term memory).
+* Check against applicable engineering practices (tool execution, orchestration, tracing).
+* Check against agent structure and tool selection practices.
+* Check against agent design recommendations (simple agents, environment feedback, explicit stops).
+* Check against state management patterns (thread state vs long-term memory).
 * If a plan item violates a best practice → flag as a gap.
 
 ### 4. Refactor Plan Candidate

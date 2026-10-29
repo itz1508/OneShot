@@ -13,8 +13,8 @@ assignment:
     Verify that exact bindings (scope, sources, revisions, fixtures, schemas, checks,
     execution context) are established and that approval authority is confirmed before
     Build may proceed. Authorization must be enforced by the host system (Databricks
-    workspace permissions, Unity Catalog access control), not merely described in prompts.
-    Unauthorized Build must be blocked by the system, not by convention.
+    workspace permissions, existing infrastructure), not merely described in prompts.
+    Build should not proceed without user confirmation.
 
   authority_source:
     repository: "github.com/itz1508/OneShot"
@@ -32,7 +32,7 @@ assignment:
     exclusions:
       - "Must NOT execute Build."
       - "Must NOT bypass approval checks."
-      - "Must NOT accept model text as authorization."
+      - "Must NOT accept model text as authorization — only explicit user confirmation counts."
 
   acceptance:
     tests:
@@ -75,7 +75,7 @@ The approval gate must verify:
 ### 2. Enforce Authorization
 
 Authorization must be enforced by the host system:
-* Use Databricks workspace permissions or Unity Catalog access control.
+* Use existing infrastructure for access control.
 * Only authorized principals can approve Build.
 * Model text is NEVER accepted as authorization — only explicit host-level approval.
 

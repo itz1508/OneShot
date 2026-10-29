@@ -1,6 +1,7 @@
-# OneShot Build Assignment 02: Quality Input
+# OneShot Build Assignment 02: Quality Input (Main Agent / Advisor)
 
 > **This is one independent build assignment.** It does not authorize or execute any other prompt.
+> **Quality Input belongs to Main Agent / Advisor**, outside Research. Research receives prepared context and returns missing-evidence findings to Main Agent when necessary.
 
 ---
 
@@ -10,18 +11,22 @@
 assignment:
   id: "02"
   objective: >
-    Implement Quality Input: the component that validates essential requirements before
-    execution. Must STOP when required inputs are missing, request clarification from the
-    host, and resume after clarification. Must preserve original user intent, supplied
-    content, admitted references, accepted decisions, and exclusions — without discarding
-    source content, fabricating values, or inferring confirmation from model text.
+    Implement Quality Input for the Main Agent / Advisor — the component that validates
+    essential requirements before execution. Quality Input is NOT part of Research; it
+    prepares context that Research consumes. Must STOP when required inputs are missing,
+    request clarification from the host, and resume after clarification. Must preserve
+    original user intent, supplied content, admitted references, accepted decisions,
+    and exclusions — without discarding source content, fabricating values, or inferring
+    confirmation from model text.
 
   authority_source:
     repository: "github.com/itz1508/OneShot"
     branch: "main"
     stale_document_references: false
     accepted_decisions:
-      - "Quality Input validates before execution; it does NOT execute or plan."
+      - "Quality Input belongs to Main Agent / Advisor, NOT Research."
+      - "Research receives prepared context and returns missing-evidence findings to Main Agent."
+      - "Quality Input validates before execution; it does NOT execute, plan, or research."
       - "Missing essential input must trigger STOP, not inference."
       - "Resume after clarification must preserve all prior context."
       - "Model text is not confirmation — only explicit user/host response counts."

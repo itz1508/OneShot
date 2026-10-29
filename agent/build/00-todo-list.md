@@ -10,7 +10,7 @@
 assignment:
   id: "09"
   objective: >
-    Execute the approved Build using host tools (Databricks Jobs, MLflow, OpenAI Agents SDK).
+    Execute the approved Build using supported built-in tools and existing infrastructure.
     Capture and hash actual artifacts, validate output schemas, execute the full fixture set,
     and observe end-to-end success criteria. Must follow the Agent → Tool → Result → Agent
     continuation pattern. Finalization occurs only after observed success. Color Eval:
@@ -20,7 +20,7 @@ assignment:
     repository: "github.com/itz1508/OneShot"
     branch: "main"
     accepted_decisions:
-      - "Build uses host execution tools (Databricks Jobs, MLflow), not custom runners."
+      - "Build uses supported execution tools, not custom runners."
       - "Agent → Tool → Result → Agent continuation must be observable."
       - "Finalization only after observed success — no assumed completion."
       - "Partial failures are preserved, not silently cleaned up."
@@ -45,7 +45,7 @@ assignment:
       - "Build artifacts captured with SHA-256 hashes."
       - "Output schema validated against expected schema."
       - "All fixtures executed with results recorded."
-      - "Tool calls and results traced through the execution (MLflow or equivalent)."
+      - "Tool calls and results traced through the execution."
       - "Partial failures preserved with error details."
       - "Finalization only after all tests pass."
     required_evidence:
@@ -69,9 +69,9 @@ assignment:
 ### 1. Execute Using Host Tools
 
 Use host execution capabilities:
-* Databricks Jobs for orchestrated execution.
-* MLflow for artifact logging and trace recording.
-* OpenAI Agents SDK (via databricks-openai) for agent-tool interaction.
+* Supported execution tools for orchestrated execution.
+* Existing tracking for artifact logging and trace recording.
+* Supported agent framework for agent-tool interaction.
 
 Do NOT build a custom execution engine. Reuse what the host provides.
 
@@ -92,11 +92,11 @@ Run the full fixture set from Assignment 07:
 
 ### 4. Trace Agent → Tool → Result → Agent
 
-Following the OpenAI Agents SDK pattern:
+Following the agent-tool continuation pattern:
 * Each tool call is logged with input and output.
 * Results are fed back to the agent for continuation.
 * The full chain is observable in the execution trace.
-* Use MLflow autolog or equivalent for trace recording.
+* Use existing tracing capabilities or equivalent.
 
 ### 5. Handle Partial Failures
 

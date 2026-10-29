@@ -11,9 +11,9 @@ assignment:
   id: "10"
   objective: >
     Implement MCP (Model Context Protocol) that exposes existing operations only — using
-    Databricks Unity Catalog functions, AI Gateway, or MLflow tools. MCP must NOT implement
+    supported built-in interfaces and existing infrastructure. MCP must NOT implement
     core logic, pause/resume, approval, Task Management, Research, Plan, or Build. Enforce
-    least privilege via UC permissions. Verify correct tool selection, error handling, and
+    least privilege via existing access control. Verify correct tool selection, error handling, and
     provider compatibility.
 
   authority_source:
@@ -21,8 +21,8 @@ assignment:
     branch: "main"
     accepted_decisions:
       - "MCP exposes existing operations; it does NOT implement core logic."
-      - "Use Databricks Unity Catalog functions or AI Gateway for tool exposure."
-      - "Least privilege enforced via UC permissions, not application-level checks."
+      - "Use supported interfaces for tool exposure."
+      - "Least privilege enforced via existing access control, not application-level checks."
       - "MCP must NOT implement pause/resume, approval, Task Management, Research, Plan, or Build."
 
   scope:
@@ -31,18 +31,18 @@ assignment:
       - "tests/test_mcp_tools.py — contract and E2E tests"
     exclusions:
       - "Must NOT implement core agent logic through MCP."
-      - "Must NOT bypass UC permissions."
+      - "Must NOT bypass existing access control."
       - "Must NOT create new tools that duplicate existing host capabilities."
 
   acceptance:
     tests:
       - "Call MCP tool → returns expected result from underlying operation."
-      - "Call MCP tool without permission → access denied by UC."
+      - "Call MCP tool without permission → access denied by existing access control."
       - "Call MCP tool with invalid input → error returned, no side effects."
       - "Verify MCP does not expose pause/resume, approval, or workflow logic."
     vertical_behavior:
-      - "MCP tools map to existing UC functions or AI Gateway endpoints."
-      - "Permissions enforced by Unity Catalog, not application code."
+      - "MCP tools map to supported tool interfaces."
+      - "Permissions enforced by existing access control, not application code."
       - "Invalid input returns structured error, no partial execution."
       - "MCP exposes only existing operations — no new logic."
       - "Tool selection is correct for the requested operation."
@@ -54,8 +54,8 @@ assignment:
 
   color_eval:
     green: "All four tests pass: results correct, permissions enforced, errors handled, no core logic."
-    yellow: "Some tools work but permissions not enforced by UC or error handling incomplete."
-    red: "MCP implements core logic or bypasses UC permissions."
+    yellow: "Some tools work but permissions not enforced by existing access control or error handling incomplete."
+    red: "MCP implements core logic or bypasses existing access control."
 
   stop_boundary:
     next_prompt_authorized: false
@@ -63,18 +63,18 @@ assignment:
 
 ## Detailed Instructions
 
-### 1. Use Unity Catalog Functions for Tool Exposure
+### 1. Use Supported Interfaces for Tool Exposure
 
 Expose existing operations as UC functions:
-* Wrap existing operations as Unity Catalog functions.
-* Use AI Gateway for model-facing tool endpoints.
-* Use MLflow model registry for model serving tools.
+* Wrap existing operations as available tool interfaces.
+* Use available model-facing tool endpoints.
+* Use available model serving tools.
 
 Do NOT create new operations — only expose what already exists.
 
 ### 2. Enforce Least Privilege
 
-* Permissions enforced by Unity Catalog (GRANT/REVOKE).
+* Permissions enforced by existing access control.
 * Each tool has minimum required permissions.
 * No tool has blanket access.
 * Application-level permission checks are backup, not primary.

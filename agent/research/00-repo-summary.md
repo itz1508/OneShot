@@ -10,10 +10,12 @@
 assignment:
   id: "00"
   objective: >
-    Clone and verify the OneShot repository (github.com/itz1508/OneShot, main branch),
-    produce an evidence-backed summary of what exists, identify the market-practice
-    gap matrix (00-11), classify each gap as build/adapt/preserve/retire, and establish
-    the Color Eval baseline for the repository. Research must begin here.
+    Build and verify the repo-summary script/tool that clones and verifies the OneShot
+    repository (github.com/itz1508/OneShot, main branch), produces an evidence-backed
+    summary of what exists, identifies the market-practice gap matrix (00-11), classifies
+    each gap as build/adapt/preserve/retire, and establishes the Color Eval baseline.
+    repo-summary is an executable capability, not just a Markdown document. Research
+    must begin here.
 
   authority_source:
     repository: "github.com/itz1508/OneShot"
@@ -40,10 +42,11 @@ assignment:
       - ".gitignore for excluded patterns"
       - "archive/pre-rebuild-2026-10-29 branch for historical context (read-only)"
     modify: []
-    create_only_if_required: []
+    create_only_if_required:
+      - "repo_summary.py — executable repo-summary script/tool"
+      - "tests/test_repo_summary.py — tests verifying the script runs and produces output"
     exclusions:
       - "No production source code may be modified."
-      - "No files may be created in this assignment."
       - "The archived branch must not be treated as current architecture."
 
   dependencies:
@@ -61,18 +64,18 @@ assignment:
       - "Gap matrix (00-11) produced with evidence from actual repository state."
       - "Each gap classified: build (new), adapt (modify), preserve (keep), retire (remove)."
       - "Color Eval baseline assigned: GREEN (ready), YELLOW (partial), RED (blocked)."
-      - "Host tools identified for reuse: Databricks SDK, MLflow, Git integration."
+      - "Available built-in tools and existing infrastructure identified for reuse."
     required_evidence:
       - "Verified commit SHA from git rev-parse HEAD."
       - "File listing from actual repository (not assumed)."
       - "Gap matrix table mapping areas 00-11 to build/adapt/preserve/retire."
       - "Color Eval baseline with justification per area."
-      - "List of host tools available for reuse."
+      - "List of available built-in tools and existing infrastructure for reuse."
 
   color_eval:
-    green: "Repository verified, gap matrix complete with evidence, host tools identified."
-    yellow: "Repository verified but gap matrix incomplete or host tools not identified."
-    red: "Repository not accessible or commit SHA not verifiable."
+    green: "repo-summary script executes, produces verified output with evidence-backed gap matrix, and available tools are identified."
+    yellow: "Script runs but gap matrix lacks evidence or tool inventory incomplete."
+    red: "repo-summary script does not execute or repository not accessible."
 
   stop_boundary:
     next_prompt_authorized: false
@@ -86,7 +89,7 @@ Before this assignment may begin:
 
 * The OneShot repository must be cloned and accessible.
 * Git must be available for commit verification.
-* Host platform tools must be enumerated (Databricks SDK, MLflow, OpenAI Agents SDK, Unity Catalog).
+* Available built-in tools and existing infrastructure must be enumerated for reuse.
 
 ## Inputs
 
@@ -94,17 +97,19 @@ This assignment consumes:
 
 * The OneShot repository at github.com/itz1508/OneShot (main branch)
 * The archived branch archive/pre-rebuild-2026-10-29 (read-only historical context)
-* Host platform capabilities (Databricks workspace, SDK, MLflow)
+* Available built-in tools and existing infrastructure
 
 ## Outputs
 
 This assignment produces:
 
+* `repo_summary.py` — executable script that produces the summary
+* `tests/test_repo_summary.py` — tests verifying the script runs correctly
 * Verified commit SHA and clean working tree confirmation
 * Complete file listing of the repository
 * Gap matrix table (areas 00-11) with build/adapt/preserve/retire classification
 * Color Eval baseline per area with evidence
-* Host tool inventory for reuse in subsequent assignments
+* Available tools inventory for reuse in subsequent assignments
 
 ## Post-Conditions
 
@@ -171,15 +176,9 @@ All areas start as GREEN for build (the repository is clean and ready). RED only
 
 ### 5. Identify Host Tools for Reuse
 
-Enumerate available host platform tools that subsequent assignments should reuse:
-* Databricks SDK (WorkspaceClient) — workspace operations, file system, job management.
-* MLflow — experiment tracking, artifact logging, model registry.
-* Unity Catalog — data governance, table management, function registry.
-* Databricks Git integration — repository cloning, branching, committing.
-* OpenAI Agents SDK (via databricks-openai) — agent framework, tool execution.
-* Databricks AI Gateway — model serving, rate limiting, fallback.
-
-Do not rebuild these capabilities. Subsequent assignments must reuse them.
+Enumerate available built-in tools and existing infrastructure that subsequent assignments should reuse.
+Do not mandate specific tools unless the selected runtime requires them. Reuse what exists.
+Do not rebuild existing capabilities. Subsequent assignments must reuse available infrastructure.
 
 ### 6. Check Archived Branch (Read-Only)
 

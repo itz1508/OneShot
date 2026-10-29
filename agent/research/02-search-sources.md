@@ -10,7 +10,7 @@
 assignment:
   id: "03"
   objective: >
-    Implement repository search and source discovery using Databricks SDK (WorkspaceClient)
+    Implement repository search and source discovery using supported built-in tools
     and Git integration — not a custom filesystem reader. Search the OneShot repository
     for all source files, config, tests, and evidence. Produce a grounded file inventory
     with types, sizes, and content summaries. Start from confirmed Quality Input.
@@ -20,7 +20,7 @@ assignment:
     branch: "main"
     stale_document_references: false
     accepted_decisions:
-      - "Use Databricks SDK and Git integration for repository operations."
+      - "Use supported built-in tools and existing infrastructure for repository operations."
       - "Do NOT create another filesystem reader, scanner, or discovery service."
       - "Search results must be grounded in actual files, not assumed content."
 
@@ -46,11 +46,11 @@ assignment:
     required_evidence:
       - "File listing from actual repository with verified paths."
       - "Pattern search results showing correct filtering."
-      - "Evidence that host SDK was used, not custom scanner."
+      - "Evidence that built-in tools were used, not custom scanner."
 
   color_eval:
-    green: "All four tests pass with evidence of actual file discovery via host SDK."
-    yellow: "File discovery works but not via host SDK, or sizes/types incorrect."
+    green: "All four tests pass with evidence of actual file discovery via built-in tools."
+    yellow: "File discovery works but not via built-in tools, or sizes/types incorrect."
     red: "Search returns fabricated results or fails on empty repository."
 
   stop_boundary:
@@ -59,9 +59,9 @@ assignment:
 
 ## Detailed Instructions
 
-### 1. Use Databricks SDK for Repository Operations
+### 1. Use Built-in Tools for Repository Operations
 
-Use `WorkspaceClient` from the Databricks SDK for:
+Use available built-in tools and existing infrastructure for:
 * Listing workspace files and directories.
 * Reading file content.
 * Git operations (status, log, branch listing).

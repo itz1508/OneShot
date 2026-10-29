@@ -10,19 +10,19 @@
 assignment:
   id: "01"
   objective: >
-    Implement Task Management that persists task identity, execution state, events,
-    recovery, and results. Must support restart, resume, retry, and prevent duplicated
-    execution. Use Databricks Unity Catalog tables or MLflow tracking for persistence —
-    do not build a custom database. Research must retrieve stored records via this
-    component before proceeding.
+    Build the memory retrieval capability. Memory is initialized and available
+    whenever an agent starts — initialization and persistence are NOT Research's
+    responsibility. Research performs task-relevant retrieval from available memory.
+    Must support restart, resume, retry, and prevent duplicated execution using
+    existing infrastructure — do not mandate specific persistence tools.
 
   authority_source:
     repository: "github.com/itz1508/OneShot"
     branch: "main"
     stale_document_references: false
     accepted_decisions:
-      - "Task Management persists state; it does NOT perform workflow reasoning or execution."
-      - "Use host persistence (Unity Catalog tables or MLflow), not custom storage."
+      - "Memory is initialized at agent startup; Research retrieves, does not own persistence."
+      - "Reuse existing infrastructure for persistence — do not mandate specific tools."
       - "Thread state (current execution) is distinct from long-term memory (historical records)."
       - "Restart must resume from last persisted state without duplicate execution."
 
@@ -31,18 +31,19 @@ assignment:
     branch: "main"
     commit_sha: "<verify at execution time>"
     existing_capabilities: []
-    missing_capabilities: ["task_management", "state_persistence", "recovery"]
+    missing_capabilities: ["memory_retrieval", "state_persistence", "recovery"]
 
   scope:
     inspect: ["repository file tree"]
     modify: []
     create_only_if_required:
-      - "task_management.py — Task Management implementation"
-      - "tests/test_task_management.py — contract and E2E tests"
+      - "memory_retrieve.py — memory retrieval capability"
+      - "tests/test_memory_retrieve.py — contract and E2E tests"
     exclusions:
+      - "Must NOT own memory initialization or persistence — that is agent startup's job."
       - "Must NOT implement workflow logic, Research, Plan, or Build."
       - "Must NOT implement approval or authorization."
-      - "Must NOT build a custom database engine."
+      - "Must NOT mandate specific persistence tools unless the runtime requires them."
 
   dependencies:
     required_capabilities: []
@@ -69,9 +70,9 @@ assignment:
       - "Status query returning current state, events, and results."
 
   color_eval:
-    green: "All four acceptance tests pass with evidence of restart, resume, retry, and no-duplicate."
-    yellow: "Some tests pass but recovery or no-duplicate behavior not fully verified."
-    red: "Task Management cannot persist state or restart fails with duplicate execution."
+    green: "Retrieval capability works with evidence of restart, resume, retry, and no-duplicate behavior."
+    yellow: "Retrieval works but recovery or no-duplicate behavior not fully verified."
+    red: "Memory retrieval fails or restart produces duplicate execution."
 
   stop_boundary:
     next_prompt_authorized: false
@@ -82,46 +83,41 @@ assignment:
 ## Prerequisites
 
 * OneShot repository cloned and verified (Assignment 00 complete).
-* Databricks Unity Catalog accessible for table creation, or MLflow available for tracking.
+* Memory initialized and available at agent startup.
 
 ## Inputs
 
 * Repository state from Assignment 00.
-* Host persistence capabilities (Unity Catalog or MLflow).
+* Available memory and existing infrastructure.
 
 ## Outputs
 
-* `task_management.py` — Task Management implementation using host persistence.
-* `tests/test_task_management.py` — Contract and E2E tests.
-* Test evidence showing create, interrupt, restart, resume, retry, and no-duplicate behavior.
+* `memory_retrieve.py` — memory retrieval capability using existing infrastructure.
+* `tests/test_memory_retrieve.py` — Contract and E2E tests.
+* Test evidence showing retrieval, restart, resume, retry, and no-duplicate behavior.
 
 ## Detailed Instructions
 
-### 1. Implement Task Management
+### 1. Build Memory Retrieval
 
-Create a Task Management component that:
-* Persists task records with unique IDs (use UUID or host-generated IDs).
-* Tracks execution state: pending, running, completed, failed, interrupted.
-* Logs state transition events with timestamps.
-* Supports restart from last persisted state.
+Create a memory retrieval capability that:
+* Retrieves task-relevant records from available memory (initialized at agent startup).
+* Supports restart from last persisted state using existing infrastructure.
 * Prevents duplicate execution (idempotency checks).
-* Stores results and receipts.
+* Does NOT own memory initialization or persistence — that is agent startup's job.
 
-### 2. Use Host Persistence
+### 2. Reuse Existing Infrastructure
 
-Use one of:
-* Unity Catalog tables (Delta tables in a dedicated schema) for structured persistence.
-* MLflow tracking for experiment-style run logging.
+Use existing infrastructure for persistence — do not mandate specific tools.
+Reuse what the runtime provides. Do NOT build a custom database engine.
 
-Do NOT build a custom SQLite database or file-based storage. Reuse what the host provides.
+### 3. Thread State vs Long-Term Memory
 
-### 3. Implement Thread State vs Long-Term Memory
-
-Following LangGraph's distinction:
+Memory stores both but Research only retrieves:
 * Thread state: current execution context (active task, current step, intermediate results).
 * Long-term memory: historical task records, completed results, past failures.
 
-Task Management stores both but does not reason about them.
+Research retrieves from both but does not own persistence.
 
 ### 4. Write Contract and E2E Tests
 

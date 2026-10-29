@@ -12,8 +12,8 @@ assignment:
   objective: >
     Implement the Research review and confirmation hook. Research Output triggers an
     optional review that evaluates groundedness, completeness, and contradictions using
-    evidence-based quality checks. Must produce a binding confirmation that locks exact
-    ID, revision, digest, and evidence snapshot. The confirmed Research revision becomes
+    evidence-based quality checks. Must produce a optional review that records exact
+    ID, revision, digest, and evidence snapshot. Research findings are available to Plan. User retains authority over
     Plan's source of truth. Color Eval (GREEN/YELLOW/RED) is assigned based on evidence quality.
 
   authority_source:
@@ -31,14 +31,14 @@ assignment:
       - "tests/test_research_review.py — contract and E2E tests"
     exclusions:
       - "Must NOT rewrite or modify Research content."
-      - "Must NOT proceed to Plan without confirmed Research."
+      - "Must NOT proceed to Plan without user review of Research."
 
   acceptance:
     tests:
       - "Provide research with full provenance → review returns GREEN."
       - "Provide research with a contradiction → review returns RED with contradiction flagged."
       - "Provide research with missing provenance → review returns YELLOW with gaps listed."
-      - "Confirmation locks revision ID, digest, and evidence snapshot."
+      - "Confirmation records revision ID, digest, and evidence snapshot."
     vertical_behavior:
       - "Groundedness check: every finding traces to a source file."
       - "Completeness check: all gap matrix areas (00-11) have findings."
