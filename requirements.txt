@@ -1,3 +1,0 @@
-# Single dependency authority: pyproject.toml.
-# Installs the current source plus its focused E2E test dependency.
--e .[dev]
