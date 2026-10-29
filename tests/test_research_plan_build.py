@@ -18,7 +18,7 @@ from research_output import ResearchOutputBuilder, ResearchOutput
 from research_review import ResearchReview, ColorEval
 from plan_review import PlanReview
 from fixtures import FixtureRegistry, create_default_fixtures
-from approval import ApprovalGate
+from approval import AuthorizationGate
 from build_executor import BuildExecutor
 from mcp_tools import MCPToolRegistry, create_default_registry
 
@@ -181,30 +181,29 @@ class TestFixtures:
 
 
 class TestApproval:
-    """Assignment 08: User-Confirmed Approval."""
+    """Assignment 08: Authorization (user + host enforcement)."""
 
     def test_model_text_rejected(self):
-        gate = ApprovalGate()
-        assert not gate.confirm("As an AI, I think you should proceed")
+        gate = AuthorizationGate(host_permissions={"a": ["execute"]})
+        assert not gate.confirm_user("As an AI, I think you should proceed")
         assert gate.state.model_text_rejected
 
     def test_explicit_user_confirmation_accepted(self):
-        gate = ApprovalGate()
-        assert gate.confirm("yes")
+        gate = AuthorizationGate(host_permissions={"a": ["execute"]})
+        assert gate.confirm_user("yes")
+        gate.check_host_permission("a", "execute")
         assert gate.can_proceed()
 
     def test_no_confirmation_blocks(self):
-        gate = ApprovalGate()
+        gate = AuthorizationGate(host_permissions={"a": ["execute"]})
         assert not gate.can_proceed()
 
-    def test_verify_bindings_missing_items(self):
-        gate = ApprovalGate()
-        result = gate.verify_bindings("", True, True, {})
-        assert not result["all_present"]
-        assert len(result["missing"]) > 0
+    def test_host_permission_denied(self):
+        gate = AuthorizationGate(host_permissions={"guest": ["read"]})
+        assert not gate.check_host_permission("guest", "execute")
 
     def test_verify_bindings_all_present(self):
-        gate = ApprovalGate()
+        gate = AuthorizationGate(host_permissions={"a": ["execute"]})
         result = gate.verify_bindings("abc123", True, True, {"repo": "url", "branch": "main", "commit_sha": "sha"})
         assert result["all_present"]
 

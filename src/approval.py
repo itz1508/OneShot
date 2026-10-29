@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-OneShot Assignment 08: User-Confirmed Approval
+OneShot Assignment 08: Authorization Gate
 
-User retains authority over research findings and build decisions.
-Approval is user-confirmed, not system-enforced. Model text is never
-accepted as authorization — only explicit user confirmation counts.
+Two layers of authorization:
+  1. User authorization — explicit user confirmation (model text rejected)
+  2. Host-enforced execution permissions — runtime access control
+
+Removing an invented approval stage does NOT mean removing security enforcement.
+Both layers are necessary.
 """
 
 from dataclasses import dataclass, field
@@ -12,22 +15,30 @@ from typing import Optional
 
 
 @dataclass
-class ApprovalState:
-    """State of build approval."""
+class AuthorizationState:
     user_confirmed: bool = False
+    host_authorized: bool = False
     bindings_verified: dict = field(default_factory=dict)
     model_text_rejected: bool = False
+    missing_bindings: list = field(default_factory=list)
 
 
-class ApprovalGate:
-    """User-confirmed approval gate. User retains authority."""
+class AuthorizationGate:
+    """Two-layer authorization: user confirmation + host enforcement."""
 
-    def __init__(self):
-        self.state = ApprovalState()
+    def __init__(self, host_permissions: dict = None):
+        self.state = AuthorizationState()
+        self._host_permissions = host_permissions or {}
+
+    def is_model_text(self, value: str) -> bool:
+        if not isinstance(value, str):
+            return False
+        indicators = ["as an ai", "i think", "perhaps", "maybe", "i suggest", "it seems"]
+        lower = value.lower().strip()
+        return any(lower.startswith(i) for i in indicators)
 
     def verify_bindings(self, research_revision: str, plan_gaps_pass: bool,
                         fixtures_pass: bool, execution_context: dict) -> dict:
-        """Verify all bindings are present before requesting user approval."""
         bindings = {
             "research_revision": research_revision or "",
             "plan_gaps_pass": plan_gaps_pass,
@@ -37,44 +48,43 @@ class ApprovalGate:
             "commit_sha": execution_context.get("commit_sha", ""),
         }
         self.state.bindings_verified = bindings
-        missing = [k for k, v in bindings.items() if not v and k != "plan_gaps_pass" and k != "fixtures_pass"]
+        missing = [k for k, v in bindings.items() if not v and k not in ("plan_gaps_pass", "fixtures_pass")]
         if not plan_gaps_pass:
             missing.append("plan_gaps_pass")
         if not fixtures_pass:
             missing.append("fixtures_pass")
+        self.state.missing_bindings = missing
         return {"all_present": len(missing) == 0, "missing": missing, "bindings": bindings}
 
-    def is_model_text(self, value: str) -> bool:
-        """Check if value appears to be model-generated text."""
-        if not isinstance(value, str):
-            return False
-        indicators = ["as an ai", "i think", "perhaps", "maybe", "i suggest", "it seems"]
-        lower = value.lower().strip()
-        return any(lower.startswith(i) for i in indicators)
-
-    def request_user_approval(self) -> dict:
-        """Request approval from the user. Returns structured request."""
-        return {
-            "action": "request_user_approval",
-            "bindings": self.state.bindings_verified,
-            "message": "Please confirm to proceed with Build execution.",
-        }
-
-    def confirm(self, user_response: str) -> bool:
-        """Process user confirmation. Only explicit user input counts."""
+    def confirm_user(self, user_response: str) -> bool:
+        """Layer 1: User authorization. Only explicit user input counts."""
         if self.is_model_text(user_response):
             self.state.model_text_rejected = True
             self.state.user_confirmed = False
             return False
-        # Explicit user confirmation (not model text)
         self.state.model_text_rejected = False
         self.state.user_confirmed = user_response.lower() in ("yes", "approve", "confirmed", "proceed", "true")
         return self.state.user_confirmed
 
+    def check_host_permission(self, caller_id: str, required_permission: str) -> bool:
+        """Layer 2: Host-enforced execution permissions."""
+        caller_perms = self._host_permissions.get(caller_id, [])
+        self.state.host_authorized = required_permission in caller_perms
+        return self.state.host_authorized
+
+    def set_host_permissions(self, permissions: dict):
+        """Configure host permissions for callers."""
+        self._host_permissions = permissions
+
     def can_proceed(self) -> bool:
-        """Check if build can proceed (user confirmed, no model text)."""
-        return self.state.user_confirmed and not self.state.model_text_rejected
+        """Both layers required: user confirmed AND host authorized."""
+        return self.state.user_confirmed and self.state.host_authorized
+
+    def can_proceed_with_bindings(self) -> bool:
+        """All three: user confirmed, host authorized, bindings present."""
+        return (self.state.user_confirmed and 
+                self.state.host_authorized and 
+                len(self.state.missing_bindings) == 0)
 
     def reject(self, reason: str = ""):
-        """Explicitly reject approval."""
         self.state.user_confirmed = False
