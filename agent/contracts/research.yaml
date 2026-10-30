@@ -1,6 +1,5 @@
 # Reusable Research record template. Create an actual record when Research begins.
 # Fields are claims of state; check_contracts.py validates them, not the YAML parser.
-contract_version: '1.1'
 kind: research
 task_id: '<task_id>'
 record_id: '<research_record_id>'
@@ -62,5 +61,5 @@ checkpoint:
 handoff:
   to: plan
   ready: false # derived by validation; never manually asserted without evidence
-  artifact_manifest_ref: null # versioned/hash-checked artifact manifest
+  artifact_manifest_ref: null # hash-checked artifact manifest
   validation_receipt_ref: null

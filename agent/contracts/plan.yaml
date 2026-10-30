@@ -1,5 +1,4 @@
 # Durable Plan, Scanner Gap Analysis, Gap Fix and pre-Build Fixture Validation + Chaos.
-contract_version: '1.1'
 kind: plan
 task_id: '<task_id>'
 record_id: '<plan_record_id>'
@@ -66,5 +65,5 @@ handoff:
   to: build
   ready: false
   plan_artifact_ref: null # self-contained ExecPlan
-  artifact_manifest_ref: null # versioned/hash-checked Plan + fixture evidence
+  artifact_manifest_ref: null # hash-checked Plan + fixture evidence
   validation_receipt_ref: null

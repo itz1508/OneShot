@@ -1,5 +1,4 @@
 # Durable Build record; completion requires actual post-Build E2E validation.
-contract_version: '1.1'
 kind: build
 task_id: '<task_id>'
 record_id: '<build_record_id>'

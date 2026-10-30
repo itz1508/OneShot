@@ -1,6 +1,6 @@
 # OneShot — workflow harness implementation baseline
 
-**Current state: READY TO CONTINUE IMPLEMENTATION; NOT A WORKING HARNESS.** This clone contains the accepted Research/Plan/Build v1.1 contracts, a read-only invariant checker, a complete implementation instruction and a self-contained M0–M8 ExecPlan. No connected System Scanner, `agent/main.py` controller, live tool runtime or post-build E2E is claimed.
+**Current state: READY TO CONTINUE IMPLEMENTATION; NOT A WORKING HARNESS.** This clone contains the accepted Research/Plan/Build contracts, a read-only invariant checker, a complete implementation instruction and a self-contained M0–M8 ExecPlan. No connected System Scanner, `agent/main.py` controller, live tool runtime or post-build E2E is claimed.
 
 ## Start here
 

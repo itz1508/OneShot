@@ -82,8 +82,8 @@ def _base(errors: list[str], record: Record, stage: str, resolve: EvidenceCheck 
     if not isinstance(record, dict):
         errors.append(f"{stage}: not an object")
         return False
-    if record.get("kind") != stage or record.get("contract_version") != "1.1":
-        errors.append(f"{stage}: kind/version mismatch")
+    if record.get("kind") != stage:
+        errors.append(f"{stage}: kind mismatch")
     _require(errors, _filled(record.get("task_id")), f"{stage}: missing task_id")
     _require(errors, _filled(record.get("record_id")), f"{stage}: missing record_id")
     _require(errors, type(record.get("revision")) is int and record["revision"] > 0,

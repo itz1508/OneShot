@@ -30,7 +30,7 @@ class ContractTest(unittest.TestCase):
         cp = dict(last_completed_step="done", next_step=None, action_id="a1", action_state="completed",
                   action_receipt_ref=ref("action"), retry_disposition="not_applicable",
                   source_snapshot_ref=ref("snapshot"), resume_notes=None)
-        self.r = dict(base, contract_version="1.1", kind="research", record_id="r1", checkpoint=copy.deepcopy(cp),
+        self.r = dict(base, kind="research", record_id="r1", checkpoint=copy.deepcopy(cp),
                       purpose={"user_outcome": "count context", "accepted_requirements": [dict(id="R1", statement="count", scope="in_scope", authority_ref=ref("request"))]},
                       search={"todo_search_ref": ref("todo"), "sources": [dict(id="S1", location="source.py", revision_or_hash="sha", evidence_ref=ref("source-receipt"))],
                               "findings": [dict(id="F1", claim="count", assessment="supported", evidence_refs=[ref("source")])]},
@@ -39,7 +39,7 @@ class ContractTest(unittest.TestCase):
                       review=dict(coverage="sufficient", evidence_grounding="passed", disposition="ready_for_plan", unsupported_claims=[], blockers=[],
                                   unresolved_issues=[], review_receipt_ref=ref("research-review")),
                       handoff=dict(to="plan", ready=True, artifact_manifest_ref=ref("r-manifest"), validation_receipt_ref=ref("r-validation")))
-        self.p = dict(base, contract_version="1.1", kind="plan", record_id="p1", checkpoint=copy.deepcopy(cp),
+        self.p = dict(base, kind="plan", record_id="p1", checkpoint=copy.deepcopy(cp),
                       research_input=dict(record_ref=ref("r-record"), record_id="r1", record_revision=2, artifact_manifest_ref="r-manifest", accepted_requirement_ids=["R1"]),
                       purpose=dict(user_outcome="count context", acceptance_criteria=[dict(id="c1", requirement_id="R1", expected_result="3", oracle_ref=ref("oracle"))]),
                       implementation=dict(proposed_final_tree_ref=ref("tree"), command_environment_ref=ref("env"), rollback_or_recovery="rerun only after reconcile",
@@ -49,7 +49,7 @@ class ContractTest(unittest.TestCase):
                       fixture_validation_chaos=dict(status="passed", fixture_refs=["fixture"], oracle_evidence_refs=[ref("oracle-evidence")], chaos_applicability="required",
                                                     chaos_case_refs=[ref("chaos")], prebuild_validation_receipt_refs=[ref("fixture-validation")], coverage_gaps=[]),
                       handoff=dict(to="build", ready=True, plan_artifact_ref=ref("execplan"), artifact_manifest_ref=ref("p-manifest"), validation_receipt_ref=ref("p-validation")))
-        self.b = dict(base, contract_version="1.1", kind="build", record_id="b1", checkpoint=copy.deepcopy(cp),
+        self.b = dict(base, kind="build", record_id="b1", checkpoint=copy.deepcopy(cp),
                       plan_input=dict(record_ref=ref("p-record"), record_id="p1", record_revision=2, artifact_manifest_ref="p-manifest", accepted_milestone_ids=["m1"], accepted_criterion_ids=["c1"]),
                       execution=dict(milestone_results=[dict(id="m1", status="passed", artifact_refs=[ref("result")])],
                                      command_receipts=[dict(id="c", command="python counter.py", cwd="/tmp/task", exit_code=0, receipt_ref=ref("cmd-receipt"))],
@@ -68,6 +68,10 @@ class ContractTest(unittest.TestCase):
 
     def test_complete_records_with_external_evidence_resolver(self):
         self.assertEqual(self.check(), [])
+
+    def test_stage_kind_mismatch_is_rejected(self):
+        self.r["kind"] = "other"
+        self.assertTrue(any("research: kind mismatch" in error for error in self.check()))
 
     def test_no_resolver_fails_closed(self):
         self.assertTrue(any("no evidence resolver" in e for e in module.validate_records(self.r, self.p, self.b)))
@@ -167,7 +171,7 @@ class ContractTest(unittest.TestCase):
 
     def test_template_draft_not_misreported_complete(self):
         # Templates parse as draft; do not count as actual execution proof.
-        from_file = {"kind": "research", "contract_version": "1.1", "task_id": "<task_id>",
+        from_file = {"kind": "research", "task_id": "<task_id>",
                      "record_id": "<research_record_id>", "revision": 1, "status": "draft",
                      "handoff": {"ready": False}, "checkpoint": {"action_state": "none"}}
         errors = module.validate_records(from_file, self.p, self.b, self.refs.__contains__)

@@ -2,7 +2,7 @@
 
 **Status:** Proposed / not implemented.  
 **Plan date:** 2026-10-29 (America/Los_Angeles).  
-**Verified public source:** `itz1508/OneShot`, `main`, commit `eca339fae3ce1989ef44a2a0154078bca98c0b6b`.  
+**Authoritative Git source:** `itz1508/OneShot`, branch `main`; resolve the current commit when executing.  
 **Unverified active source:** The Databricks working copy was reported to have `tools/` with an incomplete staged `src/` migration. Reinspect that physical working tree before editing; GitHub `main` is not proof of its state.  
 **Relevant committed contracts:** `agent/contracts/{research.yaml,plan.yaml,build.yaml,check_contracts.py,README.md}` and `tests/test_workflow_contracts.py`.
 
@@ -24,7 +24,7 @@ OneShot must accept an objective, investigate it using actual evidence, produce 
 
 ## Verified repository inputs and known technical gaps
 
-At the inspected GitHub commit, `agent/contracts/*.yaml` (v1.1), `agent/contracts/check_contracts.py` and `tests/test_workflow_contracts.py` are present; no `agent/main.py`, root `pyproject.toml`, or root `package.json` is present. `src/` contains historical modules, while the actual Databricks workspace was reported to use `tools/`.
+At the inspected GitHub commit, `agent/contracts/*.yaml`, `agent/contracts/check_contracts.py` and `tests/test_workflow_contracts.py` are present; no `agent/main.py`, root `pyproject.toml`, or root `package.json` is present. `src/` contains historical modules, while the actual Databricks workspace was reported to use `tools/`.
 
 - `agent/contracts/check_contracts.py:117–138` exposes `validate_records(research, plan, build, resolve)`. It verifies all stages together. **Gap:** Research must validate before Plan exists, and Plan before Build exists. Add stage-specific validation of instantiated records, preserving the final combined validation and evidence resolver. Never fabricate empty downstream completed records. **Receipt bootstrap gap:** `_base()` at lines 103–111 requires `handoff.validation_receipt_ref` to validate a completed handoff, although that receipt is typically created *by* successful validation. Use a two-step, revision-guarded host process (preflight substantive evidence and derive readiness → persist a signed/hashed validation receipt → revalidate the committed record including receipt) without accepting self-attested evidence or creating recursive receipt requirements.
 - `agent/contracts/check_contracts.py:189–258` checks Plan's Scanner calls, gap dispositions, fixture prevalidation, and stale revisions. The host must actually invoke Scanner, verify receipts, and correct findings; setting fields is not proof.
@@ -165,7 +165,7 @@ def validate_build_and_e2e(task_id: str, build_id: str) -> str: ...
 ### M1 — Stage-specific contract checks
 
 **Files:** `agent/contracts/check_contracts.py`, `tests/test_workflow_contracts.py`, `agent/contracts/README.md` (and YAML templates only where actual fields need correction).  
-**Steps:** Add library checks for Research handoff given Research only; Plan handoff given accepted Research+Plan only; full final Research+Plan+Build check. Preserve `validate_records()` for completion checks and the host-backed artifact resolver; guard malformed nested structures. Bind each validation to observed revisions and manifest hashes, not only asserted flags. Resolve the handoff receipt circularity with a two-step validation/receipt-commit protocol; test concurrent revision changes between preflight and commit. Preserve compatibility for saved v1.1 records when possible; if required fields change, document and test an explicit version transition rather than silently changing semantics.  
+**Steps:** Add library checks for Research handoff given Research only; Plan handoff given accepted Research+Plan only; full final Research+Plan+Build check. Preserve `validate_records()` for completion checks and the host-backed artifact resolver; guard malformed nested structures. Bind each validation to observed revisions and manifest hashes, not only asserted flags. Resolve the handoff receipt circularity with a two-step validation/receipt-commit protocol; test concurrent revision changes between preflight and commit. Keep record validation aligned with the active contracts; when fields change, update templates, checker and tests together without introducing contract-version labels.  
 **Command:** `python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v` (or configured runner).  
 **Proof:** Research can be validated before Plan creation, Plan before Build creation. Draft/unsupported/partial/malformed/stale/forged-reference records fail explicitly. Stale concurrent revisions cannot be committed ready; validation-receipt creation has no circular dependency. Existing 22 focused contract tests continue passing.
 
@@ -209,7 +209,7 @@ def validate_build_and_e2e(task_id: str, build_id: str) -> str: ...
 
 **Files:** `agent/contracts/README.md`, `README.md`, `AGENTS.md` as actually present, current test docs, superseded files identified by audit.  
 **Steps:** Remove active references to rejected numbered 00–11 instructions only after verified replacements. Never wholesale delete or use `git add -A` on an unknown dirty tree; inspect the diff and stage only authorized changes. Record commands, results, source revision, artifact manifests, remaining limitations and restart instructions. Commit coherent verified changes when authorized.  
-**Proof:** No duplicate active guidance owners, no unintended file deletions, correct CLI instructions, auditable versions and one inspectable current task outcome. Run targeted suites, then applicable broader checks configured by the actual repository.
+**Proof:** No duplicate active guidance owners, no unintended file deletions, correct CLI instructions, auditable source revisions and one inspectable current task outcome. Run targeted suites, then applicable broader checks configured by the actual repository.
 
 ## Required automated evaluation matrix
 
