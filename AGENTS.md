@@ -1,92 +1,107 @@
-# OneShot — Agent Operating Instructions
+# OneShot — AGENTS.md
 
-## 1. Authority and overrides
+Practical repository instructions for coding agents. This file governs **how to work**, not the OneShot product architecture or the Research, Plan, and Build output templates.
 
-- The user's latest applicable explicit instructions are the source of truth for the task's objective, scope, requirements, and deliverable, subject to host permissions and higher-priority safety requirements.
-- **Override means replace**: a newer instruction supersedes conflicting older instructions within its scope. Do not merge rejected requirements back into the task.
-- Treat memory, `README.md`, archived material, old 00–11 assignments, previous agent outputs, and other historical documentation as context or evidence, **not** current requirements.
-- Existing code establishes what is implemented, not what the user wants. Inspect it where relevant; do not copy its architecture by default.
-- Apply the user's requested deliverable directly. Do not turn template fields into new skills, hooks, services, schemas, gates, or tools without an actual need.
+## Authority and judgment
 
-## 2. Shared bootstrap — System and Agent
+- Follow the latest applicable user instruction. **Override means replace** conflicting older requirements within the stated scope; do not merge rejected designs back in.
+- Treat old README content, historical 00–11 assignments, archived files, and retrieved memory as context, **not requirement authority**. Current source code is evidence of what exists, not proof of what should exist.
+- Check whether System startup context is loaded; Bootstrap is System-owned. Do not rerun or implement it.
+- Research material technical claims before answering or editing. **Challenge proposals, including the user's, when evidence identifies a meaningful flaw**: state the issue, evidence, consequence, better option, and expected improvement. Do not manufacture objections.
+- Adapt official patterns and reference examples to the actual repository; **never transplant sample architecture or code uncritically**. Use `<descriptive_variable>` in reusable templates; use verified values in completed artifacts.
+- Ask only for genuinely blocking user-owned decisions. Do not ask for the next step when executing an accepted specification.
 
-- **Bootstrap is System-owned startup context**, not a workflow-selection stage. The agent only checks whether that context is available; it must not rerun, recreate, or assume the Bootstrap occurred.
-- Discover the actual repository path and available files. Consult available, authorized memory/RAG and applicable `AGENTS.md` and reference sources. Do not claim any source was loaded before reading it.
-- Record what was actually found; mark unavailable sources as unavailable. Do not claim a document was loaded without reading it.
-- Do not promote stale material into authority. Do not change or archive files during discovery.
-- Continue the operation already indicated by the user's request; do not ask the user to choose System or Research again.
+## Locate the repository and commands
 
-Record the observed startup context in this compact form (not a new Bootstrap task):
+Identify `<repo_path>` from the active workspace. Read the applicable `AGENTS.md`, including a more specific one near the target file if present. Confirm configuration before choosing a package manager or command.
 
-```yaml
-bootstrap:
-  repo_path: <discovered path | unavailable>
-  system_bootstrap: available | unavailable | not_confirmed
-  memory: loaded | not_loaded | not_confirmed
-  agents_md: loaded | unavailable | not_confirmed
-  reference_sources: []
+| Purpose                                | Inspect                                                     |
+| -------------------------------------- | ----------------------------------------------------------- |
+| Python project and scripts             | `<repo_path>/pyproject.toml`                                |
+| Python lockfile                        | `<repo_path>/uv.lock`                                       |
+| JavaScript scripts and package manager | `<web_root>/package.json`                                   |
+| npm/pnpm lock                          | `<web_root>/package-lock.json`, `<web_root>/pnpm-lock.yaml` |
+| Workspace and CI                       | `<repo_path>/.github/workflows/`, relevant workspace config |
+| Source/tests                           | Actual discovered source paths and test directories         |
+
+```
+git -C "<repo_path>" status --short
+git -C "<repo_path>" ls-files
+rg --files "<repo_path>"
+rg -n '<pattern>' '<relevant_path>'
 ```
 
-## 3. Research — two templates
+Prefer dedicated host read/search tools when available. **Think first**: determine likely evidence sources, batch independent reads using supported tools, read sequentially when necessary, and avoid rereading unchanged files.
 
-**Research Input** is populated before Research from the request, accepted instructions, available context, and task-relevant evidence. Quality Content means accurate, complete input **content**; it is not a separate runtime component. `agent/contracts/research.yaml` is the durable Research stage record, not a replacement for the Research Input/Output distinction.
+## CLI: Python, web, and Pydantic
 
-```text
-create_task_id()
-Input_contents_research()
-Input_tasks_research()
-input_files_research()
+Use commands **only when supported by the active manifests, lockfiles, installed tools, and scripts**. Examples below are conditional—not verified OneShot build commands.
+
+**Python / uv**, if `<repo_path>/pyproject.toml` configures uv and `<repo_path>/uv.lock` exists:
+
+```
+uv sync --locked
+uv run --locked python -m pytest <test_path>
+uv run --locked ruff check <python_path>
+uv run --locked ruff format --check <python_path>
+uv run --locked <configured_entry_point> <arguments>
+uv build  # only if the project is a buildable package
 ```
 
-- Identify requirements, constraints, expected outcomes, and missing information in the input as applicable; represent structured content in YAML.
-- Do not invent facts or ask for information already established. Keep researchable unknowns for Research; ask only when a genuinely blocking user-owned decision cannot be established.
+If there is no uv lockfile, verify project setup before using `uv sync` without `--locked` because it may create/update a lock. If tools or scripts are absent, use the configured alternative or report `not_available`.
 
-**Research Output** is populated after investigation, using actual findings and evidence:
+**JavaScript / TypeScript**, at `<web_root>`: choose **one** based on `package.json` and its lockfile.
 
-```text
-create_output_id()
-input_artifact_<template>
-output_artifact_<template>
-output_plan_task()
-output_fixture_validation()
-output_success_criteria()
-output_validation()
+```
+# npm + package-lock.json
+npm ci
+npm run <existing_script>
+
+# OR pnpm + pnpm-lock.yaml
+pnpm install --frozen-lockfile
+pnpm run <existing_script>
 ```
 
-- Report requirements, constraints, expected outcomes, missing information, dependencies, and supporting evidence where applicable.
-- Keep expected fixture outcomes separate from observed validation. Mark untested work as untested.
-- These names describe template operations and fields, not instructions to create Python functions or modules.
-- Do not use Research Output as the Build Output template.
+Inspect scripts for `test`, `check`, `lint`, `typecheck`, and `build`; run only those actually defined. Note that `npm ci` may replace `node_modules`.
 
-## 4. Source exploration and research
+**Pydantic / schema checks**: first locate `<model_source_path>` and `<input_file>`. Prefer an existing project validation CLI or test. JSON syntax is **not** model validation.
 
-- **Think first.** Identify the task objective and the resources currently likely to matter before calling tools.
-- Batch independent reads using host-supported parallel capabilities; read sequentially when earlier results determine later sources.
-- Inspect actual relevant code before recommending source changes. Expand discovery when evidence justifies it; avoid rereading unchanged files.
-- Research current official practices when external technical knowledge is necessary. Compare them with observed implementation; distinguish requirements, defects, options, and unknowns.
-- Preserve source provenance and contradictions. Do not mistake examples or documentation for user-authorized architecture.
+```
+python -m json.tool "<input_file>"  # JSON syntax only
+<configured_python_runner> -m pytest "<validation_test_path>"
+```
 
-## 5. Plan and Build
+Where no validation CLI/test exists, use the verified existing Pydantic model's `model_validate_json()` (Pydantic v2) through the configured Python runner. Do not invent a universal `pydantic validate` command. Record exact errors and observed results.
 
-For the current harness implementation, first read `agent/implementation/BUILD_INSTRUCTION.md`, continue the accepted M0–M8 `agent/implementation/ExecPlan.md`, and follow `agent/contracts/README.md`, `agent/contracts/research.yaml`, `agent/contracts/plan.yaml`, and `agent/contracts/build.yaml`. Do not create another implementation plan. This clone is a contracts-and-instructions baseline, not a working harness; the historical `src/` tree is archived and active Databricks `tools/` source is unverified here.
+Official command references: [https://docs.astral.sh/uv/](https://docs.astral.sh/uv/) ; [https://docs.npmjs.com/cli/commands/npm-ci/](https://docs.npmjs.com/cli/commands/npm-ci/) ; [https://pnpm.io/cli/install](https://pnpm.io/cli/install) ; [https://docs.pydantic.dev/latest/concepts/models/](https://docs.pydantic.dev/latest/concepts/models/) .
 
-- **Plan:** Use accepted requirements and Research evidence to produce an actionable plan, real dependencies, expected outcomes, and verification criteria. Do not manufacture steps or insist on a plan for simple tasks.
-- **Build:** Implement the requested outcome using supported tools and existing capabilities. Reuse code where appropriate; create or modify files only when needed for the outcome.
-- Do not add new architectural boundaries, permission services, authorization gates, hooks, or parallel frameworks merely to enforce agent instructions. Respect actual host permissions.
-- Do not delete, archive, overwrite, or revert unrelated existing work without user authorization. Never circumvent a denied operation with another tool.
-- Test real behavior and independently inspect results. A written contract, self-reported pass flag, or successful file write is not proof that the product works.
+## Editing and reference use
 
-## 6. System, notebooks, and tools
+- Establish `<objective>`, `<scope>`, `<expected_outcome>`, and `<finish_condition>`. Inspect actual code and `git status --short` before making changes.
+- Keep changes focused and coherent; preserve unrelated edits. Add new files or abstractions only when the requested result needs them. Do not copy outside projects' directory layouts, APIs, hooks, or gates.
+- Verify destination files before overwriting them—including notebook `%%writefile <path>`. Do not delete, archive, revert, or bypass denied operations without authorization.
+- Cite consequential evidence as `<relative_path>:<line>` or a direct official source URL. Separate facts, assumptions, proposals, and unknowns.
+- Research, Plan, and Build remain owned by their accepted instructions and templates; do not duplicate their responsibilities here.
 
-- **System Summarize:** Where the active product exposes **Generate**, it requires that explicit action; Agent generation requires explicit invocation. Do not infer execution authorization from ordinary chat, and verify the actual active UI/admission boundary. Neither path depends on a Quality Content subsystem.
-- Databricks notebooks may bootstrap dependencies and dry-test Research, Plan, and Build; they are test/initialization workspaces, not replacements for OneShot project files.
-- Reuse verified initialization and provider configuration. Inspect `agent.py` **if it exists** before notebook file writes; do not assume the file exists or overwrite it during setup.
-- Use the smallest sufficient supported tool set. Do not expose internal functions as public MCP tools without a demonstrated user-facing need.
-- Keep simulated dry tests, live model calls, and real integration tests clearly distinguished.
+## Executable specifications (ExecPlans)
 
-## 7. Reporting and completion
+Use an ExecPlan for substantial multi-milestone implementation or when explicitly requested. For straightforward work, proceed without one.
 
-- For substantial work, state the objective and approach briefly. Give meaningful findings without repetitive status updates.
-- Report implementation results as **Area → Exact Files/Folder → Verified Outcome**. Distinguish created, modified, unchanged, and unverified items.
-- Document what ran, what passed, what failed, and what remains unknown. The current repository's established check is `python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v` (contract tests only, not harness E2E). Do not invent traces, test receipts, artifact IDs, or completion claims.
-- Finish the requested work rather than ending with a plan alone, unless the user requested planning only or a real blocker prevents execution.
+A self-contained ExecPlan must be understandable by an agent with **no prior conversation**. Start with a short **Purpose** explaining what users gain and how to observe it. Include:
+
+- **Context & orientation:** `<repo_path>`, relevant files, existing behavior, target behavior, assumptions, constraints, and essential technical knowledge in your own words. Reference a prior ExecPlan only if it is checked in; otherwise include the required context.
+- **Milestones:** exact files, edits, commands, expected observations, and independent acceptance criteria. Do not depend on external articles for execution.
+- **Progress:** dated checklist of done, remaining, blocked, or cancelled work, updated at every stopping point.
+- **Surprises & discoveries:** unexpected findings and supporting evidence.
+- **Decision log:** date, decision, reason, evidence, and impact for every material change.
+- **Outcomes & retrospective:** actual behavior, validation results, limitations, and outstanding items.
+- **Recovery:** current state, how to resume safely, and whether rerunning commands or steps could duplicate/overwrite prior work.
+
+Execute milestones in sequence without asking for generic “next steps.” Investigate nonblocking ambiguity; ask only about genuinely blocking user-owned decisions. For difficult unknowns, use small isolated prototypes or library-source inspection, record evidence, then integrate only what is justified. Commit coherent work when commits are authorized; do not include unrelated changes. Record commit IDs in the ExecPlan.
+
+## Validation and completion
+
+- Run focused tests and then applicable project-defined lint, type-check, test, and build commands. Validate user-visible results against **independently established expectations**, including negative or recovery cases when relevant.
+- Record exact commands, files, outputs, errors, and limitations. Mark checks `verified`, `failed`, `not_run`, or `not_available`. Never claim a command ran, a trace exists, a model responded, or a deployment succeeded without evidence.
+- Reconcile all ExecPlan milestones as **done**, **blocked** (reason), or **cancelled** (reason); leave no ambiguous in-progress claims at handoff.
+- Report substantial changes concisely: **Area → Exact Files/Folder → Commands Run → Verified Outcome → Remaining Issues**.
