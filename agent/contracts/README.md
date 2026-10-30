@@ -9,7 +9,7 @@
 - `agent/contracts/build.yaml`: execution receipts, implementation checks, actual **post-Build E2E**, recovery and final result.
 - `agent/contracts/check_contracts.py`: independently check record readiness and cross-record references; call from the **existing** host controller at handoff. Does not invoke tools, write state, or judge prose quality.
 
-The current public GitHub `main` was verified as `itz1508/OneShot` at `b1224bb` before installing these files; it has historical `src/` and does **not** have a checked-in `agent/main.py`. The active Databricks workspace reportedly has `tools/`; verify it before integration. These contracts must not cause an automatic migration, restore old 00–11 architecture, or introduce another Task Management owner.
+The legacy `src/` source, old tests and numbered 00–11 assignments are preserved under [`archive/legacy-src-pre-harness-2026-10-29`](https://github.com/itz1508/OneShot/tree/archive/legacy-src-pre-harness-2026-10-29), not active on `main`. The Databricks workspace reportedly contains `tools/`, but its actual files and integration points have **not** been verified here. This checkout contains **templates and a verifier, not a running agent harness**. Do not restore archived modules or invent System Scanner bindings.
 
 ## Lifecycle and persistence
 
