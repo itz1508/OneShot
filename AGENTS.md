@@ -1,72 +1,92 @@
-# OneShot — AGENTS.md
+# OneShot — Agent Operating Instructions
 
-Repository guidance for coding agents. This file explains **how to work** and where to find the accepted specification; it is not another Research, Plan, Build template or an agent runtime.
+## 1. Authority and overrides
 
-## Start here — existing authority
+- The user's latest applicable explicit instructions are the source of truth for the task's objective, scope, requirements, and deliverable, subject to host permissions and higher-priority safety requirements.
+- **Override means replace**: a newer instruction supersedes conflicting older instructions within its scope. Do not merge rejected requirements back into the task.
+- Treat memory, `README.md`, archived material, old 00–11 assignments, previous agent outputs, and other historical documentation as context or evidence, **not** current requirements.
+- Existing code establishes what is implemented, not what the user wants. Inspect it where relevant; do not copy its architecture by default.
+- Apply the user's requested deliverable directly. Do not turn template fields into new skills, hooks, services, schemas, gates, or tools without an actual need.
 
-1. Confirm the actual checkout with `git status --short`, `git rev-parse HEAD`, and `git ls-files`. Inspect staged, unstaged, and untracked work before writing. A GitHub snapshot does not establish the state of a Databricks or other active workspace.
-2. Read, in order, [README.md](README.md), [BUILD_INSTRUCTION.md](agent/implementation/BUILD_INSTRUCTION.md), [ExecPlan.md](agent/implementation/ExecPlan.md), and [the contracts guide](agent/contracts/README.md). Inspect `agent/contracts/research.yaml`, `agent/contracts/plan.yaml`, `agent/contracts/build.yaml`, `agent/contracts/check_contracts.py`, and `tests/test_workflow_contracts.py` for the relevant stage. These are **real files in this repository**. This document points to them; it does not automatically load them.
-3. **Continue the committed M0–M8 ExecPlan.** Update its Progress, Surprises & Discoveries, Decision Log, Outcomes, executed commands, and recovery notes. Do not invent a replacement plan, restart finished work, or ask the user to select generic next steps.
-4. The current `main` is an **implementation baseline, not a running harness**. The proposed `agent/main.py` does not yet exist. `tools/README.md` is staging guidance, **not executable tool code**. At M0, identify the real tool interfaces and Task Management / artifact store in the physical workspace. The Databricks `tools/` content has not been verified in this clone.
-5. Historical `src/`, obsolete 00–11 assignments, and their tests are preserved on `archive/legacy-src-pre-harness-2026-10-29`; they are **reference material, not current architecture**. Do not resurrect them, rename them into `tools/`, or import stale tests as acceptance proof.
+## 2. Shared bootstrap — System and Agent
 
-The latest explicit user requirements override conflicting older decisions within their scope. Current source proves what exists; it does not override accepted requirements. Separate observed facts, accepted decisions, proposals, assumptions, and unknowns.
+- **Bootstrap is System-owned startup context**, not a workflow-selection stage. The agent only checks whether that context is available; it must not rerun, recreate, or assume the Bootstrap occurred.
+- Discover the actual repository path and available files. Consult available, authorized memory/RAG and applicable `AGENTS.md` and reference sources. Do not claim any source was loaded before reading it.
+- Record what was actually found; mark unavailable sources as unavailable. Do not claim a document was loaded without reading it.
+- Do not promote stale material into authority. Do not change or archive files during discovery.
+- Continue the operation already indicated by the user's request; do not ask the user to choose System or Research again.
 
-## One workflow, existing owners
+Record the observed startup context in this compact form (not a new Bootstrap task):
 
-For this implementation, follow the complete accepted path in the build instruction:
+```yaml
+bootstrap:
+  repo_path: <discovered path | unavailable>
+  system_bootstrap: available | unavailable | not_confirmed
+  memory: loaded | not_loaded | not_confirmed
+  agents_md: loaded | unavailable | not_confirmed
+  reference_sources: []
+```
+
+## 3. Research — two templates
+
+**Research Input** is populated before Research from the request, accepted instructions, available context, and task-relevant evidence. Quality Content means accurate, complete input **content**; it is not a separate runtime component. `agent/contracts/research.yaml` is the durable Research stage record, not a replacement for the Research Input/Output distinction.
 
 ```text
-Research → Research artifacts → Plan
-  → System Scanner Gap Analysis → Gap Fix → recheck
-  → Fixture Validation + Chaos (independent pre-Build expectations)
-  → Build the verified Plan ID/revision → implementation checks
-  → real post-Build E2E → verified result
+create_task_id()
+Input_contents_research()
+Input_tasks_research()
+input_files_research()
 ```
 
-- **One controller:** implement the proposed `agent/main.py` only after discovering supported host APIs. Research, Plan, and Build are responsibilities with Markdown guidance and the three YAML record contracts, not three independent controllers.
-- **One Scanner:** Gap Analysis invokes the existing System Scanner through an actually available tool interface. Inspect missing, drift, overlap, duplication, contradiction, dependencies, feasibility, coverage, and applicable safety/mismatch issues. Preserve evidence, provenance, and uncertainty; do not manufacture a Scanner result.
-- **One Gap Fix:** correct every confirmed actionable issue in the authorized scope at its responsible stage, then recheck. Apply the same correction responsibility to later Build/E2E failures; revalidate affected downstream artifacts.
-- **One task/persistence owner:** use the verified Task Management and artifact resolver. Maintain stable `task_id`, stage records, revision-linked handoffs, decision history, checkpoints, and side-effect receipts. Do not create a competing store. A success flag or YAML syntax check is not proof of a successful stage.
-- **No fabricated host behavior:** discover hooks, model/tool access, permissions, clarification, and execution interfaces before calling them. If a required capability is unavailable, report the exact blocker; never replace it with a stub or simulated receipt.
-- **No redundant questions:** populate Research Input from the user's original request, accepted context, and available evidence. Route genuinely blocking user-owned unknowns through the supported host clarification path; leave researchable unknowns to Research.
+- Identify requirements, constraints, expected outcomes, and missing information in the input as applicable; represent structured content in YAML.
+- Do not invent facts or ask for information already established. Keep researchable unknowns for Research; ask only when a genuinely blocking user-owned decision cannot be established.
 
-## Work with evidence and minimal changes
+**Research Output** is populated after investigation, using actual findings and evidence:
 
-- Identify the objective, scope, actual source root, expected outcome, and acceptance evidence before editing. Inspect the *physical* files; prefer indexed search and focused reads over repeated full-tree scans.
-- Research consequential technical claims with applicable primary sources or the project's verified code. Challenge an incorrect proposal using evidence, impact, an alternative, and verification; do not manufacture objections.
-- Keep edits scoped, preserve unrelated changes, and inspect the diff. Read a destination before overwriting it, including Databricks notebook writes. Retire outdated code or tests only after verifying replacement coverage and preserving necessary evidence.
-- Prefer existing tools and configured practices over added frameworks. Do not create a standalone Quality Input subsystem, another Scanner/controller, a new permission service, unsupported hooks, or a separate Chaos stage.
-- For multi-milestone work, the **existing ExecPlan** is the living record: keep precise file mappings, milestones, observed results, limitations, and a safe restart point. Only independently justified changes may alter its scope.
-
-## Commands — verify before executing
-
-From this repository root, the **currently checked-in contract baseline** is:
-
-```sh
-python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v
+```text
+create_output_id()
+input_artifact_<template>
+output_artifact_<template>
+output_plan_task()
+output_fixture_validation()
+output_success_criteria()
+output_validation()
 ```
 
-It checks contract invariants only. It **does not** exercise an agent, Scanner, persistence, real tool execution, or post-Build E2E. Use Python 3.11+ for the existing checker.
+- Report requirements, constraints, expected outcomes, missing information, dependencies, and supporting evidence where applicable.
+- Keep expected fixture outcomes separate from observed validation. Mark untested work as untested.
+- These names describe template operations and fields, not instructions to create Python functions or modules.
+- Do not use Research Output as the Build Output template.
 
-```sh
-git status --short
-git ls-files
-git diff --check
-# If installed and useful:
-rg --files
-rg -n '<term>' '<actual_path>'
-```
+## 4. Source exploration and research
 
-The current clone has **no** `pyproject.toml`, `uv.lock`, or `package.json`. Do not treat `uv sync`, `pip install`, `npm ci`, `pnpm`, or `ruff` as baseline commands. If real source and manifests later establish a Python or frontend toolchain, follow their lockfiles and configured test/lint/build scripts; explain environment changes before running them. For Pydantic, use the actual model validator; `python -m json.tool` checks JSON syntax only.
+- **Think first.** Identify the task objective and the resources currently likely to matter before calling tools.
+- Batch independent reads using host-supported parallel capabilities; read sequentially when earlier results determine later sources.
+- Inspect actual relevant code before recommending source changes. Expand discovery when evidence justifies it; avoid rereading unchanged files.
+- Research current official practices when external technical knowledge is necessary. Compare them with observed implementation; distinguish requirements, defects, options, and unknowns.
+- Preserve source provenance and contradictions. Do not mistake examples or documentation for user-authorized architecture.
 
-Choose test commands from verified configuration. Run relevant focused tests first, then applicable broader checks. Distinguish `passed`, `failed`, `skipped`, `blocked`, and `not_executed`; record exact commands, cwd, environment, receipts, and observed results.
+## 5. Plan and Build
 
-## Handoffs, recovery, and finish line
+For the current harness implementation, first read `agent/implementation/BUILD_INSTRUCTION.md`, continue the accepted M0–M8 `agent/implementation/ExecPlan.md`, and follow `agent/contracts/README.md`, `agent/contracts/research.yaml`, `agent/contracts/plan.yaml`, and `agent/contracts/build.yaml`. Do not create another implementation plan. This clone is a contracts-and-instructions baseline, not a working harness; the historical `src/` tree is archived and active Databricks `tools/` source is unverified here.
 
-- Research can hand off **before Plan exists**; Plan can hand off **before Build exists**. Reconcile and test stage-specific checks rather than filling downstream records with placeholders. A handoff is permitted only when evidence-backed invariants pass for the current revision.
-- Fixture Validation + Chaos validates independently prepared expected outcomes **before Build**. After Build, execute applicable fixture, negative, boundary, corruption/recovery, and actual user-outcome checks **through the built entrypoint**. Build success alone never means task completion.
-- On interruption or retry, inspect current source/revision, last checkpoint, action ID, receipts, and uncertain side effects. Reconcile before repeating a write. Upstream changes invalidate affected downstream verification.
-- At each stopping point update the ExecPlan and durable stage records with what actually happened. Report **Area → Changed paths → Commands/results → Evidence → Remaining blockers**. Do not claim live E2E, host integration, or GitHub updates that were not observed.
+- **Plan:** Use accepted requirements and Research evidence to produce an actionable plan, real dependencies, expected outcomes, and verification criteria. Do not manufacture steps or insist on a plan for simple tasks.
+- **Build:** Implement the requested outcome using supported tools and existing capabilities. Reuse code where appropriate; create or modify files only when needed for the outcome.
+- Do not add new architectural boundaries, permission services, authorization gates, hooks, or parallel frameworks merely to enforce agent instructions. Respect actual host permissions.
+- Do not delete, archive, overwrite, or revert unrelated existing work without user authorization. Never circumvent a denied operation with another tool.
+- Test real behavior and independently inspect results. A written contract, self-reported pass flag, or successful file write is not proof that the product works.
 
-For a small unrelated task, apply proportionate review and testing. For the **workflow-harness implementation**, execute and verify the entire M0–M8 acceptance path.
+## 6. System, notebooks, and tools
+
+- **System Summarize:** Where the active product exposes **Generate**, it requires that explicit action; Agent generation requires explicit invocation. Do not infer execution authorization from ordinary chat, and verify the actual active UI/admission boundary. Neither path depends on a Quality Content subsystem.
+- Databricks notebooks may bootstrap dependencies and dry-test Research, Plan, and Build; they are test/initialization workspaces, not replacements for OneShot project files.
+- Reuse verified initialization and provider configuration. Inspect `agent.py` **if it exists** before notebook file writes; do not assume the file exists or overwrite it during setup.
+- Use the smallest sufficient supported tool set. Do not expose internal functions as public MCP tools without a demonstrated user-facing need.
+- Keep simulated dry tests, live model calls, and real integration tests clearly distinguished.
+
+## 7. Reporting and completion
+
+- For substantial work, state the objective and approach briefly. Give meaningful findings without repetitive status updates.
+- Report implementation results as **Area → Exact Files/Folder → Verified Outcome**. Distinguish created, modified, unchanged, and unverified items.
+- Document what ran, what passed, what failed, and what remains unknown. The current repository's established check is `python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v` (contract tests only, not harness E2E). Do not invent traces, test receipts, artifact IDs, or completion claims.
+- Finish the requested work rather than ending with a plan alone, unless the user requested planning only or a real blocker prevents execution.
