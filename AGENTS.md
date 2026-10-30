@@ -1,107 +1,72 @@
 # OneShot — AGENTS.md
 
-Practical repository instructions for coding agents. This file governs **how to work**, not the OneShot product architecture or the Research, Plan, and Build output templates.
+Repository guidance for coding agents. This file explains **how to work** and where to find the accepted specification; it is not another Research, Plan, Build template or an agent runtime.
 
-## Authority and judgment
+## Start here — existing authority
 
-- Follow the latest applicable user instruction. **Override means replace** conflicting older requirements within the stated scope; do not merge rejected designs back in.
-- Treat old README content, historical 00–11 assignments, archived files, and retrieved memory as context, **not requirement authority**. Current source code is evidence of what exists, not proof of what should exist.
-- Check whether System startup context is loaded; Bootstrap is System-owned. Do not rerun or implement it.
-- Research material technical claims before answering or editing. **Challenge proposals, including the user's, when evidence identifies a meaningful flaw**: state the issue, evidence, consequence, better option, and expected improvement. Do not manufacture objections.
-- Adapt official patterns and reference examples to the actual repository; **never transplant sample architecture or code uncritically**. Use `<descriptive_variable>` in reusable templates; use verified values in completed artifacts.
-- Ask only for genuinely blocking user-owned decisions. Do not ask for the next step when executing an accepted specification.
+1. Confirm the actual checkout with `git status --short`, `git rev-parse HEAD`, and `git ls-files`. Inspect staged, unstaged, and untracked work before writing. A GitHub snapshot does not establish the state of a Databricks or other active workspace.
+2. Read, in order, [README.md](README.md), [BUILD_INSTRUCTION.md](agent/implementation/BUILD_INSTRUCTION.md), [ExecPlan.md](agent/implementation/ExecPlan.md), and [the contracts guide](agent/contracts/README.md). Inspect `agent/contracts/research.yaml`, `agent/contracts/plan.yaml`, `agent/contracts/build.yaml`, `agent/contracts/check_contracts.py`, and `tests/test_workflow_contracts.py` for the relevant stage. These are **real files in this repository**. This document points to them; it does not automatically load them.
+3. **Continue the committed M0–M8 ExecPlan.** Update its Progress, Surprises & Discoveries, Decision Log, Outcomes, executed commands, and recovery notes. Do not invent a replacement plan, restart finished work, or ask the user to select generic next steps.
+4. The current `main` is an **implementation baseline, not a running harness**. The proposed `agent/main.py` does not yet exist. `tools/README.md` is staging guidance, **not executable tool code**. At M0, identify the real tool interfaces and Task Management / artifact store in the physical workspace. The Databricks `tools/` content has not been verified in this clone.
+5. Historical `src/`, obsolete 00–11 assignments, and their tests are preserved on `archive/legacy-src-pre-harness-2026-10-29`; they are **reference material, not current architecture**. Do not resurrect them, rename them into `tools/`, or import stale tests as acceptance proof.
 
-## Locate the repository and commands
+The latest explicit user requirements override conflicting older decisions within their scope. Current source proves what exists; it does not override accepted requirements. Separate observed facts, accepted decisions, proposals, assumptions, and unknowns.
 
-Identify `<repo_path>` from the active workspace. Read the applicable `AGENTS.md`, including a more specific one near the target file if present. Confirm configuration before choosing a package manager or command.
+## One workflow, existing owners
 
-| Purpose | Inspect |
-| --- | --- |
-| Python project and scripts | `<repo_path>/pyproject.toml` |
-| Python lockfile | `<repo_path>/uv.lock` |
-| JavaScript scripts and package manager | `<web_root>/package.json` |
-| npm/pnpm lock | `<web_root>/package-lock.json`, `<web_root>/pnpm-lock.yaml` |
-| Workspace and CI | `<repo_path>/.github/workflows/`, relevant workspace config |
-| Source/tests | Actual discovered source paths and test directories |
+For this implementation, follow the complete accepted path in the build instruction:
 
-```sh
-git -C "<repo_path>" status --short
-git -C "<repo_path>" ls-files
-rg --files "<repo_path>"
-rg -n '<pattern>' '<relevant_path>'
+```text
+Research → Research artifacts → Plan
+  → System Scanner Gap Analysis → Gap Fix → recheck
+  → Fixture Validation + Chaos (independent pre-Build expectations)
+  → Build the verified Plan ID/revision → implementation checks
+  → real post-Build E2E → verified result
 ```
 
-Prefer dedicated host read/search tools when available. **Think first**: determine likely evidence sources, batch independent reads using supported tools, read sequentially when necessary, and avoid rereading unchanged files.
+- **One controller:** implement the proposed `agent/main.py` only after discovering supported host APIs. Research, Plan, and Build are responsibilities with Markdown guidance and the three YAML record contracts, not three independent controllers.
+- **One Scanner:** Gap Analysis invokes the existing System Scanner through an actually available tool interface. Inspect missing, drift, overlap, duplication, contradiction, dependencies, feasibility, coverage, and applicable safety/mismatch issues. Preserve evidence, provenance, and uncertainty; do not manufacture a Scanner result.
+- **One Gap Fix:** correct every confirmed actionable issue in the authorized scope at its responsible stage, then recheck. Apply the same correction responsibility to later Build/E2E failures; revalidate affected downstream artifacts.
+- **One task/persistence owner:** use the verified Task Management and artifact resolver. Maintain stable `task_id`, stage records, revision-linked handoffs, decision history, checkpoints, and side-effect receipts. Do not create a competing store. A success flag or YAML syntax check is not proof of a successful stage.
+- **No fabricated host behavior:** discover hooks, model/tool access, permissions, clarification, and execution interfaces before calling them. If a required capability is unavailable, report the exact blocker; never replace it with a stub or simulated receipt.
+- **No redundant questions:** populate Research Input from the user's original request, accepted context, and available evidence. Route genuinely blocking user-owned unknowns through the supported host clarification path; leave researchable unknowns to Research.
 
-## CLI: Python, web, and Pydantic
+## Work with evidence and minimal changes
 
-Use commands **only when supported by the active manifests, lockfiles, installed tools, and scripts**. Examples below are conditional—not verified OneShot build commands.
+- Identify the objective, scope, actual source root, expected outcome, and acceptance evidence before editing. Inspect the *physical* files; prefer indexed search and focused reads over repeated full-tree scans.
+- Research consequential technical claims with applicable primary sources or the project's verified code. Challenge an incorrect proposal using evidence, impact, an alternative, and verification; do not manufacture objections.
+- Keep edits scoped, preserve unrelated changes, and inspect the diff. Read a destination before overwriting it, including Databricks notebook writes. Retire outdated code or tests only after verifying replacement coverage and preserving necessary evidence.
+- Prefer existing tools and configured practices over added frameworks. Do not create a standalone Quality Input subsystem, another Scanner/controller, a new permission service, unsupported hooks, or a separate Chaos stage.
+- For multi-milestone work, the **existing ExecPlan** is the living record: keep precise file mappings, milestones, observed results, limitations, and a safe restart point. Only independently justified changes may alter its scope.
 
-**Python / uv**, if `<repo_path>/pyproject.toml` configures uv and `<repo_path>/uv.lock` exists:
+## Commands — verify before executing
 
-```sh
-uv sync --locked
-uv run --locked python -m pytest <test_path>
-uv run --locked ruff check <python_path>
-uv run --locked ruff format --check <python_path>
-uv run --locked <configured_entry_point> <arguments>
-uv build  # only if the project is a buildable package
-```
-
-If there is no uv lockfile, verify project setup before using `uv sync` without `--locked` because it may create/update a lock. If tools or scripts are absent, use the configured alternative or report `not_available`.
-
-**JavaScript / TypeScript**, at `<web_root>`: choose **one** based on `package.json` and its lockfile.
+From this repository root, the **currently checked-in contract baseline** is:
 
 ```sh
-# npm + package-lock.json
-npm ci
-npm run <existing_script>
-
-# OR pnpm + pnpm-lock.yaml
-pnpm install --frozen-lockfile
-pnpm run <existing_script>
+python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v
 ```
 
-Inspect scripts for `test`, `check`, `lint`, `typecheck`, and `build`; run only those actually defined. Note that `npm ci` may replace `node_modules`.
-
-**Pydantic / schema checks**: first locate `<model_source_path>` and `<input_file>`. Prefer an existing project validation CLI or test. JSON syntax is **not** model validation.
+It checks contract invariants only. It **does not** exercise an agent, Scanner, persistence, real tool execution, or post-Build E2E. Use Python 3.11+ for the existing checker.
 
 ```sh
-python -m json.tool "<input_file>"  # JSON syntax only
-<configured_python_runner> -m pytest "<validation_test_path>"
+git status --short
+git ls-files
+git diff --check
+# If installed and useful:
+rg --files
+rg -n '<term>' '<actual_path>'
 ```
 
-Where no validation CLI/test exists, use the verified existing Pydantic model's `model_validate_json()` (Pydantic v2) through the configured Python runner. Do not invent a universal `pydantic validate` command. Record exact errors and observed results.
+The current clone has **no** `pyproject.toml`, `uv.lock`, or `package.json`. Do not treat `uv sync`, `pip install`, `npm ci`, `pnpm`, or `ruff` as baseline commands. If real source and manifests later establish a Python or frontend toolchain, follow their lockfiles and configured test/lint/build scripts; explain environment changes before running them. For Pydantic, use the actual model validator; `python -m json.tool` checks JSON syntax only.
 
-Official command references: https://docs.astral.sh/uv/ ; https://docs.npmjs.com/cli/commands/npm-ci/ ; https://pnpm.io/cli/install ; https://docs.pydantic.dev/latest/concepts/models/ .
+Choose test commands from verified configuration. Run relevant focused tests first, then applicable broader checks. Distinguish `passed`, `failed`, `skipped`, `blocked`, and `not_executed`; record exact commands, cwd, environment, receipts, and observed results.
 
-## Editing and reference use
+## Handoffs, recovery, and finish line
 
-- Establish `<objective>`, `<scope>`, `<expected_outcome>`, and `<finish_condition>`. Inspect actual code and `git status --short` before making changes.
-- Keep changes focused and coherent; preserve unrelated edits. Add new files or abstractions only when the requested result needs them. Do not copy outside projects' directory layouts, APIs, hooks, or gates.
-- Verify destination files before overwriting them—including notebook `%%writefile <path>`. Do not delete, archive, revert, or bypass denied operations without authorization.
-- Cite consequential evidence as `<relative_path>:<line>` or a direct official source URL. Separate facts, assumptions, proposals, and unknowns.
-- Research, Plan, and Build remain owned by their accepted instructions and templates; do not duplicate their responsibilities here.
+- Research can hand off **before Plan exists**; Plan can hand off **before Build exists**. Reconcile and test stage-specific checks rather than filling downstream records with placeholders. A handoff is permitted only when evidence-backed invariants pass for the current revision.
+- Fixture Validation + Chaos validates independently prepared expected outcomes **before Build**. After Build, execute applicable fixture, negative, boundary, corruption/recovery, and actual user-outcome checks **through the built entrypoint**. Build success alone never means task completion.
+- On interruption or retry, inspect current source/revision, last checkpoint, action ID, receipts, and uncertain side effects. Reconcile before repeating a write. Upstream changes invalidate affected downstream verification.
+- At each stopping point update the ExecPlan and durable stage records with what actually happened. Report **Area → Changed paths → Commands/results → Evidence → Remaining blockers**. Do not claim live E2E, host integration, or GitHub updates that were not observed.
 
-## Executable specifications (ExecPlans)
-
-Use an ExecPlan for substantial multi-milestone implementation or when explicitly requested. For straightforward work, proceed without one.
-
-A self-contained ExecPlan must be understandable by an agent with **no prior conversation**. Start with a short **Purpose** explaining what users gain and how to observe it. Include:
-
-- **Context & orientation:** `<repo_path>`, relevant files, existing behavior, target behavior, assumptions, constraints, and essential technical knowledge in your own words. Reference a prior ExecPlan only if it is checked in; otherwise include the required context.
-- **Milestones:** exact files, edits, commands, expected observations, and independent acceptance criteria. Do not depend on external articles for execution.
-- **Progress:** dated checklist of done, remaining, blocked, or cancelled work, updated at every stopping point.
-- **Surprises & discoveries:** unexpected findings and supporting evidence.
-- **Decision log:** date, decision, reason, evidence, and impact for every material change.
-- **Outcomes & retrospective:** actual behavior, validation results, limitations, and outstanding items.
-- **Recovery:** current state, how to resume safely, and whether rerunning commands or steps could duplicate/overwrite prior work.
-
-Execute milestones in sequence without asking for generic “next steps.” Investigate nonblocking ambiguity; ask only about genuinely blocking user-owned decisions. For difficult unknowns, use small isolated prototypes or library-source inspection, record evidence, then integrate only what is justified. Commit coherent work when commits are authorized; do not include unrelated changes. Record commit IDs in the ExecPlan.
-
-## Validation and completion
-
-- Run focused tests and then applicable project-defined lint, type-check, test, and build commands. Validate user-visible results against **independently established expectations**, including negative or recovery cases when relevant.
-- Record exact commands, files, outputs, errors, and limitations. Mark checks `verified`, `failed`, `not_run`, or `not_available`. Never claim a command ran, a trace exists, a model responded, or a deployment succeeded without evidence.
-- Reconcile all ExecPlan milestones as **done**, **blocked** (reason), or **cancelled** (reason); leave no ambiguous in-progress claims at handoff.
-- Report substantial changes concisely: **Area → Exact Files/Folder → Commands Run → Verified Outcome → Remaining Issues**.
+For a small unrelated task, apply proportionate review and testing. For the **workflow-harness implementation**, execute and verify the entire M0–M8 acceptance path.
