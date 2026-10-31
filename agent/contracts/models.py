@@ -27,6 +27,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -913,7 +914,8 @@ def validate_pipeline(
             errors.append("plan: Research identity mismatch")
         if ri.get("record_revision") != research.get("revision"):
             errors.append("plan: stale Research revision")
-        if ri.get("artifact_manifest_ref") != research.get("handoff", {}).get("artifact_manifest_ref"):
+        if (ri.get("artifact_manifest_ref")
+                != research.get("handoff", {}).get("artifact_manifest_ref")):
             errors.append("plan: Research manifest changed")
 
     if p_complete and b_complete:
@@ -927,9 +929,12 @@ def validate_pipeline(
 
     # Evidence resolution checks — fail closed when resolve is None
     if resolve is None and (r_complete or p_complete or b_complete):
-        errors.append("no evidence resolver configured (complete records require evidence resolution)")
+        errors.append("no evidence resolver configured — completed records require resolution")
     elif resolve is not None:
-        errors.extend(_check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, b_complete))
+        errors.extend(_check_evidence_refs(
+            research, plan, build, resolve,
+            r_complete, p_complete, b_complete,
+        ))
 
     return errors
 
@@ -1067,7 +1072,7 @@ def validate_research(record: dict[str, Any], resolve: EvidenceCheck | None = No
 
     r_complete = record.get("status") == "complete"
     if r_complete and resolve is None:
-        return ["research: no evidence resolver configured (complete records require evidence resolution)"]
+        return ["research: no evidence resolver configured — completed records require resolution"]
     if resolve is not None and r_complete:
         return _check_evidence_refs(record, {}, {}, resolve, True, False, False)
     return []
@@ -1095,7 +1100,8 @@ def validate_plan(
 
     # Handoff destination check (same semantics as validate_pipeline).
     if plan.get("handoff", {}).get("to") != "build":
-        errors.append(f"plan: invalid handoff destination (expected build, got {plan.get('handoff', {}).get('to')!r})")
+        got = plan.get("handoff", {}).get("to")
+        errors.append(f"plan: invalid handoff destination (expected build, got {got!r})")
 
     # Task-id consistency (only meaningful once research has one).
     r_task = research.get("task_id")
@@ -1120,14 +1126,18 @@ def validate_plan(
             errors.append("plan: Research identity mismatch")
         if ri.get("record_revision") != research.get("revision"):
             errors.append("plan: stale Research revision")
-        if ri.get("artifact_manifest_ref") != research.get("handoff", {}).get("artifact_manifest_ref"):
+        if (ri.get("artifact_manifest_ref")
+                != research.get("handoff", {}).get("artifact_manifest_ref")):
             errors.append("plan: Research manifest changed")
 
     # Evidence resolution — fail-closed for complete records with no resolver.
     if p_complete and resolve is None:
-        errors.append("plan: no evidence resolver configured (complete records require evidence resolution)")
+        errors.append("plan: no evidence resolver configured — completed records require resolution")
     elif resolve is not None:
-        errors.extend(_check_evidence_refs(research, plan, {}, resolve, r_complete, p_complete, False))
+        errors.extend(_check_evidence_refs(
+            research, plan, {}, resolve,
+            r_complete, p_complete, False,
+        ))
 
     return errors
 
@@ -1156,7 +1166,8 @@ def validate_build(
 
     # Handoff destination check.
     if build.get("handoff", {}).get("to") != "complete":
-        errors.append(f"build: invalid handoff destination (expected complete, got {build.get('handoff', {}).get('to')!r})")
+        got = build.get("handoff", {}).get("to")
+        errors.append(f"build: invalid handoff destination (expected complete, got {got!r})")
 
     # Task-id consistency.
     task_ids = {research.get("task_id"), plan.get("task_id"), build.get("task_id")}
@@ -1196,9 +1207,12 @@ def validate_build(
 
     # Fail-closed for complete records with no resolver.
     if b_complete and resolve is None:
-        errors.append("build: no evidence resolver configured (complete records require evidence resolution)")
+        errors.append("build: no evidence resolver configured — completed records require resolution")
     elif resolve is not None:
-        errors.extend(_check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, b_complete))
+        errors.extend(_check_evidence_refs(
+            research, plan, build, resolve,
+            r_complete, p_complete, b_complete,
+        ))
 
     return errors
 
