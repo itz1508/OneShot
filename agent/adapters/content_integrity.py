@@ -3,10 +3,11 @@
 This adapter owns no files, persistence, task IDs, or authorization decisions.
 A content digest is not a Research/Plan/Build artifact reference.
 """
+
 from __future__ import annotations
 
-from hashlib import sha256
 import re
+from hashlib import sha256
 from typing import Protocol
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")

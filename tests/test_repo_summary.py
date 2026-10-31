@@ -6,18 +6,14 @@ Verifies the script executes, produces correct output, and handles edge cases.
 """
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 # Add src to path
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
+from repo_summary import RepoSummary, RepoSummaryTool
 
-from repo_summary import RepoSummaryTool, RepoSummary, GapEntry
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestRepoSummary:
@@ -108,8 +104,16 @@ class TestRepoSummary:
     def test_script_executes_via_cli(self):
         """Script runs successfully from command line."""
         result = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "tools" / "repo_summary.py"), "--output-format", "json"],
-            capture_output=True, text=True, timeout=30, cwd=str(REPO_ROOT)
+            [
+                sys.executable,
+                str(REPO_ROOT / "tools" / "repo_summary.py"),
+                "--output-format",
+                "json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(REPO_ROOT),
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"
         parsed = json.loads(result.stdout)

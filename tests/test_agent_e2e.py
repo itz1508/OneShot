@@ -5,22 +5,16 @@ Uses the actual built context_counter.py entrypoint and real Task Management.
 NOT mocks, NOT static fixtures, NOT synthetic callback traces.
 """
 
-import json
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
-import pytest
+from color_eval import Color, ColorEvaluator
+from main import OneShotController, WorkflowStage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-sys.path.insert(0, str(REPO_ROOT / "agent"))
-
-from main import OneShotController, WorkflowStage
-from color_eval import ColorEvaluator, Color
-from task_management import TaskManager, TaskState
 
 
 class TestContextCounterE2E:
@@ -32,7 +26,9 @@ class TestContextCounterE2E:
         """Normal case: known Unicode string yields expected metrics."""
         r = subprocess.run(
             [sys.executable, str(self.COUNTER), "A\U0001f600\nB"],
-            capture_output=True, text=True, timeout=10
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         assert r.returncode == 0
         output = r.stdout
@@ -43,8 +39,7 @@ class TestContextCounterE2E:
     def test_empty_input(self):
         """Boundary: empty string."""
         r = subprocess.run(
-            [sys.executable, str(self.COUNTER), ""],
-            capture_output=True, text=True, timeout=10
+            [sys.executable, str(self.COUNTER), ""], capture_output=True, text=True, timeout=10
         )
         assert r.returncode == 0
         assert "characters: 0" in r.stdout
@@ -53,13 +48,17 @@ class TestContextCounterE2E:
 
     def test_file_input(self):
         """File mode: read from file."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
             f.write("hello world")
             fpath = f.name
         try:
             r = subprocess.run(
                 [sys.executable, str(self.COUNTER), "--file", fpath],
-                capture_output=True, text=True, timeout=10
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             assert r.returncode == 0
             assert "characters: 11" in r.stdout
@@ -70,8 +69,7 @@ class TestContextCounterE2E:
     def test_no_args_returns_error(self):
         """Negative: no arguments produces error exit code."""
         r = subprocess.run(
-            [sys.executable, str(self.COUNTER)],
-            capture_output=True, text=True, timeout=10
+            [sys.executable, str(self.COUNTER)], capture_output=True, text=True, timeout=10
         )
         assert r.returncode == 1
 
@@ -80,7 +78,9 @@ class TestContextCounterE2E:
         r = subprocess.run(
             [sys.executable, str(self.COUNTER), "--stdin"],
             input="test input",
-            capture_output=True, text=True, timeout=10
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         assert r.returncode == 0
         assert "characters: 10" in r.stdout
@@ -174,7 +174,7 @@ class TestColorEvalE2E:
         result = evaluator.evaluate_build(
             artifacts=[{"sha256": "abc123"}],
             fixture_results={"all_pass": True},
-            partial_failures=[]
+            partial_failures=[],
         )
         assert result.overall_color == Color.GREEN.value
 
@@ -184,7 +184,7 @@ class TestColorEvalE2E:
         result = evaluator.evaluate_build(
             artifacts=[{"sha256": "abc123"}],
             fixture_results={"all_pass": False},
-            partial_failures=[]
+            partial_failures=[],
         )
         assert result.overall_color == Color.RED.value
 
@@ -194,7 +194,7 @@ class TestColorEvalE2E:
         result = evaluator.evaluate_build(
             artifacts=[{"sha256": "abc123"}],
             fixture_results={"all_pass": True},
-            partial_failures=[{"step": "test", "error": "fail"}]
+            partial_failures=[{"step": "test", "error": "fail"}],
         )
         assert result.overall_color == Color.RED.value
 
@@ -202,8 +202,7 @@ class TestColorEvalE2E:
         """GREEN when all E2E checks pass."""
         evaluator = ColorEvaluator()
         result = evaluator.evaluate_e2e(
-            lifecycle_pass=True, recovery_pass=True,
-            invalid_input_pass=True, persistence_pass=True
+            lifecycle_pass=True, recovery_pass=True, invalid_input_pass=True, persistence_pass=True
         )
         assert result.overall_color == Color.GREEN.value
 
@@ -211,7 +210,6 @@ class TestColorEvalE2E:
         """RED when recovery fails (one RED makes all RED)."""
         evaluator = ColorEvaluator()
         result = evaluator.evaluate_e2e(
-            lifecycle_pass=True, recovery_pass=False,
-            invalid_input_pass=True, persistence_pass=True
+            lifecycle_pass=True, recovery_pass=False, invalid_input_pass=True, persistence_pass=True
         )
         assert result.overall_color == Color.RED.value

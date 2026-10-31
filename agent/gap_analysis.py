@@ -15,10 +15,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Callable
+from typing import Any
 
 # Add adapters/ and tools/ to path for adapter imports
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -28,9 +29,7 @@ for p in (_TOOLS_DIR, _ADAPTERS_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from repository_inventory import SourceInspection
-from source_comparison import SourceComparison, ComparisonEvidence
-
+from source_comparison import ComparisonEvidence, SourceComparison  # noqa: E402 - standalone-script path setup
 
 # ===== Capability Preflight (VALID / INVALID / NOT_VALIDATED) =====
 
@@ -44,6 +43,7 @@ class CapabilityVerdict(str, Enum):
 @dataclass
 class PreflightCategoryResult:
     """Result of a single category capability check."""
+
     category: str
     verdict: str
     positive_control_id: str
@@ -65,6 +65,7 @@ class PreflightCategoryResult:
 @dataclass
 class PreflightResult:
     """Complete result of an eight-category capability preflight run."""
+
     categories: list[PreflightCategoryResult] = field(default_factory=list)
     aggregate_verdict: str = CapabilityVerdict.NOT_VALIDATED.value
     coverage_complete: bool = False
@@ -114,8 +115,14 @@ class CapabilityPreflight:
     """
 
     CATEGORIES = [
-        "drift", "missing", "duplication", "contradictions",
-        "coverage", "dependencies", "feasibility", "cli_docs"
+        "drift",
+        "missing",
+        "duplication",
+        "contradictions",
+        "coverage",
+        "dependencies",
+        "feasibility",
+        "cli_docs",
     ]
 
     def __init__(self, scanner_source_path: Path | None = None):
@@ -131,28 +138,39 @@ class CapabilityPreflight:
     def run(self) -> PreflightResult:
         """Run all eight category preflight checks in disposable workspaces."""
         from datetime import datetime, timezone
+
         results = []
         for cat in self.CATEGORIES:
             method = getattr(self, f"_validate_{cat}", None)
             if method is None:
-                results.append(PreflightCategoryResult(
-                    category=cat, verdict=CapabilityVerdict.NOT_VALIDATED.value,
-                    positive_control_id="", negative_control_id="",
-                    positive_found=False, negative_preserved=False,
-                    error=f"No _validate_{cat} method",
-                    scanner_identity=self._scanner_identity,
-                ))
+                results.append(
+                    PreflightCategoryResult(
+                        category=cat,
+                        verdict=CapabilityVerdict.NOT_VALIDATED.value,
+                        positive_control_id="",
+                        negative_control_id="",
+                        positive_found=False,
+                        negative_preserved=False,
+                        error=f"No _validate_{cat} method",
+                        scanner_identity=self._scanner_identity,
+                    )
+                )
                 continue
             try:
                 results.append(method())
             except Exception as e:
-                results.append(PreflightCategoryResult(
-                    category=cat, verdict=CapabilityVerdict.NOT_VALIDATED.value,
-                    positive_control_id="", negative_control_id="",
-                    positive_found=False, negative_preserved=False,
-                    error=f"Preflight execution error: {e}",
-                    scanner_identity=self._scanner_identity,
-                ))
+                results.append(
+                    PreflightCategoryResult(
+                        category=cat,
+                        verdict=CapabilityVerdict.NOT_VALIDATED.value,
+                        positive_control_id="",
+                        negative_control_id="",
+                        positive_found=False,
+                        negative_preserved=False,
+                        error=f"Preflight execution error: {e}",
+                        scanner_identity=self._scanner_identity,
+                    )
+                )
 
         invalid = [r for r in results if r.verdict == CapabilityVerdict.INVALID.value]
         not_validated = [r for r in results if r.verdict == CapabilityVerdict.NOT_VALIDATED.value]
@@ -167,8 +185,10 @@ class CapabilityPreflight:
         limitations = [f"{r.category}: {r.error}" for r in results if r.error]
 
         return PreflightResult(
-            categories=results, aggregate_verdict=aggregate,
-            coverage_complete=coverage, scanner_identity=self._scanner_identity,
+            categories=results,
+            aggregate_verdict=aggregate,
+            coverage_complete=coverage,
+            scanner_identity=self._scanner_identity,
             limitations=limitations,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
@@ -179,8 +199,12 @@ class CapabilityPreflight:
         """Create a disposable git workspace with the given files committed."""
         ws = Path(tempfile.mkdtemp(prefix="preflight_"))
         subprocess.run(["git", "init"], cwd=ws, capture_output=True, timeout=10)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=ws, capture_output=True, timeout=5)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=ws, capture_output=True, timeout=5)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"], cwd=ws, capture_output=True, timeout=5
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=ws, capture_output=True, timeout=5
+        )
         for path, content in files.items():
             fp = ws / path
             fp.parent.mkdir(parents=True, exist_ok=True)
@@ -191,6 +215,7 @@ class CapabilityPreflight:
 
     def _run_inspector(self, workspace: Path) -> object:
         """Run the same git-based inspector used for real Plan checks."""
+
         @dataclass
         class FileEntry:
             path: str
@@ -206,11 +231,16 @@ class CapabilityPreflight:
             limitations: tuple
             partial: bool
 
-        r = subprocess.run(["git", "-C", str(workspace), "ls-files"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            ["git", "-C", str(workspace), "ls-files"], capture_output=True, text=True, timeout=10
+        )
         tracked = [f for f in r.stdout.strip().split("\n") if f]
-        r2 = subprocess.run(["git", "-C", str(workspace), "ls-files", "--others", "--exclude-standard"],
-                            capture_output=True, text=True, timeout=10)
+        r2 = subprocess.run(
+            ["git", "-C", str(workspace), "ls-files", "--others", "--exclude-standard"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         untracked = [f for f in r2.stdout.strip().split("\n") if f]
         all_f = sorted(set(tracked + untracked))
         files = []
@@ -229,18 +259,25 @@ class CapabilityPreflight:
 
         Uses the same git-ls-tree-diff method as the real host comparator.
         """
-        inspection_report = self._run_inspector(workspace)
+        inspection_report: Any = self._run_inspector(workspace)
         ws_files = {f.path: f.sha256_hex for f in inspection_report.files}
 
-        r = subprocess.run(["git", "-C", str(workspace), "ls-tree", "-r", "--name-only", "HEAD"],
-                           capture_output=True, text=True, timeout=10)
+        r = subprocess.run(
+            ["git", "-C", str(workspace), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         baseline_paths = set(r.stdout.strip().split("\n")) if r.stdout.strip() else set()
         baseline_files = {}
         for bpath in baseline_paths:
             if not bpath:
                 continue
-            gr = subprocess.run(["git", "-C", str(workspace), "show", f"HEAD:{bpath}"],
-                               capture_output=True, timeout=10)
+            gr = subprocess.run(
+                ["git", "-C", str(workspace), "show", f"HEAD:{bpath}"],
+                capture_output=True,
+                timeout=10,
+            )
             if gr.returncode == 0:
                 baseline_files[bpath] = hashlib.sha256(gr.stdout).hexdigest()
 
@@ -250,26 +287,49 @@ class CapabilityPreflight:
             ws_sha = ws_files.get(path)
             bl_sha = baseline_files.get(path)
             if ws_sha and not bl_sha:
-                records.append({
-                    "evidence_id": f"gap-new-{path}", "source_id": "workspace",
-                    "path": path, "sha256": ws_sha, "status": "added",
-                    "directional_finding": "file exists in workspace but not in baseline",
-                    "counterpart_ids": [], "limitation": None, "read_status": "COMPLETE"
-                })
+                records.append(
+                    {
+                        "evidence_id": f"gap-new-{path}",
+                        "source_id": "workspace",
+                        "path": path,
+                        "sha256": ws_sha,
+                        "status": "added",
+                        "directional_finding": "file exists in workspace but not in baseline",
+                        "counterpart_ids": [],
+                        "limitation": None,
+                        "read_status": "COMPLETE",
+                    }
+                )
             elif bl_sha and not ws_sha:
-                records.append({
-                    "evidence_id": f"gap-missing-{path}", "source_id": "baseline",
-                    "path": path, "sha256": None, "status": "missing",
-                    "directional_finding": "file exists in baseline but not in workspace",
-                    "counterpart_ids": [], "limitation": None, "read_status": "COMPLETE"
-                })
+                records.append(
+                    {
+                        "evidence_id": f"gap-missing-{path}",
+                        "source_id": "baseline",
+                        "path": path,
+                        "sha256": None,
+                        "status": "missing",
+                        "directional_finding": "file exists in baseline but not in workspace",
+                        "counterpart_ids": [],
+                        "limitation": None,
+                        "read_status": "COMPLETE",
+                    }
+                )
             elif ws_sha and bl_sha and ws_sha != bl_sha:
-                records.append({
-                    "evidence_id": f"gap-drift-{path}", "source_id": "workspace",
-                    "path": path, "sha256": ws_sha, "status": "modified",
-                    "directional_finding": "file content differs between workspace and baseline",
-                    "counterpart_ids": [], "limitation": None, "read_status": "COMPLETE"
-                })
+                records.append(
+                    {
+                        "evidence_id": f"gap-drift-{path}",
+                        "source_id": "workspace",
+                        "path": path,
+                        "sha256": ws_sha,
+                        "status": "modified",
+                        "directional_finding": (
+                            "file content differs between workspace and baseline"
+                        ),
+                        "counterpart_ids": [],
+                        "limitation": None,
+                        "read_status": "COMPLETE",
+                    }
+                )
 
         def comparator(sources, *, target_id=None, objective=""):
             return {
@@ -287,15 +347,19 @@ class CapabilityPreflight:
         adapter = SourceComparison(comparator)
         return adapter.compare(
             [({"id": "workspace"}, b""), ({"id": "baseline"}, b"")],
-            target_id="workspace", objective="preflight"
+            target_id="workspace",
+            objective="preflight",
         )
 
-    def _validate_category(self, category: str,
-                           baseline_files: dict[str, str],
-                           positive_modify: Callable[[Path], None],
-                           negative_modify: Callable[[Path], None],
-                           expected_statuses: list[str],
-                           expected_paths: list[str]) -> PreflightCategoryResult:
+    def _validate_category(
+        self,
+        category: str,
+        baseline_files: dict[str, str],
+        positive_modify: Callable[[Path], None],
+        negative_modify: Callable[[Path], None],
+        expected_statuses: list[str],
+        expected_paths: list[str],
+    ) -> PreflightCategoryResult:
         """Generic validation: run Scanner against positive and negative controls.
 
         Fixture generation is separate from detector results.
@@ -317,9 +381,12 @@ class CapabilityPreflight:
         except Exception as e:
             shutil.rmtree(pos_ws, ignore_errors=True)
             return PreflightCategoryResult(
-                category=category, verdict=CapabilityVerdict.NOT_VALIDATED.value,
-                positive_control_id=pos_id, negative_control_id=neg_id,
-                positive_found=False, negative_preserved=False,
+                category=category,
+                verdict=CapabilityVerdict.NOT_VALIDATED.value,
+                positive_control_id=pos_id,
+                negative_control_id=neg_id,
+                positive_found=False,
+                negative_preserved=False,
                 error=f"Positive control failed: {e}",
                 scanner_identity=self._scanner_identity,
             )
@@ -337,9 +404,12 @@ class CapabilityPreflight:
         except Exception as e:
             shutil.rmtree(neg_ws, ignore_errors=True)
             return PreflightCategoryResult(
-                category=category, verdict=CapabilityVerdict.NOT_VALIDATED.value,
-                positive_control_id=pos_id, negative_control_id=neg_id,
-                positive_found=positive_found, negative_preserved=False,
+                category=category,
+                verdict=CapabilityVerdict.NOT_VALIDATED.value,
+                positive_control_id=pos_id,
+                negative_control_id=neg_id,
+                positive_found=positive_found,
+                negative_preserved=False,
                 error=f"Negative control failed: {e}",
                 scanner_identity=self._scanner_identity,
             )
@@ -349,23 +419,33 @@ class CapabilityPreflight:
 
         if positive_found and negative_preserved:
             verdict = CapabilityVerdict.VALID.value
-            evidence = f"Scanner detected defect ({expected_statuses}) in positive, none in negative"
+            evidence = (
+                f"Scanner detected defect ({expected_statuses}) in positive, none in negative"
+            )
         elif not positive_found:
             verdict = CapabilityVerdict.INVALID.value
-            evidence = f"False negative: scanner missed defect (got {[(d.status, d.path) for d in pos_diffs]})"
+            summary = [(d.status, d.path) for d in pos_diffs]
+            evidence = f"False negative: scanner missed defect (got {summary})"
         else:
             verdict = CapabilityVerdict.INVALID.value
-            evidence = f"False positive: scanner flagged negative control (got {[(d.status, d.path) for d in neg_diffs]})"
+            summary = [(d.status, d.path) for d in neg_diffs]
+            evidence = (
+                f"False positive: scanner flagged negative control (got {summary})"
+            )
 
         return PreflightCategoryResult(
-            category=category, verdict=verdict,
-            positive_control_id=pos_id, negative_control_id=neg_id,
-            positive_found=positive_found, negative_preserved=negative_preserved,
+            category=category,
+            verdict=verdict,
+            positive_control_id=pos_id,
+            negative_control_id=neg_id,
+            positive_found=positive_found,
+            negative_preserved=negative_preserved,
             expected_statuses=expected_statuses,
             actual_statuses=[d.status for d in pos_diffs],
             expected_paths=expected_paths,
             actual_paths=[d.path for d in pos_diffs],
-            evidence=evidence, scanner_identity=self._scanner_identity,
+            evidence=evidence,
+            scanner_identity=self._scanner_identity,
         )
 
     # ===== Eight category validations =====
@@ -381,12 +461,16 @@ class CapabilityPreflight:
         Negative: file unchanged — Scanner detects nothing.
         """
         baseline = {"agent/main.py": "# original controller\n", "tools/helper.py": "# helper\n"}
+
         def positive(ws: Path):
             (ws / "agent" / "main.py").write_text("# modified controller — drift\n")
+
         def negative(ws: Path):
             pass  # No changes — no drift
-        return self._validate_category("drift", baseline, positive, negative,
-                                        ["modified"], ["main.py"])
+
+        return self._validate_category(
+            "drift", baseline, positive, negative, ["modified"], ["main.py"]
+        )
 
     def _validate_missing(self) -> PreflightCategoryResult:
         """Missing: Scanner must detect required files absent from workspace.
@@ -395,12 +479,16 @@ class CapabilityPreflight:
         Negative: all required files present — Scanner detects nothing.
         """
         baseline = {"agent/main.py": "# controller\n", "tools/task_management.py": "# tasks\n"}
+
         def positive(ws: Path):
             (ws / "tools" / "task_management.py").unlink()
+
         def negative(ws: Path):
             pass  # All files present
-        return self._validate_category("missing", baseline, positive, negative,
-                                        ["missing"], ["task_management.py"])
+
+        return self._validate_category(
+            "missing", baseline, positive, negative, ["missing"], ["task_management.py"]
+        )
 
     def _validate_duplication(self) -> PreflightCategoryResult:
         """Duplication: Scanner must detect files added beyond baseline.
@@ -409,12 +497,16 @@ class CapabilityPreflight:
         Negative: no extra file — Scanner detects nothing.
         """
         baseline = {"tools/core.py": "def compute():\n    return 42\n"}
+
         def positive(ws: Path):
             (ws / "tools" / "duplicate.py").write_text("def compute():\n    return 99\n")
+
         def negative(ws: Path):
             pass  # No extra files
-        return self._validate_category("duplication", baseline, positive, negative,
-                                        ["added"], ["duplicate.py"])
+
+        return self._validate_category(
+            "duplication", baseline, positive, negative, ["added"], ["duplicate.py"]
+        )
 
     def _validate_contradictions(self) -> PreflightCategoryResult:
         """Contradictions: Scanner must detect files with conflicting content.
@@ -423,12 +515,16 @@ class CapabilityPreflight:
         Negative: file unchanged — Scanner detects nothing.
         """
         baseline = {"config/settings.py": "VERSION = 1\n"}
+
         def positive(ws: Path):
             (ws / "config" / "settings.py").write_text("VERSION = 2  # contradicts baseline\n")
+
         def negative(ws: Path):
             pass  # No contradiction
-        return self._validate_category("contradictions", baseline, positive, negative,
-                                        ["modified"], ["settings.py"])
+
+        return self._validate_category(
+            "contradictions", baseline, positive, negative, ["modified"], ["settings.py"]
+        )
 
     def _validate_coverage(self) -> PreflightCategoryResult:
         """Coverage: Scanner must detect missing test files.
@@ -437,12 +533,16 @@ class CapabilityPreflight:
         Negative: test file present — Scanner detects nothing.
         """
         baseline = {"tests/test_core.py": "def test_core(): pass\n", "tools/core.py": "# core\n"}
+
         def positive(ws: Path):
             (ws / "tests" / "test_core.py").unlink()
+
         def negative(ws: Path):
             pass  # Test file present
-        return self._validate_category("coverage", baseline, positive, negative,
-                                        ["missing"], ["test_core.py"])
+
+        return self._validate_category(
+            "coverage", baseline, positive, negative, ["missing"], ["test_core.py"]
+        )
 
     def _validate_dependencies(self) -> PreflightCategoryResult:
         """Dependencies: Scanner must detect missing dependency files.
@@ -450,13 +550,20 @@ class CapabilityPreflight:
         Positive: dependency file deleted — Scanner detects 'missing'.
         Negative: dependency present — Scanner detects nothing.
         """
-        baseline = {"tools/core.py": "from helper import fix\n", "tools/helper.py": "def fix(): pass\n"}
+        baseline = {
+            "tools/core.py": "from helper import fix\n",
+            "tools/helper.py": "def fix(): pass\n",
+        }
+
         def positive(ws: Path):
             (ws / "tools" / "helper.py").unlink()
+
         def negative(ws: Path):
             pass  # Dependency present
-        return self._validate_category("dependencies", baseline, positive, negative,
-                                        ["missing"], ["helper.py"])
+
+        return self._validate_category(
+            "dependencies", baseline, positive, negative, ["missing"], ["helper.py"]
+        )
 
     def _validate_feasibility(self) -> PreflightCategoryResult:
         """Feasibility: Scanner must detect missing executable files.
@@ -464,13 +571,20 @@ class CapabilityPreflight:
         Positive: executable file deleted — Scanner detects 'missing'.
         Negative: executable present — Scanner detects nothing.
         """
-        baseline = {"bin/run.py": "#!/usr/bin/env python3\nprint('ok')\n", "tools/core.py": "# core\n"}
+        baseline = {
+            "bin/run.py": "#!/usr/bin/env python3\nprint('ok')\n",
+            "tools/core.py": "# core\n",
+        }
+
         def positive(ws: Path):
             (ws / "bin" / "run.py").unlink()
+
         def negative(ws: Path):
             pass  # Executable present
-        return self._validate_category("feasibility", baseline, positive, negative,
-                                        ["missing"], ["run.py"])
+
+        return self._validate_category(
+            "feasibility", baseline, positive, negative, ["missing"], ["run.py"]
+        )
 
     def _validate_cli_docs(self) -> PreflightCategoryResult:
         """CLI/Docs: Scanner must detect missing documentation files.
@@ -479,9 +593,13 @@ class CapabilityPreflight:
         Negative: documentation present — Scanner detects nothing.
         """
         baseline = {"AGENTS.md": "# Agent instructions\n", "tools/core.py": "# core\n"}
+
         def positive(ws: Path):
             (ws / "AGENTS.md").unlink()
+
         def negative(ws: Path):
             pass  # Documentation present
-        return self._validate_category("cli_docs", baseline, positive, negative,
-                                        ["missing"], ["AGENTS.md"])
+
+        return self._validate_category(
+            "cli_docs", baseline, positive, negative, ["missing"], ["AGENTS.md"]
+        )

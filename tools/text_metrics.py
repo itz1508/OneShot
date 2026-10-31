@@ -34,7 +34,7 @@ def count_text(text: str) -> dict:
 
 def count_file(filepath: str) -> dict:
     """Count text metrics for a file."""
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return count_text(f.read())
 
 

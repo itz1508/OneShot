@@ -1,4 +1,5 @@
 """Source locator checks; semantic claim support is intentionally out of scope."""
+
 from __future__ import annotations
 
 import unittest

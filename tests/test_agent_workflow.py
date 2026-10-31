@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
 """Tests for the OneShot controller — task continuity, registry, user decisions."""
 
-import json
 import os
-import sys
 import tempfile
-from pathlib import Path
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-sys.path.insert(0, str(REPO_ROOT / "agent"))
-
-from main import OneShotController, WorkflowStage, CapabilityRegistry, CapabilityDescriptor
+from main import CapabilityDescriptor, CapabilityRegistry, OneShotController, WorkflowStage
 
 
 class TestTaskLifecycle:
@@ -39,8 +31,8 @@ class TestTaskLifecycle:
         assert "error" in status
 
     def test_list_tasks(self):
-        tid1 = self.ctrl.start_task("req1")
-        tid2 = self.ctrl.start_task("req2")
+        self.ctrl.start_task("req1")
+        self.ctrl.start_task("req2")
         tasks = self.ctrl.list_tasks()
         assert len(tasks) == 2
 
@@ -88,7 +80,7 @@ class TestStageTransitions:
         self.ctrl.transition_stage(tid, WorkflowStage.PLAN, "step1")
         self.ctrl.transition_stage(tid, WorkflowStage.BUILD, "step2")
         status = self.ctrl.get_status(tid)
-        events = status["events"] if "events" in status else None
+        events = status.get("events", None)
         # Get events from TaskManager directly
         events = self.ctrl.tm.get_events(tid)
         assert len(events) >= 4  # created + running + 2 transitions
@@ -177,23 +169,56 @@ class TestCapabilityRegistry:
 
     def test_duplicate_owner_rejected(self):
         reg = CapabilityRegistry()
-        reg.register(CapabilityDescriptor(id="test", version="1", owner="a", invocation_paths=["read"], effects=["read"]))
+        reg.register(
+            CapabilityDescriptor(
+                id="test", version="1", owner="a", invocation_paths=["read"], effects=["read"]
+            )
+        )
         with pytest.raises(ValueError, match="already owned"):
-            reg.register(CapabilityDescriptor(id="test", version="2", owner="b", invocation_paths=["read"], effects=["read"]))
+            reg.register(
+                CapabilityDescriptor(
+                    id="test", version="2", owner="b", invocation_paths=["read"], effects=["read"]
+                )
+            )
 
     def test_same_owner_reregister_ok(self):
         reg = CapabilityRegistry()
-        reg.register(CapabilityDescriptor(id="test", version="1", owner="a", invocation_paths=["read"], effects=["read"]))
-        reg.register(CapabilityDescriptor(id="test", version="2", owner="a", invocation_paths=["read"], effects=["read"]))
+        reg.register(
+            CapabilityDescriptor(
+                id="test", version="1", owner="a", invocation_paths=["read"], effects=["read"]
+            )
+        )
+        reg.register(
+            CapabilityDescriptor(
+                id="test", version="2", owner="a", invocation_paths=["read"], effects=["read"]
+            )
+        )
 
     def test_unavailable_capability_returns_none(self):
         reg = CapabilityRegistry()
-        reg.register(CapabilityDescriptor(id="test", version="1", owner="a", invocation_paths=["read"], effects=["read"], available=False))
+        reg.register(
+            CapabilityDescriptor(
+                id="test",
+                version="1",
+                owner="a",
+                invocation_paths=["read"],
+                effects=["read"],
+                available=False,
+            )
+        )
         assert reg.get("test") is None
 
     def test_check_effect(self):
         reg = CapabilityRegistry()
-        reg.register(CapabilityDescriptor(id="test", version="1", owner="a", invocation_paths=["active"], effects=["read", "internal_write"]))
+        reg.register(
+            CapabilityDescriptor(
+                id="test",
+                version="1",
+                owner="a",
+                invocation_paths=["active"],
+                effects=["read", "internal_write"],
+            )
+        )
         assert reg.check_effect("test", "read") is True
         assert reg.check_effect("test", "destructive") is False
         assert reg.check_effect("nonexistent", "read") is False

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 """Tests for Task Management — shared identity, state, events, persistence, recovery."""
-import os, sys, tempfile
-from pathlib import Path
-import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
+import os
+import tempfile
 
-from task_management import TaskManager, TaskState, TaskRecord
+from task_management import TaskManager, TaskState
 
 
 class TestTaskManagement:
@@ -17,7 +14,8 @@ class TestTaskManagement:
         self.tm = TaskManager(storage_path=self.storage)
 
     def teardown_method(self):
-        if os.path.exists(self.storage): os.remove(self.storage)
+        if os.path.exists(self.storage):
+            os.remove(self.storage)
         os.rmdir(self.tmpdir)
 
     def test_create_task_unique_id(self):

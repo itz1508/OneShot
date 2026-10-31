@@ -1,13 +1,7 @@
 #!/usr/bin/env python3
 """Tests for Color Eval — executable evidence-based evaluator."""
-import sys
-from pathlib import Path
-import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-
-from color_eval import ColorEvaluator, Color, EvalResult
+from color_eval import Color, ColorEvaluator
 
 
 class TestColorEval:
@@ -33,8 +27,7 @@ class TestColorEval:
 
     def test_build_green_all_pass(self):
         result = self.evaluator.evaluate_build(
-            [{"path": "out.py", "sha256": "abc123"}],
-            {"all_pass": True}, []
+            [{"path": "out.py", "sha256": "abc123"}], {"all_pass": True}, []
         )
         assert result.overall_color == Color.GREEN.value
 
@@ -44,8 +37,7 @@ class TestColorEval:
 
     def test_build_red_fixture_failure(self):
         result = self.evaluator.evaluate_build(
-            [{"path": "out.py", "sha256": "abc"}],
-            {"all_pass": False}, []
+            [{"path": "out.py", "sha256": "abc"}], {"all_pass": False}, []
         )
         assert result.overall_color == Color.RED.value
 

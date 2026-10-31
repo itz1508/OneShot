@@ -6,8 +6,8 @@ Counts Unicode code points, UTF-8 bytes, and words in input text.
 Built as part of the OneShot Workflow Harness E2E demo.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 from text_metrics import count_text
@@ -20,7 +20,7 @@ def main():
         return 1
 
     if sys.argv[1] == "--file" and len(sys.argv) > 2:
-        with open(sys.argv[2], "r", encoding="utf-8") as f:
+        with open(sys.argv[2], encoding="utf-8") as f:
             text = f.read()
     elif sys.argv[1] == "--stdin":
         text = sys.stdin.read()

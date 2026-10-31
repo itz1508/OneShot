@@ -13,17 +13,16 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class GapEntry:
     """Single entry in the gap matrix."""
+
     area: str
     requirement: str
     current_state: str
@@ -35,6 +34,7 @@ class GapEntry:
 @dataclass
 class RepoSummary:
     """Complete repository summary output."""
+
     repository: str
     branch: str
     commit_sha: str
@@ -67,7 +67,7 @@ class RepoSummaryTool:
         ("11", "E2E: test complete task outcomes", "build"),
     ]
 
-    def __init__(self, repo_path: Optional[str] = None):
+    def __init__(self, repo_path: str | None = None):
         """Initialize with optional repo path (defaults to this script's parent)."""
         if repo_path:
             self.repo_path = Path(repo_path)
@@ -77,8 +77,7 @@ class RepoSummaryTool:
     def _run_git(self, *args: str) -> str:
         """Run a git command in the repo and return stdout."""
         result = subprocess.run(
-            ["git", "-C", str(self.repo_path), *args],
-            capture_output=True, text=True, timeout=30
+            ["git", "-C", str(self.repo_path), *args], capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
             raise RuntimeError(f"git {args} failed: {result.stderr.strip()}")
@@ -115,8 +114,12 @@ class RepoSummaryTool:
         RED: capability missing and action is build.
         """
         # Check if test files exist for this area
-        test_files = [f for f in all_files if f.startswith("tests/test_") and 
-                      any(kw in f for kw in [area_id, area_id.replace("0", "")])]
+        test_files = [
+            f
+            for f in all_files
+            if f.startswith("tests/test_")
+            and any(kw in f for kw in [area_id, area_id.replace("0", "")])
+        ]
         if not area_files:
             return "RED"  # Missing capability
         if not test_files:
@@ -131,7 +134,11 @@ class RepoSummaryTool:
         gap_entries = []
         for area_id, requirement, default_action in self.GAP_MATRIX_TEMPLATE:
             # If source files exist for this area, action is adapt; otherwise build
-            area_files = [f for f in existing_source if area_id in f or requirement.split(":")[0].lower() in f.lower()]
+            area_files = [
+                f
+                for f in existing_source
+                if area_id in f or requirement.split(":")[0].lower() in f.lower()
+            ]
             action = "adapt" if area_files else default_action
             current = "Partially implemented" if area_files else "Not implemented"
             evidence = f"Files: {area_files}" if area_files else "No source files exist"
@@ -142,7 +149,7 @@ class RepoSummaryTool:
                 current_state=current,
                 action=action,
                 evidence=evidence,
-                color_eval=self._evaluate_gap_color(area_id, area_files, files)
+                color_eval=self._evaluate_gap_color(area_id, area_files, files),
             )
             gap_entries.append(entry)
 
@@ -160,21 +167,19 @@ class RepoSummaryTool:
             pass
 
         # Check for Python
-        tools.append(f"python{sys.version_info.major}.{sys.version_info.minor} — scripting and execution")
+        tools.append(
+            f"python{sys.version_info.major}.{sys.version_info.minor} — scripting and execution"
+        )
 
-        # Check for pytest
-        try:
-            import pytest
+        # Check for pytest (optional dependency probe).
+        import importlib.util
+
+        if importlib.util.find_spec("pytest") is not None:
             tools.append("pytest — test framework")
-        except ImportError:
-            pass
 
-        # Check for MLflow (available but not mandatory)
-        try:
-            import mlflow
+        # Check for MLflow (available but not mandatory).
+        if importlib.util.find_spec("mlflow") is not None:
             tools.append("mlflow — tracking and artifact logging (available, not mandatory)")
-        except ImportError:
-            pass
 
         return tools
 
@@ -216,39 +221,46 @@ class RepoSummaryTool:
     def to_text(self, summary: RepoSummary) -> str:
         """Serialize summary to human-readable text."""
         lines = [
-            f"OneShot Repository Summary",
-            f"==========================",
+            "OneShot Repository Summary",
+            "==========================",
             f"Repository: {summary.repository}",
             f"Branch: {summary.branch}",
             f"Commit SHA: {summary.commit_sha}",
             f"Working tree clean: {summary.working_tree_clean}",
-            f"",
+            "",
             f"Files ({len(summary.files)}):",
         ]
         for f in summary.files:
             lines.append(f"  {f}")
 
-        lines.extend([f"", f"Gap Matrix ({len(summary.gap_matrix)} areas):"])
+        lines.extend(["", f"Gap Matrix ({len(summary.gap_matrix)} areas):"])
         lines.append(f"{'Area':<45} {'State':<20} {'Action':<10} {'Color'}")
-        lines.append(f"{'-'*45} {'-'*20} {'-'*10} {'-'*6}")
+        lines.append(f"{'-' * 45} {'-' * 20} {'-' * 10} {'-' * 6}")
         for entry in summary.gap_matrix:
             lines.append(
-                f"{entry['area']:<45} {entry['current_state']:<20} {entry['action']:<10} {entry['color_eval']}"
+
+                    f"{entry['area']:<45} {entry['current_state']:<20} "
+                    f"{entry['action']:<10} {entry['color_eval']}"
+
             )
 
-        lines.extend([f"", f"Available Tools ({len(summary.available_tools)}):"])
+        lines.extend(["", f"Available Tools ({len(summary.available_tools)}):"])
         for tool in summary.available_tools:
             lines.append(f"  {tool}")
 
-        lines.extend([f"", f"Color Eval Baseline: {summary.color_eval_baseline}"])
+        lines.extend(["", f"Color Eval Baseline: {summary.color_eval_baseline}"])
 
         return "\n".join(lines)
 
 
 def main():
     parser = argparse.ArgumentParser(description="OneShot Repository Summary Tool")
-    parser.add_argument("--repo-path", default=None, help="Path to the repository (default: script parent)")
-    parser.add_argument("--output-format", choices=["json", "text"], default="text", help="Output format")
+    parser.add_argument(
+        "--repo-path", default=None, help="Path to the repository (default: script parent)"
+    )
+    parser.add_argument(
+        "--output-format", choices=["json", "text"], default="text", help="Output format"
+    )
     args = parser.parse_args()
 
     tool = RepoSummaryTool(repo_path=args.repo_path)

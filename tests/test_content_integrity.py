@@ -1,9 +1,10 @@
 """Actual V18 FileStore persists/readbacks bytes; no duplicate artifact owner."""
+
 from __future__ import annotations
 
-from hashlib import sha256
 import tempfile
 import unittest
+from hashlib import sha256
 from pathlib import Path
 
 from agent.adapters.content_integrity import VerifiedContent
@@ -42,8 +43,10 @@ class ContentIntegrityTests(unittest.TestCase):
         class CorruptStore:
             def put(self, raw: bytes) -> str:
                 return "0" * 64
+
             def read(self, digest: str) -> bytes:
                 return b"corrupted"
+
         with self.assertRaises(ValueError):
             VerifiedContent(CorruptStore()).put(b"expected")
         with self.assertRaises(ValueError):

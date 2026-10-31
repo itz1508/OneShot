@@ -1,40 +1,36 @@
 #!/usr/bin/env python3
 """Tests for the eight-category capability preflight and controller integration.
-  1. All VALID; controller invokes actual Gap Analysis
-  2. Broken detector yields INVALID; Gap Analysis not invoked
-  3. Correction fixes confirmed cause
-  4. Runtime identity matches repaired implementation
-  5. Parent task resumes with identical task ID
-  6. Multiple invalid categories repaired
-  7. False-positive control triggers INVALID
-  8. No-material-change retry → BLOCKED_RESUMABLE
-  9. NOT_VALIDATED; no Gap Analysis
- 10. Receipt tampering rejected
- 11. Crash/restart checkpoint
- 12. Permission/dependency blocker
- 13. Concurrent task isolation
- 14. Real gap discovery and fix
- 15. Implementation drift invalidation
- 16. Connected E2E: INVALID→fix→VALID→Gap Analysis→resume
- 17. Negative case: unresolved INVALID not accepted
+ 1. All VALID; controller invokes actual Gap Analysis
+ 2. Broken detector yields INVALID; Gap Analysis not invoked
+ 3. Correction fixes confirmed cause
+ 4. Runtime identity matches repaired implementation
+ 5. Parent task resumes with identical task ID
+ 6. Multiple invalid categories repaired
+ 7. False-positive control triggers INVALID
+ 8. No-material-change retry → BLOCKED_RESUMABLE
+ 9. NOT_VALIDATED; no Gap Analysis
+10. Receipt tampering rejected
+11. Crash/restart checkpoint
+12. Permission/dependency blocker
+13. Concurrent task isolation
+14. Real gap discovery and fix
+15. Implementation drift invalidation
+16. Connected E2E: INVALID→fix→VALID→Gap Analysis→resume
+17. Negative case: unresolved INVALID not accepted
 """
 
 from __future__ import annotations
 
-import os, sys, tempfile, shutil, hashlib, json
-from pathlib import Path
-from datetime import datetime, timezone
+import os
+import shutil
+import tempfile
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "agent"))
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-sys.path.insert(0, str(REPO_ROOT / "agent" / "adapters"))
-
 from gap_analysis import (
-    CapabilityPreflight, CapabilityVerdict,
-    PreflightResult, PreflightCategoryResult,
+    CapabilityPreflight,
+    CapabilityVerdict,
+    PreflightCategoryResult,
+    PreflightResult,
 )
 
 
@@ -54,8 +50,7 @@ class TestPreflightStructure:
         pf = CapabilityPreflight()
         result = pf.run()
         for cat in result.categories:
-            assert cat.verdict == CapabilityVerdict.VALID.value, \
-                f"{cat.category}: {cat.evidence}"
+            assert cat.verdict == CapabilityVerdict.VALID.value, f"{cat.category}: {cat.evidence}"
         assert result.aggregate_verdict == CapabilityVerdict.VALID.value
         assert result.can_proceed is True
         assert result.coverage_complete is True
@@ -110,8 +105,12 @@ class TestAggregatePrecedence:
         result = PreflightResult()
         result.categories = [
             PreflightCategoryResult("drift", CapabilityVerdict.VALID.value, "p", "n", True, True),
-            PreflightCategoryResult("missing", CapabilityVerdict.INVALID.value, "p", "n", False, True),
-            PreflightCategoryResult("coverage", CapabilityVerdict.NOT_VALIDATED.value, "p", "n", False, False),
+            PreflightCategoryResult(
+                "missing", CapabilityVerdict.INVALID.value, "p", "n", False, True
+            ),
+            PreflightCategoryResult(
+                "coverage", CapabilityVerdict.NOT_VALIDATED.value, "p", "n", False, False
+            ),
         ]
         invalid = [c for c in result.categories if c.verdict == "INVALID"]
         not_validated = [c for c in result.categories if c.verdict == "NOT_VALIDATED"]
@@ -124,7 +123,9 @@ class TestAggregatePrecedence:
         result = PreflightResult()
         result.categories = [
             PreflightCategoryResult("drift", CapabilityVerdict.VALID.value, "p", "n", True, True),
-            PreflightCategoryResult("missing", CapabilityVerdict.NOT_VALIDATED.value, "p", "n", False, False),
+            PreflightCategoryResult(
+                "missing", CapabilityVerdict.NOT_VALIDATED.value, "p", "n", False, False
+            ),
         ]
         invalid = [c for c in result.categories if c.verdict == "INVALID"]
         not_validated = [c for c in result.categories if c.verdict == "NOT_VALIDATED"]
@@ -146,6 +147,7 @@ class TestControllerIntegration:
 
     def test_preflight_valid_returns_can_proceed(self):
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("preflight test")
         result = ctrl.run_capability_preflight_with_correction(tid)
@@ -154,6 +156,7 @@ class TestControllerIntegration:
 
     def test_preflight_valid_preserves_task(self):
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("preflight test")
         ctrl.run_capability_preflight_with_correction(tid)
@@ -164,11 +167,13 @@ class TestControllerIntegration:
     def test_not_validated_blocks_and_preserves_task(self):
         """Scenario 9, 12: NOT_VALIDATED blocks but does NOT cancel the task."""
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
-        tid = ctrl.start_task("blocked test")
+        ctrl.start_task("blocked test")
         # Simulate NOT_VALIDATED by patching
         result = {
-            "aggregate_verdict": "NOT_VALIDATED", "can_proceed": False,
+            "aggregate_verdict": "NOT_VALIDATED",
+            "can_proceed": False,
             "blocked_resumable": True,
             "blocker": "NOT_VALIDATED — evidence incomplete",
             "next_action": "Resolve and resume",
@@ -181,6 +186,7 @@ class TestControllerIntegration:
     def test_no_material_change_retry_terminates_blocked(self):
         """Scenario 8: Repeatedly INVALID with no change → BLOCKED_RESUMABLE."""
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("retry test")
         # The preflight should pass immediately (VALID), but if it didn't,
@@ -192,6 +198,7 @@ class TestControllerIntegration:
     def test_checkpoint_preserved_on_block(self):
         """Scenario 11: Checkpoint data is preserved when blocked."""
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("checkpoint test")
         ctrl.checkpoint(tid, {"preflight_blocked": True, "stage": "plan"})
@@ -215,9 +222,17 @@ class TestReceiptIntegrity:
         pf = CapabilityPreflight()
         result = pf.run()
         d = result.to_dict()
-        required = ["categories", "aggregate_verdict", "coverage_complete",
-                    "scanner_identity", "limitations", "timestamp",
-                    "can_proceed", "invalid_count", "not_validated_count"]
+        required = [
+            "categories",
+            "aggregate_verdict",
+            "coverage_complete",
+            "scanner_identity",
+            "limitations",
+            "timestamp",
+            "can_proceed",
+            "invalid_count",
+            "not_validated_count",
+        ]
         for key in required:
             assert key in d, f"Missing key: {key}"
 
@@ -234,6 +249,7 @@ class TestConcurrentTasks:
 
     def test_two_tasks_have_separate_checkpoints(self):
         from main import OneShotController
+
         storage = os.path.join(tempfile.mkdtemp(), "concurrent.json")
         try:
             ctrl = OneShotController(storage_path=storage)
@@ -259,7 +275,7 @@ class TestConcurrentTasks:
         r2 = pf2.run()
         assert r1.scanner_identity == r2.scanner_identity
         # Timestamps should differ (different runs)
-        assert r1.timestamp != r2.timestamp or True  # May be same second
+        assert True  # May be same second
 
 
 class TestRealGapDiscovery:
@@ -317,6 +333,7 @@ class TestEndToEnd:
     def test_preflight_valid_then_proceeds_to_plan(self):
         """Scenario 16: VALID preflight → controller proceeds to real Plan Gap Analysis."""
         from main import OneShotController
+
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("e2e preflight")
         # Run preflight
@@ -333,9 +350,12 @@ class TestEndToEnd:
         result = PreflightResult()
         result.categories = [
             PreflightCategoryResult(
-                category="drift", verdict=CapabilityVerdict.INVALID.value,
-                positive_control_id="drift-positive", negative_control_id="drift-negative",
-                positive_found=False, negative_preserved=True,
+                category="drift",
+                verdict=CapabilityVerdict.INVALID.value,
+                positive_control_id="drift-positive",
+                negative_control_id="drift-negative",
+                positive_found=False,
+                negative_preserved=True,
                 evidence="False negative: missed stale import",
             )
         ]
@@ -350,9 +370,12 @@ class TestEndToEnd:
         result = PreflightResult()
         result.categories = [
             PreflightCategoryResult(
-                category="coverage", verdict=CapabilityVerdict.NOT_VALIDATED.value,
-                positive_control_id="", negative_control_id="",
-                positive_found=False, negative_preserved=False,
+                category="coverage",
+                verdict=CapabilityVerdict.NOT_VALIDATED.value,
+                positive_control_id="",
+                negative_control_id="",
+                positive_found=False,
+                negative_preserved=False,
                 error="Could not execute",
             )
         ]
@@ -369,8 +392,7 @@ class TestPerCategoryControls:
         pf = CapabilityPreflight()
         method = getattr(pf, f"_validate_{category}")
         result = method()
-        assert result.verdict == CapabilityVerdict.VALID.value, \
-            f"{category}: {result.evidence}"
+        assert result.verdict == CapabilityVerdict.VALID.value, f"{category}: {result.evidence}"
         assert result.positive_found is True
         assert result.negative_preserved is True
 
@@ -395,6 +417,7 @@ class TestRepairLoop:
 
     def test_valid_on_first_attempt(self):
         from main import OneShotController
+
         storage = os.path.join(tempfile.mkdtemp(), "repair.json")
         try:
             ctrl = OneShotController(storage_path=storage)
@@ -410,6 +433,7 @@ class TestRepairLoop:
     def test_bounded_retry_limit(self):
         """Retry is bounded by max_repair_attempts."""
         from main import OneShotController
+
         storage = os.path.join(tempfile.mkdtemp(), "bounded.json")
         try:
             ctrl = OneShotController(storage_path=storage)
@@ -427,6 +451,7 @@ class TestRepairLoop:
         """Parent task is never cancelled — only interrupted."""
         from main import OneShotController
         from task_management import TaskState
+
         storage = os.path.join(tempfile.mkdtemp(), "not_cancelled.json")
         try:
             ctrl = OneShotController(storage_path=storage)

@@ -9,18 +9,17 @@ are preserved, not silently cleaned up.
 """
 
 import hashlib
-import os
-import subprocess
-import sys
 import time
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Any
 
 
 @dataclass
 class Artifact:
     """A build artifact with hash."""
+
     path: str
     sha256: str
     size: int
@@ -30,6 +29,7 @@ class Artifact:
 @dataclass
 class ToolCall:
     """A single tool call in the execution trace."""
+
     tool: str
     input: dict
     output: Any
@@ -39,6 +39,7 @@ class ToolCall:
 @dataclass
 class BuildResult:
     """Result of build execution."""
+
     artifacts: list = field(default_factory=list)
     trace: list = field(default_factory=list)
     fixture_results: dict = field(default_factory=dict)
@@ -51,7 +52,7 @@ class BuildResult:
 class BuildExecutor:
     """Executes build using supported tools, traces agent-tool continuation."""
 
-    def __init__(self, repo_path: Optional[str] = None):
+    def __init__(self, repo_path: str | None = None):
         self.repo_path = Path(repo_path) if repo_path else Path(__file__).resolve().parent.parent
         self.trace: list[ToolCall] = []
 
@@ -67,9 +68,9 @@ class BuildExecutor:
         """Execute a tool call and record it in the trace (Agent → Tool → Result)."""
         timestamp = time.time()
         result = tool_fn(tool_input)
-        self.trace.append(ToolCall(
-            tool=tool_name, input=tool_input, output=result, timestamp=timestamp
-        ))
+        self.trace.append(
+            ToolCall(tool=tool_name, input=tool_input, output=result, timestamp=timestamp)
+        )
         return result
 
     def capture_artifact(self, filepath: str) -> Artifact:
@@ -95,10 +96,17 @@ class BuildExecutor:
 
     def run_fixtures(self, fixture_runner: Callable) -> dict:
         """Run the full fixture set."""
-        return fixture_runner()
+        result = fixture_runner()
+        if not isinstance(result, dict):
+            raise TypeError(f"fixture_runner must return dict, got {type(result).__name__}")
+        return result
 
-    def execute(self, build_steps: list, fixture_runner: Callable = None,
-                expected_schema: dict = None) -> BuildResult:
+    def execute(
+        self,
+        build_steps: list,
+        fixture_runner: Callable | None = None,
+        expected_schema: dict | None = None,
+    ) -> BuildResult:
         """Execute build steps, capture artifacts, run fixtures."""
         result = BuildResult()
 
@@ -107,19 +115,21 @@ class BuildExecutor:
                 tool_name = step.get("tool", "unknown")
                 tool_input = step.get("input", {})
                 tool_fn = step.get("function", lambda x: None)
-                output = self.call_tool(tool_name, tool_input, tool_fn)
+                self.call_tool(tool_name, tool_input, tool_fn)
 
                 if step.get("artifact_path"):
                     artifact = self.capture_artifact(step["artifact_path"])
                     result.artifacts.append(asdict(artifact))
 
             except Exception as e:
-                result.partial_failures.append({
-                    "step": step.get("tool", "unknown"),
-                    "error": str(e),
-                })
+                result.partial_failures.append(
+                    {
+                        "step": step.get("tool", "unknown"),
+                        "error": str(e),
+                    }
+                )
 
-        if fixture_runner:
+        if fixture_runner is not None:
             result.fixture_results = self.run_fixtures(fixture_runner)
             result.all_tests_pass = result.fixture_results.get("all_pass", False)
 

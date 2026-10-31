@@ -10,10 +10,9 @@ initialized at agent startup and Research retrieves from it.
 import json
 import time
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 
 class TaskState(str, Enum):
@@ -47,14 +46,14 @@ class TaskRecord:
 class TaskManager:
     """Shared Task Management: identity, state, events, persistence, recovery."""
 
-    def __init__(self, storage_path: Optional[str] = None):
+    def __init__(self, storage_path: str | None = None):
         self.storage_path = Path(storage_path) if storage_path else Path("/tmp/oneshot_tasks.json")
         self._tasks: dict[str, TaskRecord] = {}
         self._load()
 
     def _load(self):
         if self.storage_path.exists():
-            with open(self.storage_path, "r") as f:
+            with open(self.storage_path) as f:
                 data = json.load(f)
                 for tid, rec in data.items():
                     self._tasks[tid] = TaskRecord(**rec)
@@ -71,9 +70,20 @@ class TaskManager:
             raise ValueError(f"Task {tid} already exists")
         now = time.time()
         record = TaskRecord(
-            task_id=tid, state=TaskState.PENDING.value,
-            created_at=now, updated_at=now,
-            events=[asdict(EventLog(timestamp=now, from_state="", to_state=TaskState.PENDING.value, detail="Task created"))],
+            task_id=tid,
+            state=TaskState.PENDING.value,
+            created_at=now,
+            updated_at=now,
+            events=[
+                asdict(
+                    EventLog(
+                        timestamp=now,
+                        from_state="",
+                        to_state=TaskState.PENDING.value,
+                        detail="Task created",
+                    )
+                )
+            ],
             metadata=metadata or {},
         )
         self._tasks[tid] = record
@@ -91,7 +101,9 @@ class TaskManager:
         if not task:
             raise KeyError(f"Task {task_id} not found")
         now = time.time()
-        event = EventLog(timestamp=now, from_state=task.state, to_state=to_state.value, detail=detail)
+        event = EventLog(
+            timestamp=now, from_state=task.state, to_state=to_state.value, detail=detail
+        )
         task.state = to_state.value
         task.updated_at = now
         task.events.append(asdict(event))
