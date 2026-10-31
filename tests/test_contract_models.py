@@ -272,3 +272,70 @@ class TestDualLayerCompat(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestValidatorSafety(unittest.TestCase):
+    """Lock in the two safety properties of the per-stage validators.
+
+    Property A: a complete record with no resolver is rejected
+                ("no evidence resolver configured ..."), matching
+                validate_pipeline's fail-closed behavior.
+    Property B: canonical-token prefixes apply only to the specific
+                defect they describe. A milestone-missing-observations
+                error must NOT be mis-prefixed as "unexecutable".
+    """
+
+    def test_research_complete_without_resolver_fails_closed(self):
+        _, r = _mk_r()  # status="complete"
+        errs = models.validate_research(r)  # no resolver
+        self.assertTrue(any("no evidence resolver" in e for e in errs),
+                        f"expected fail-closed, got {errs!r}")
+
+    def test_plan_complete_without_resolver_fails_closed(self):
+        _, r = _mk_r(); _, p = _mk_p()
+        errs = models.validate_plan(p, r)  # no resolver
+        self.assertTrue(any("no evidence resolver" in e for e in errs),
+                        f"expected fail-closed, got {errs!r}")
+
+    def test_build_complete_without_resolver_fails_closed(self):
+        _, r = _mk_r(); _, p = _mk_p(); _, b = _mk_b()
+        errs = models.validate_build(b, p, r)  # no resolver
+        self.assertTrue(any("no evidence resolver" in e for e in errs),
+                        f"expected fail-closed, got {errs!r}")
+
+    def test_canonical_tokens_do_not_mislabel_milestone_observations(self):
+        """A milestone that lacks expected_observations should NOT be
+        prefixed with 'unexecutable' — that token is for empty steps /
+        no-milestones only."""
+        _, p = _mk_p()
+        # Keep steps so "unexecutable" is NOT a correct label; drop observations.
+        p["implementation"]["milestones"][0]["expected_observations"] = []
+        sr, r = _mk_r()
+        errs = models.validate_plan(p, r, sr.__contains__)
+        # Must raise something (missing observations is still an error)
+        self.assertTrue(errs, f"expected an error, got {errs!r}")
+        # Must NOT be mis-prefixed with 'unexecutable'
+        self.assertFalse(any(e.startswith("unexecutable:") for e in errs),
+                         f"canonicalization is too broad: {errs!r}")
+
+    def test_plan_task_id_mismatch_detected(self):
+        """Cross-record invariant: task_id consistency between plan and research."""
+        _, r = _mk_r(); _, p = _mk_p()
+        p["task_id"] = "DIFFERENT"
+        sr, _ = _mk_r()
+        errs = models.validate_plan(p, r, sr.__contains__)
+        self.assertTrue(any("task_id mismatch" in e for e in errs),
+                        f"expected task_id mismatch, got {errs!r}")
+
+    def test_build_stale_plan_revision_detected(self):
+        """Cross-record invariant: build must pin exact plan revision."""
+        _, r = _mk_r(); _, p = _mk_p(); _, b = _mk_b()
+        # Tamper the plan revision stored on build; keep plan itself at its real revision.
+        b["plan_input"]["record_revision"] = 999
+        refs = _refs()[0]
+        for s in (r, p, b):
+            # Pretend every evidence ref resolves so we isolate the staleness check.
+            pass
+        errs = models.validate_build(b, p, r, lambda ref: True)
+        self.assertTrue(any("stale Plan revision" in e for e in errs),
+                        f"expected stale Plan revision, got {errs!r}")

@@ -863,20 +863,37 @@ def _check_evidence_refs(
         _ref(cp.get("source_snapshot_ref"), "build.checkpoint.source_snapshot_ref")
 
     return errors
-# Add at the end of agent/contracts/models.py
+
+
 # ---------------------------------------------------------------------------
-# Per-stage validators (compat API)
+# Per-stage validators (compat API) — DO NOT EDIT ABOVE THIS BLOCK WITHOUT
+# re-reading _check_evidence_refs() and validate_pipeline() for invariants.
 # ---------------------------------------------------------------------------
 #
 # These wrappers return a flat list[str] of error strings for one stage,
-# matching the historical check_contracts module's signature. Each error
-# string is prefixed with a short canonical token so callers may assert
-# membership of the token via substring match ("missing task_id" in e, etc.).
+# matching the historical check_contracts module's signature. They are a
+# compatibility surface for tests migrated from the retired check_contracts
+# module; new callers should prefer validate_pipeline() directly, since it
+# runs cross-record invariants (task_id, handoff destinations, revision
+# bindings) in one place.
+#
+# Two safety properties the wrappers MUST preserve:
+#
+#   (a) A record with status == "complete" and no resolve function is a
+#       validation error ("no evidence resolver configured"). This mirrors
+#       validate_pipeline's fail-closed behavior for completed records.
+#
+#   (b) Canonical-token prefixes are applied ONLY to the specific Pydantic
+#       error messages they describe. A generic substring match like
+#       "milestone" would mislabel every Milestone error as "unexecutable",
+#       which is wrong — "milestone missing expected_observations" is not
+#       the same defect as "no executable milestones" or "missing steps".
 
 _CANONICAL_TOKENS: list[tuple[str, str]] = [
-    # (substring_to_find_in_pydantic_msg, canonical_token)
+    # Each needle MUST be specific enough that it maps to exactly one
+    # semantic defect. Prefer whole-phrase matches over single words.
     ("must not be empty or a placeholder", "missing task_id"),
-    ("milestone", "unexecutable"),
+    ("missing steps", "unexecutable"),
     ("no executable milestones", "unexecutable"),
     ("gap analysis must be resolved", "gap analysis incomplete"),
     ("cannot be deferred", "critical finding deferred"),
@@ -890,20 +907,30 @@ def _canonicalize_error(msg: str) -> str:
     return msg
 
 
+def _canonicalize_errors(errs: list[str]) -> list[str]:
+    return [_canonicalize_error(e) for e in errs]
+
+
 def validate_research(record: dict[str, Any], resolve: EvidenceCheck | None = None) -> list[str]:
     """Validate one Research record, returning a list of error strings.
 
     Replacement for the historical check_contracts.validate_research signature.
     Uses the Pydantic ResearchRecord model and prefixes each raised error
     with a canonical semantic token so downstream substring assertions
-    (e.g. "missing task_id" in e) keep working.
+    (e.g. ``"missing task_id" in e``) keep working.
+
+    Fail-closed when the record is complete and no resolver is supplied —
+    completed records require evidence resolution, matching validate_pipeline.
     """
     try:
         ResearchRecord.model_validate(record)
     except Exception as exc:
-        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "research")]
-    # Optional evidence resolution — mirrors validate_pipeline for a lone research record.
-    if resolve is not None:
+        return _canonicalize_errors(_format_pydantic_errors(exc, "research"))
+
+    r_complete = record.get("status") == "complete"
+    if r_complete and resolve is None:
+        return ["research: no evidence resolver configured (complete records require evidence resolution)"]
+    if resolve is not None and r_complete:
         return _check_evidence_refs(record, {}, {}, resolve, True, False, False)
     return []
 
@@ -913,20 +940,57 @@ def validate_plan(
     research: dict[str, Any],
     resolve: EvidenceCheck | None = None,
 ) -> list[str]:
-    """Validate one Plan record (with research context), returning a list of error strings."""
+    """Validate one Plan record (with research context), returning a list of error strings.
+
+    Preserves cross-record invariants that apply at the plan boundary: task_id
+    consistency between plan and research, exact research-revision binding,
+    research manifest identity, and handoff destination. Fail-closed for
+    complete records without a resolver.
+    """
     try:
         PlanRecord.model_validate(plan)
     except Exception as exc:
-        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "plan")]
-    if resolve is not None:
-        # Research must be structurally valid before cross-ref checks make sense.
-        try:
-            ResearchRecord.model_validate(research)
-            r_complete = research.get("status") == "complete"
-        except Exception:
-            r_complete = False
-        return _check_evidence_refs(research, plan, {}, resolve, r_complete, True, False)
-    return []
+        return _canonicalize_errors(_format_pydantic_errors(exc, "plan"))
+
+    errors: list[str] = []
+
+    # Handoff destination check (same semantics as validate_pipeline).
+    if plan.get("handoff", {}).get("to") != "build":
+        errors.append(f"plan: invalid handoff destination (expected build, got {plan.get('handoff', {}).get('to')!r})")
+
+    # Task-id consistency (only meaningful once research has one).
+    r_task = research.get("task_id")
+    if r_task and plan.get("task_id") != r_task:
+        errors.append("plan: task_id mismatch with research")
+
+    # Research-side gating — a plan complete while research is not is a staging error.
+    try:
+        ResearchRecord.model_validate(research)
+        r_valid = True
+    except Exception:
+        r_valid = False
+    r_complete = r_valid and research.get("status") == "complete"
+    p_complete = plan.get("status") == "complete"
+    if p_complete and not r_complete:
+        errors.append("plan: downstream complete while Research not ready")
+
+    # Research identity / revision binding (only meaningful once both are complete).
+    if p_complete and r_complete:
+        ri = plan.get("research_input", {}) or {}
+        if ri.get("record_id") != research.get("record_id"):
+            errors.append("plan: Research identity mismatch")
+        if ri.get("record_revision") != research.get("revision"):
+            errors.append("plan: stale Research revision")
+        if ri.get("artifact_manifest_ref") != research.get("handoff", {}).get("artifact_manifest_ref"):
+            errors.append("plan: Research manifest changed")
+
+    # Evidence resolution — fail-closed for complete records with no resolver.
+    if p_complete and resolve is None:
+        errors.append("plan: no evidence resolver configured (complete records require evidence resolution)")
+    elif resolve is not None:
+        errors.extend(_check_evidence_refs(research, plan, {}, resolve, r_complete, p_complete, False))
+
+    return errors
 
 
 def validate_build(
@@ -935,21 +999,64 @@ def validate_build(
     research: dict[str, Any],
     resolve: EvidenceCheck | None = None,
 ) -> list[str]:
-    """Validate one Build record (with plan+research context), returning a list of error strings."""
+    """Validate one Build record (with plan+research context), returning a list of error strings.
+
+    Preserves cross-record invariants that apply at the build boundary: task_id
+    consistency, exact plan-revision binding, plan manifest identity, handoff
+    destination, and the full completion-ordering invariant. Fail-closed for
+    complete records without a resolver.
+    """
     try:
         BuildRecord.model_validate(build)
     except Exception as exc:
-        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "build")]
-    if resolve is not None:
-        try:
-            ResearchRecord.model_validate(research)
-            r_complete = research.get("status") == "complete"
-        except Exception:
-            r_complete = False
-        try:
-            PlanRecord.model_validate(plan)
-            p_complete = plan.get("status") == "complete"
-        except Exception:
-            p_complete = False
-        return _check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, True)
-    return []
+        return _canonicalize_errors(_format_pydantic_errors(exc, "build"))
+
+    errors: list[str] = []
+
+    # Handoff destination check.
+    if build.get("handoff", {}).get("to") != "complete":
+        errors.append(f"build: invalid handoff destination (expected complete, got {build.get('handoff', {}).get('to')!r})")
+
+    # Task-id consistency.
+    task_ids = {research.get("task_id"), plan.get("task_id"), build.get("task_id")}
+    task_ids.discard(None)
+    if len(task_ids) > 1:
+        errors.append("build: task_id mismatch across records")
+
+    try:
+        ResearchRecord.model_validate(research)
+        r_valid = True
+    except Exception:
+        r_valid = False
+    try:
+        PlanRecord.model_validate(plan)
+        p_valid = True
+    except Exception:
+        p_valid = False
+    r_complete = r_valid and research.get("status") == "complete"
+    p_complete = p_valid and plan.get("status") == "complete"
+    b_complete = build.get("status") == "complete"
+
+    # Completion ordering (same semantics as validate_pipeline).
+    if b_complete and not r_complete:
+        errors.append("build: downstream complete while Research not ready")
+    if b_complete and not p_complete:
+        errors.append("build: downstream complete while Plan not ready")
+
+    # Plan identity / revision binding.
+    if b_complete and p_complete:
+        pi = build.get("plan_input", {}) or {}
+        if pi.get("record_id") != plan.get("record_id"):
+            errors.append("build: Plan identity mismatch")
+        if pi.get("record_revision") != plan.get("revision"):
+            errors.append("build: stale Plan revision")
+        if pi.get("artifact_manifest_ref") != plan.get("handoff", {}).get("artifact_manifest_ref"):
+            errors.append("build: Plan manifest changed")
+
+    # Fail-closed for complete records with no resolver.
+    if b_complete and resolve is None:
+        errors.append("build: no evidence resolver configured (complete records require evidence resolution)")
+    elif resolve is not None:
+        errors.extend(_check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, b_complete))
+
+    return errors
