@@ -7,13 +7,15 @@ expected fail). Expected results are independent — not derived from implementa
 output. Fixture data grounded in actual repository state.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
 class FixtureCase:
     """A single fixture case."""
+
     name: str
     input: dict
     expected_result: Any  # Defined BEFORE execution, independent
@@ -47,11 +49,16 @@ class FixtureRegistry:
         results = []
         for case in self._positive:
             actual = executor(case.input)
-            passed = (actual == case.expected_result)
-            results.append({
-                "name": case.name, "expected_pass": True, "passed": passed,
-                "expected": case.expected_result, "actual": actual,
-            })
+            passed = actual == case.expected_result
+            results.append(
+                {
+                    "name": case.name,
+                    "expected_pass": True,
+                    "passed": passed,
+                    "expected": case.expected_result,
+                    "actual": actual,
+                }
+            )
         return results
 
     def run_negative(self, executor: Callable) -> list[dict]:
@@ -64,9 +71,13 @@ class FixtureRegistry:
                 passed = (actual != case.expected_result) or actual is None
             except Exception:
                 passed = True  # Exception is expected for negative cases
-            results.append({
-                "name": case.name, "expected_pass": False, "passed": passed,
-            })
+            results.append(
+                {
+                    "name": case.name,
+                    "expected_pass": False,
+                    "passed": passed,
+                }
+            )
         return results
 
     def run_all(self, executor: Callable) -> dict:
@@ -92,25 +103,28 @@ def create_default_fixtures() -> FixtureRegistry:
         "valid_input_proceeds",
         {"task": "Build repo-summary script", "repository": "https://github.com/itz1508/OneShot"},
         expected="valid",
-        desc="Complete input should proceed without STOP"
+        desc="Complete input should proceed without STOP",
     )
     registry.add_positive(
         "git_rev_parse_returns_sha",
         {"cmd": "git rev-parse HEAD"},
         expected=True,
-        desc="git rev-parse HEAD returns valid SHA"
+        desc="git rev-parse HEAD returns valid SHA",
     )
     registry.add_positive(
         "gitignore_exists",
         {"file": ".gitignore"},
         expected=True,
-        desc=".gitignore exists in repository"
+        desc=".gitignore exists in repository",
     )
     registry.add_positive(
-        "repo_has_12_gap_areas",
-        {"count": 12},
-        expected=12,
-        desc="Gap matrix has exactly 12 areas"
+        "repo_has_12_gap_areas", {"count": 12}, expected=12, desc="Gap matrix has exactly 12 areas"
+    )
+    registry.add_positive(
+        "agents_md_exists",
+        {"file": "AGENTS.md"},
+        expected=True,
+        desc="AGENTS.md exists in repository",
     )
 
     # Negative: known-bad inputs with expected failures
@@ -118,31 +132,31 @@ def create_default_fixtures() -> FixtureRegistry:
         "missing_task_stops",
         {"repository": "https://github.com/itz1508/OneShot"},
         expected="valid",
-        desc="Missing task field should trigger STOP, not proceed"
+        desc="Missing task field should trigger STOP, not proceed",
     )
     registry.add_negative(
         "nonexistent_file",
         {"file": "nonexistent.py"},
         expected=True,
-        desc="Nonexistent file should not be found"
+        desc="Nonexistent file should not be found",
     )
     registry.add_negative(
         "model_text_as_confirmation",
         {"confirmation": "As an AI, I think this is correct"},
         expected=True,
-        desc="Model text should not be accepted as confirmation"
+        desc="Model text should not be accepted as confirmation",
     )
     registry.add_negative(
         "empty_repo_has_no_source",
         {"pattern": "*.py"},
         expected=True,
-        desc="Empty repo should not have Python source files initially"
+        desc="Empty repo should not have Python source files initially",
     )
     registry.add_negative(
         "duplicate_execution_blocked",
         {"task_id": "already-completed"},
         expected=True,
-        desc="Duplicate execution should be blocked"
+        desc="Duplicate execution should be blocked",
     )
 
     return registry

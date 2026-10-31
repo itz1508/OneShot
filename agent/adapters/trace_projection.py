@@ -3,14 +3,18 @@
 This is a read-only projection, not a tracer, event writer, task controller,
 or E2E assertion engine. Terminal job events do not prove task acceptance.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Protocol
+from typing import Protocol
 
 
 class TraceReader(Protocol):
-    def __call__(self, job_id: str, events: Iterable[dict], artifact: dict | None = None) -> object: ...
+    def __call__(
+        self, job_id: str, events: Iterable[dict], artifact: dict | None = None
+    ) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -32,9 +36,16 @@ class TraceProjection:
     def __init__(self, reader: TraceReader) -> None:
         self._reader = reader
 
-    def project(self, job_id: str, events: Iterable[dict], *, artifact: dict | None = None,
-                task_id: str | None = None, action_id: str | None = None,
-                scoped_by_owner: bool = False) -> ExecutionTrace:
+    def project(
+        self,
+        job_id: str,
+        events: Iterable[dict],
+        *,
+        artifact: dict | None = None,
+        task_id: str | None = None,
+        action_id: str | None = None,
+        scoped_by_owner: bool = False,
+    ) -> ExecutionTrace:
         if not isinstance(job_id, str) or not job_id:
             raise ValueError("A job identity is required")
         if type(scoped_by_owner) is not bool:
@@ -49,8 +60,10 @@ class TraceProjection:
         identities = [e.get("job_id") for e in rows if "job_id" in e]
         if any(identity != job_id for identity in identities):
             raise ValueError("Trace contains events belonging to another job")
-        if artifact is not None and (not isinstance(artifact, dict) or
-                                     ("job_id" in artifact and artifact["job_id"] != job_id)):
+        if artifact is not None and (
+            not isinstance(artifact, dict)
+            or ("job_id" in artifact and artifact["job_id"] != job_id)
+        ):
             raise ValueError("Artifact does not belong to the requested job")
         trace = self._reader(job_id, rows, artifact)
         outcome = getattr(trace, "execution_outcome", None)
@@ -60,13 +73,29 @@ class TraceProjection:
         observed_count = getattr(trace, "event_count", None)
         if not all(isinstance(v, str) and v for v in (outcome, coverage, mode, terminal)):
             raise TypeError("Trace reader omitted required observations")
+        # Explicit narrowing for mypy — the isinstance all-test above cannot
+        # be followed through the generator.
+        assert isinstance(outcome, str) and isinstance(coverage, str)
+        assert isinstance(mode, str) and isinstance(terminal, str)
         if type(observed_count) is not int or observed_count != len(rows):
             raise ValueError("Trace reader returned an inconsistent event count")
         # Self-reported owner scoping is NOT independent evidence of scoping.
         # Events with matching IDs permit an internal consistency check only.
         scope_consistent = bool(rows) and len(identities) == len(rows)
-        basis = "event_ids_match" if scope_consistent else (
-            "owner_asserted_unverified" if scoped_by_owner else "unverified"
+        basis = (
+            "event_ids_match"
+            if scope_consistent
+            else ("owner_asserted_unverified" if scoped_by_owner else "unverified")
         )
-        return ExecutionTrace(task_id, action_id, job_id, outcome, coverage,
-                              mode, terminal, observed_count, scope_consistent, basis)
+        return ExecutionTrace(
+            task_id,
+            action_id,
+            job_id,
+            outcome,
+            coverage,
+            mode,
+            terminal,
+            observed_count,
+            scope_consistent,
+            basis,
+        )

@@ -26,15 +26,14 @@ surface" decisions, and this test file does NOT silently restore them.
 Tests exercising those behaviors are retained below with explicit skip
 reasons so coverage status is visible rather than hidden.
 """
+
 from __future__ import annotations
 
-import sys
 import unittest
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 # agent/ is added to sys.path by conftest.py — no manual sys.path manipulation.
-from main import OneShotController, WorkflowStage
+from main import OneShotController
 
 
 class TestUserApprovalLayer(unittest.TestCase):

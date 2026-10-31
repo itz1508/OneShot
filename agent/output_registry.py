@@ -33,37 +33,40 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
-
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class OutputSchemaDescriptor:
     """Metadata for a registered output schema."""
-    name: str                       # e.g. "output_research"
-    schema_file: str                # filename inside schemas dir
-    stage: str                      # "research" | "plan" | "build" | "any"
-    contract_ref: str               # source contract file
-    model_ref: Optional[str] = None  # Pydantic model reference, if any
+
+    name: str  # e.g. "output_research"
+    schema_file: str  # filename inside schemas dir
+    stage: str  # "research" | "plan" | "build" | "any"
+    contract_ref: str  # source contract file
+    model_ref: str | None = None  # Pydantic model reference, if any
     description: str = ""
-    priority: int = 0               # higher = preferred when ambiguous
+    priority: int = 0  # higher = preferred when ambiguous
 
 
 @dataclass
 class SelectionContext:
     """Context used by SchemaRegistry.select() to pick applicable outputs."""
-    stage: Optional[str] = None
-    requested_output: Optional[str] = None
+
+    stage: str | None = None
+    requested_output: str | None = None
     available_material: dict[str, bool] = field(default_factory=dict)
-    task_id: Optional[str] = None
+    task_id: str | None = None
 
 
 @dataclass
 class SelectionResult:
     """Result of schema selection."""
+
     selected: list[OutputSchemaDescriptor] = field(default_factory=list)
     ambiguous: bool = False
     errors: list[str] = field(default_factory=list)
@@ -72,16 +75,18 @@ class SelectionResult:
 @dataclass
 class SerializationResult:
     """Result of JSON serialization for a single output."""
+
     output_name: str
-    data: Optional[dict] = None
-    json_str: Optional[str] = None
+    data: dict | None = None
+    json_str: str | None = None
     errors: list[str] = field(default_factory=list)
-    schema: Optional[OutputSchemaDescriptor] = None
+    schema: OutputSchemaDescriptor | None = None
 
 
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 
 class SchemaRegistry:
     """Adaptive output schema registry.
@@ -99,7 +104,7 @@ class SchemaRegistry:
         "output_repo_summary": "repo_summary",
     }
 
-    def __init__(self, schemas_dir: Optional[Path] = None):
+    def __init__(self, schemas_dir: Path | None = None):
         self._schemas: dict[str, OutputSchemaDescriptor] = {}
         self._schemas_dir = schemas_dir or Path(__file__).resolve().parent / "schemas"
         self._register_defaults()
@@ -184,9 +189,7 @@ class SchemaRegistry:
         if context.requested_output:
             desc = self._schemas.get(context.requested_output)
             if desc is None:
-                result.errors.append(
-                    f"Requested output '{context.requested_output}' not found"
-                )
+                result.errors.append(f"Requested output '{context.requested_output}' not found")
                 return result
             result.selected = [desc]
             return result
@@ -194,10 +197,7 @@ class SchemaRegistry:
         # 2 — stage filter
         candidates = list(self._schemas.values())
         if context.stage:
-            candidates = [
-                c for c in candidates
-                if c.stage == context.stage or c.stage == "any"
-            ]
+            candidates = [c for c in candidates if c.stage == context.stage or c.stage == "any"]
 
         # 3 — material filter
         if context.available_material:
@@ -274,11 +274,13 @@ class SchemaRegistry:
         for desc in selections:
             data = data_map.get(desc.name)
             if data is None:
-                results.append(SerializationResult(
-                    output_name=desc.name,
-                    errors=[f"No data provided for output '{desc.name}'"],
-                    schema=desc,
-                ))
+                results.append(
+                    SerializationResult(
+                        output_name=desc.name,
+                        errors=[f"No data provided for output '{desc.name}'"],
+                        schema=desc,
+                    )
+                )
             else:
                 results.append(self.serialize(desc.name, data))
         return results
@@ -294,7 +296,8 @@ class SchemaRegistry:
         if not path.exists():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else None
         except (json.JSONDecodeError, OSError):
             return None
 
@@ -335,13 +338,11 @@ class SchemaRegistry:
             val = data[field_name]
             if "const" in field_schema and val != field_schema["const"]:
                 errors.append(
-                    f"Field '{field_name}' must be '{field_schema['const']}', "
-                    f"got '{val}'"
+                    f"Field '{field_name}' must be '{field_schema['const']}', got '{val}'"
                 )
             if "enum" in field_schema and val is not None and val not in field_schema["enum"]:
                 errors.append(
-                    f"Field '{field_name}' value '{val}' not in enum: "
-                    f"{field_schema['enum']}"
+                    f"Field '{field_name}' value '{val}' not in enum: {field_schema['enum']}"
                 )
 
         return errors
@@ -369,9 +370,9 @@ class SchemaRegistry:
         if hasattr(summary_obj, "__dataclass_fields__"):
             return asdict(summary_obj)
         if hasattr(summary_obj, "to_dict"):
-            return summary_obj.to_dict()
+            return dict(summary_obj.to_dict())
         if hasattr(summary_obj, "model_dump"):
-            return summary_obj.model_dump()
+            return dict(summary_obj.model_dump())
         return dict(summary_obj)
 
     # -- internal helpers --------------------------------------------------
@@ -384,7 +385,7 @@ class SchemaRegistry:
         if hasattr(data, "__dataclass_fields__"):
             return asdict(data)
         if hasattr(data, "model_dump"):
-            return data.model_dump()
+            return dict(data.model_dump())
         if hasattr(data, "to_dict"):
-            return data.to_dict()
+            return dict(data.to_dict())
         return dict(data)

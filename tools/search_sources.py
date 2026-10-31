@@ -8,16 +8,15 @@ config, tests, and evidence. Produces a grounded file inventory with
 types, sizes, and content summaries.
 """
 
-import os
 import subprocess
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
 class FileEntry:
     """A single file in the repository inventory."""
+
     path: str
     file_type: str
     size: int
@@ -28,14 +27,13 @@ class FileEntry:
 class SearchSources:
     """Repository search using built-in tools (os, subprocess/git)."""
 
-    def __init__(self, repo_path: Optional[str] = None):
+    def __init__(self, repo_path: str | None = None):
         self.repo_path = Path(repo_path) if repo_path else Path(__file__).resolve().parent.parent
 
     def _run_git(self, *args: str) -> str:
         """Run git command using built-in subprocess."""
         result = subprocess.run(
-            ["git", "-C", str(self.repo_path), *args],
-            capture_output=True, text=True, timeout=30
+            ["git", "-C", str(self.repo_path), *args], capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
             raise RuntimeError(f"git {args} failed: {result.stderr.strip()}")
@@ -68,9 +66,14 @@ class SearchSources:
 
         ext = Path(filepath).suffix
         type_map = {
-            ".py": "python", ".md": "markdown", ".json": "json",
-            ".yaml": "yaml", ".yml": "yaml", ".toml": "toml",
-            ".gitignore": "git", ".sh": "shell",
+            ".py": "python",
+            ".md": "markdown",
+            ".json": "json",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".toml": "toml",
+            ".gitignore": "git",
+            ".sh": "shell",
         }
         file_type = type_map.get(ext, "unknown")
 
@@ -80,8 +83,11 @@ class SearchSources:
         summary = content[:200].replace("\n", " ").strip()
 
         return FileEntry(
-            path=filepath, file_type=file_type, size=size,
-            line_count=line_count, content_summary=summary
+            path=filepath,
+            file_type=file_type,
+            size=size,
+            line_count=line_count,
+            content_summary=summary,
         )
 
     def search_archive_branch(self, branch_name: str) -> list[str]:

@@ -14,19 +14,17 @@ Kept and running:    TestSearchSources, TestFixtures, TestBuildExecutor, TestMCP
 Skipped (D2):        TestResearchOutput, TestResearchReview, TestPlanReview, TestApproval.
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 # conftest.py adds tools/ to sys.path.
-
-from search_sources import SearchSources
-from fixtures import FixtureRegistry, create_default_fixtures
 from build_executor import BuildExecutor
+from fixtures import create_default_fixtures
 from mcp_tools import MCPToolRegistry, create_default_registry
+from search_sources import SearchSources
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Retired modules — importable only if someone restores them under ExecPlan D2.
@@ -34,11 +32,11 @@ from mcp_tools import MCPToolRegistry, create_default_registry
 # collection still succeeds and the gap is visible rather than hidden.
 # ---------------------------------------------------------------------------
 try:
-    from research_output import ResearchOutputBuilder, ResearchOutput  # noqa: F401
+    from research_output import ResearchOutput, ResearchOutputBuilder  # noqa: F401
 except ImportError:
     ResearchOutputBuilder = ResearchOutput = None  # type: ignore[assignment]
 try:
-    from research_review import ResearchReview, ColorEval  # noqa: F401
+    from research_review import ColorEval, ResearchReview  # noqa: F401
 except ImportError:
     ResearchReview = ColorEval = None  # type: ignore[assignment]
 try:
@@ -78,7 +76,9 @@ class TestSearchSources:
         assert first.size >= 0
 
 
-@pytest.mark.skip(reason='D2: tools/research_output.py retired by d90b655 — ExecPlan D2 decision pending.')
+@pytest.mark.skip(
+    reason="D2: tools/research_output.py retired by d90b655 — ExecPlan D2 decision pending."
+)
 class TestResearchOutput:
     """Assignment 04: Research Output Package."""
 
@@ -93,7 +93,9 @@ class TestResearchOutput:
 
     def test_add_finding_with_provenance(self):
         prov = self.builder.create_provenance("AGENTS.md", 1, 10)
-        self.builder.add_finding(self.output, "f1", "Test finding", [prov.__dict__], "expected_value")
+        self.builder.add_finding(
+            self.output, "f1", "Test finding", [prov.__dict__], "expected_value"
+        )
         assert len(self.output.findings) == 1
         assert self.output.findings[0].validation_value == "expected_value"
 
@@ -112,7 +114,9 @@ class TestResearchOutput:
         assert len(result.commit_sha) == 40
 
 
-@pytest.mark.skip(reason='D2: tools/research_review.py retired by d90b655 — ExecPlan D2 decision pending.')
+@pytest.mark.skip(
+    reason="D2: tools/research_review.py retired by d90b655 — ExecPlan D2 decision pending."
+)
 class TestResearchReview:
     """Assignment 05: Research Review (Optional)."""
 
@@ -121,7 +125,9 @@ class TestResearchReview:
 
     def test_green_when_all_findings_grounded(self):
         output = {
-            "findings": [{"id": "f1", "provenance": [{"file_path": "AGENTS.md"}], "validation_value": "ok"}],
+            "findings": [
+                {"id": "f1", "provenance": [{"file_path": "AGENTS.md"}], "validation_value": "ok"}
+            ],
             "contradictions": [],
         }
         result = self.review.review(output)
@@ -138,7 +144,9 @@ class TestResearchReview:
 
     def test_yellow_when_contradictions_exist(self):
         output = {
-            "findings": [{"id": "f1", "provenance": [{"file_path": "AGENTS.md"}], "validation_value": "ok"}],
+            "findings": [
+                {"id": "f1", "provenance": [{"file_path": "AGENTS.md"}], "validation_value": "ok"}
+            ],
             "contradictions": [{"id": "c1", "description": "Conflict"}],
         }
         result = self.review.review(output)
@@ -146,7 +154,9 @@ class TestResearchReview:
         assert result.contradictions_found == 1
 
 
-@pytest.mark.skip(reason='D2: tools/plan_review.py retired by d90b655 — ExecPlan D2 decision pending.')
+@pytest.mark.skip(
+    reason="D2: tools/plan_review.py retired by d90b655 — ExecPlan D2 decision pending."
+)
 class TestPlanReview:
     """Assignment 06: Plan Review."""
 
@@ -198,6 +208,7 @@ class TestFixtures:
 
     def test_run_positive_with_executor(self):
         registry = create_default_fixtures()
+
         def executor(inp):
             if inp.get("file") in ("AGENTS.md", ".gitignore"):
                 return True
@@ -206,11 +217,17 @@ class TestFixtures:
             if inp.get("count") == 12:
                 return 12
             return "valid"
+
         results = registry.run_positive(executor)
         assert all(r["passed"] for r in results)
 
 
-@pytest.mark.skip(reason='D2: tools/approval.py retired by d90b655 — see tests/test_authorization.py for the migrated user-approval surface.')
+@pytest.mark.skip(
+    reason=(
+        "D2: tools/approval.py retired by d90b655 — see "
+        "tests/test_authorization.py for the migrated user-approval surface."
+    )
+)
 class TestApproval:
     """Assignment 08: Authorization (user + host enforcement)."""
 
@@ -235,7 +252,9 @@ class TestApproval:
 
     def test_verify_bindings_all_present(self):
         gate = AuthorizationGate(host_permissions={"a": ["execute"]})
-        result = gate.verify_bindings("abc123", True, True, {"repo": "url", "branch": "main", "commit_sha": "sha"})
+        result = gate.verify_bindings(
+            "abc123", True, True, {"repo": "url", "branch": "main", "commit_sha": "sha"}
+        )
         assert result["all_present"]
 
 

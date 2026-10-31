@@ -9,28 +9,21 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
-from dataclasses import asdict
 from pathlib import Path
 from unittest import TestCase
 
-# Ensure agent/ is importable
-_AGENT_DIR = Path(__file__).resolve().parent.parent / "agent"
-if str(_AGENT_DIR) not in sys.path:
-    sys.path.insert(0, str(_AGENT_DIR))
-
+# conftest.py already puts agent/ on sys.path.
 from output_registry import (
     OutputSchemaDescriptor,
     SchemaRegistry,
     SelectionContext,
-    SerializationResult,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test data builders
 # ---------------------------------------------------------------------------
+
 
 def _research_record() -> dict:
     return {
@@ -44,23 +37,44 @@ def _research_record() -> dict:
             "user_outcome": "Build the feature",
             "original_request_ref": "user-request",
             "accepted_requirements": [
-                {"id": "R1", "statement": "Do X", "authority_ref": "AGENTS.md", "scope": "in_scope"},
+                {
+                    "id": "R1",
+                    "statement": "Do X",
+                    "authority_ref": "AGENTS.md",
+                    "scope": "in_scope",
+                },
             ],
-            "scope": [], "constraints": [], "superseded_requirements": [],
+            "scope": [],
+            "constraints": [],
+            "superseded_requirements": [],
         },
-        "workspace": {"repo_root": "/repo", "git_revision": "abc123", "environment_ref": "serverless"},
+        "workspace": {
+            "repo_root": "/repo",
+            "git_revision": "abc123",
+            "environment_ref": "serverless",
+        },
         "search": {
             "todo_search_ref": "AGENTS.md",
             "questions": [],
             "sources": [
-                {"id": "S1", "location": "AGENTS.md", "revision_or_hash": "abc123",
-                 "authority": "accepted", "evidence_ref": "AGENTS.md"},
+                {
+                    "id": "S1",
+                    "location": "AGENTS.md",
+                    "revision_or_hash": "abc123",
+                    "authority": "accepted",
+                    "evidence_ref": "AGENTS.md",
+                },
             ],
             "findings": [
-                {"id": "F1", "claim": "Found X", "evidence_refs": ["AGENTS.md"],
-                 "assessment": "supported"},
+                {
+                    "id": "F1",
+                    "claim": "Found X",
+                    "evidence_refs": ["AGENTS.md"],
+                    "assessment": "supported",
+                },
             ],
-            "contradictions": [], "uncertainties": [],
+            "contradictions": [],
+            "uncertainties": [],
         },
         "outputs": {
             "evidence_refs": ["AGENTS.md"],
@@ -68,21 +82,33 @@ def _research_record() -> dict:
             "fixture_refs": ["bin/context_counter.py"],
             "success_criteria_refs": ["agent/contracts/build.yaml"],
             "requirement_trace": [
-                {"requirement_id": "R1", "finding_ids": ["F1"],
-                 "fixture_ids": ["bin/context_counter.py"],
-                 "criterion_ids": ["agent/contracts/build.yaml"], "disposition": "covered"},
+                {
+                    "requirement_id": "R1",
+                    "finding_ids": ["F1"],
+                    "fixture_ids": ["bin/context_counter.py"],
+                    "criterion_ids": ["agent/contracts/build.yaml"],
+                    "disposition": "covered",
+                },
             ],
         },
         "review": {
-            "coverage": "sufficient", "evidence_grounding": "passed",
-            "unsupported_claims": [], "unresolved_issues": [], "blockers": [],
-            "disposition": "ready_for_plan", "review_receipt_ref": "AGENTS.md",
+            "coverage": "sufficient",
+            "evidence_grounding": "passed",
+            "unsupported_claims": [],
+            "unresolved_issues": [],
+            "blockers": [],
+            "disposition": "ready_for_plan",
+            "review_receipt_ref": "AGENTS.md",
         },
         "progress_log": [{"at": "2026-01-01T00:00:00+00:00", "step": "done", "result": "ok"}],
         "decision_log": [{"at": "2026-01-01T00:00:00+00:00", "decision": "proceed", "why": "ok"}],
         "checkpoint": {"action_state": "completed", "action_id": "research-abc123"},
-        "handoff": {"to": "plan", "ready": True, "artifact_manifest_ref": "AGENTS.md",
-                     "validation_receipt_ref": "AGENTS.md"},
+        "handoff": {
+            "to": "plan",
+            "ready": True,
+            "artifact_manifest_ref": "AGENTS.md",
+            "validation_receipt_ref": "AGENTS.md",
+        },
     }
 
 
@@ -96,14 +122,26 @@ def _plan_record() -> dict:
         "gap_analysis": {
             "status": "resolved",
             "scanner_calls": [
-                {"at": "2026-01-01T00:00:00+00:00", "tool_ref": "agent/adapters/repository_inventory.py",
-                 "scope_ref": "AGENTS.md", "input_revision": 1,
-                 "findings_ref": "AGENTS.md", "receipt_ref": "AGENTS.md", "outcome": "passed"},
+                {
+                    "at": "2026-01-01T00:00:00+00:00",
+                    "tool_ref": "agent/adapters/repository_inventory.py",
+                    "scope_ref": "AGENTS.md",
+                    "input_revision": 1,
+                    "findings_ref": "AGENTS.md",
+                    "receipt_ref": "AGENTS.md",
+                    "outcome": "passed",
+                },
             ],
             "findings": [
-                {"id": "gap-1", "type": "missing", "severity": "critical",
-                 "evidence_refs": ["AGENTS.md"], "status": "resolved",
-                 "fix_receipt_ref": "AGENTS.md", "recheck_ref": "AGENTS.md"},
+                {
+                    "id": "gap-1",
+                    "type": "missing",
+                    "severity": "critical",
+                    "evidence_refs": ["AGENTS.md"],
+                    "status": "resolved",
+                    "fix_receipt_ref": "AGENTS.md",
+                    "recheck_ref": "AGENTS.md",
+                },
             ],
             "unresolved_critical_ids": [],
             "last_recheck_ref": "AGENTS.md",
@@ -120,19 +158,38 @@ def _build_record() -> dict:
         "status": "complete",
         "updated_at": "2026-01-01T00:00:00+00:00",
         "plan_input": {
-            "record_ref": "plan-001", "record_id": "plan-001", "record_revision": 1,
-            "accepted_milestone_ids": ["m1"], "accepted_criterion_ids": ["c1"],
+            "record_ref": "plan-001",
+            "record_id": "plan-001",
+            "record_revision": 1,
+            "accepted_milestone_ids": ["m1"],
+            "accepted_criterion_ids": ["c1"],
         },
         "execution": {
-            "workspace_snapshot_ref": "AGENTS.md", "environment_ref": "serverless",
-            "started_at": "2026-01-01T00:00:00+00:00", "finished_at": "2026-01-01T00:00:00+00:00",
-            "milestone_results": [{"id": "m1", "status": "passed", "changed_files": [],
-                                    "command_receipts": ["e2e-1"], "artifact_refs": ["bin/context_counter.py"]}],
-            "command_receipts": [
-                {"id": "e2e-1", "command": "python counter", "cwd": "/repo",
-                 "exit_code": 0, "receipt_ref": "AGENTS.md"},
+            "workspace_snapshot_ref": "AGENTS.md",
+            "environment_ref": "serverless",
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "finished_at": "2026-01-01T00:00:00+00:00",
+            "milestone_results": [
+                {
+                    "id": "m1",
+                    "status": "passed",
+                    "changed_files": [],
+                    "command_receipts": ["e2e-1"],
+                    "artifact_refs": ["bin/context_counter.py"],
+                }
             ],
-            "artifact_manifest_ref": "agent/contracts/build.yaml", "changes": [], "cleanup": [],
+            "command_receipts": [
+                {
+                    "id": "e2e-1",
+                    "command": "python counter",
+                    "cwd": "/repo",
+                    "exit_code": 0,
+                    "receipt_ref": "AGENTS.md",
+                },
+            ],
+            "artifact_manifest_ref": "agent/contracts/build.yaml",
+            "changes": [],
+            "cleanup": [],
         },
         "implementation_validation": {
             "status": "passed",
@@ -140,29 +197,54 @@ def _build_record() -> dict:
             "regressions": [],
         },
         "post_build_e2e": {
-            "status": "passed", "real_entrypoint_ref": "bin/context_counter.py",
+            "status": "passed",
+            "real_entrypoint_ref": "bin/context_counter.py",
             "environment_ref": "serverless",
-            "cases": [{"fixture_ref": "bin/context_counter.py", "expected_ref": "AGENTS.md",
-                       "observed_ref": "AGENTS.md", "receipt_ref": "AGENTS.md", "status": "passed"}],
+            "cases": [
+                {
+                    "fixture_ref": "bin/context_counter.py",
+                    "expected_ref": "AGENTS.md",
+                    "observed_ref": "AGENTS.md",
+                    "receipt_ref": "AGENTS.md",
+                    "status": "passed",
+                }
+            ],
             "chaos_cases": [],
             "independent_result_checks": [
-                {"criterion_id": "c1", "expected_ref": "AGENTS.md", "observed_ref": "AGENTS.md",
-                 "receipt_ref": "AGENTS.md", "status": "passed"},
+                {
+                    "criterion_id": "c1",
+                    "expected_ref": "AGENTS.md",
+                    "observed_ref": "AGENTS.md",
+                    "receipt_ref": "AGENTS.md",
+                    "status": "passed",
+                },
             ],
             "coverage_gaps": [],
         },
-        "issues_and_corrections": {"findings": [], "gap_fix_receipt_refs": [],
-                                    "revalidation_receipt_refs": [], "blockers": []},
+        "issues_and_corrections": {
+            "findings": [],
+            "gap_fix_receipt_refs": [],
+            "revalidation_receipt_refs": [],
+            "blockers": [],
+        },
         "outcome": {
-            "status": "verified", "user_visible_result_ref": "bin/context_counter.py",
-            "criterion_results": [{"criterion_id": "c1", "status": "passed", "evidence_ref": "AGENTS.md"}],
-            "remaining_limitations": [], "summary": "All passed",
+            "status": "verified",
+            "user_visible_result_ref": "bin/context_counter.py",
+            "criterion_results": [
+                {"criterion_id": "c1", "status": "passed", "evidence_ref": "AGENTS.md"}
+            ],
+            "remaining_limitations": [],
+            "summary": "All passed",
         },
         "progress_log": [{"at": "2026-01-01T00:00:00+00:00", "step": "e2e", "result": "done"}],
         "decision_log": [{"at": "2026-01-01T00:00:00+00:00", "decision": "done", "why": "e2e"}],
         "checkpoint": {"action_state": "completed", "action_id": "build-001"},
-        "handoff": {"to": "complete", "ready": True,
-                     "completion_receipt_ref": "AGENTS.md", "validation_receipt_ref": "AGENTS.md"},
+        "handoff": {
+            "to": "complete",
+            "ready": True,
+            "completion_receipt_ref": "AGENTS.md",
+            "validation_receipt_ref": "AGENTS.md",
+        },
     }
 
 
@@ -174,9 +256,14 @@ def _repo_summary_dict() -> dict:
         "working_tree_clean": False,
         "files": ["AGENTS.md", "pyproject.toml"],
         "gap_matrix": [
-            {"area": "00 — Authority", "requirement": "ground decisions",
-             "current_state": "Implemented", "action": "adapt",
-             "evidence": "Files: ['AGENTS.md']", "color_eval": "GREEN"},
+            {
+                "area": "00 — Authority",
+                "requirement": "ground decisions",
+                "current_state": "Implemented",
+                "action": "adapt",
+                "evidence": "Files: ['AGENTS.md']",
+                "color_eval": "GREEN",
+            },
         ],
         "available_tools": ["git", "python3.12", "pytest"],
         "color_eval_baseline": "GREEN",
@@ -187,16 +274,22 @@ def _repo_summary_dict() -> dict:
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestRegistryConstruction(TestCase):
     """Registry initialisation and default schema registration."""
 
     def test_default_registry_has_four_schemas(self):
         reg = SchemaRegistry()
         names = {s.name for s in reg.list_schemas()}
-        self.assertEqual(names, {
-            "output_research", "output_gap_analysis",
-            "output_built", "output_repo_summary",
-        })
+        self.assertEqual(
+            names,
+            {
+                "output_research",
+                "output_gap_analysis",
+                "output_built",
+                "output_repo_summary",
+            },
+        )
 
     def test_get_returns_descriptor(self):
         reg = SchemaRegistry()
@@ -211,8 +304,10 @@ class TestRegistryConstruction(TestCase):
     def test_duplicate_registration_is_idempotent(self):
         reg = SchemaRegistry()
         desc = OutputSchemaDescriptor(
-            name="output_research", schema_file="output_research.json",
-            stage="research", contract_ref="x",
+            name="output_research",
+            schema_file="output_research.json",
+            stage="research",
+            contract_ref="x",
         )
         reg.register(desc)  # should not raise
 
@@ -290,8 +385,10 @@ class TestAmbiguousSelection(TestCase):
         reg = SchemaRegistry()
         # Register a second plan-stage schema with same priority
         extra = OutputSchemaDescriptor(
-            name="output_plan_extra", schema_file="output_gap_analysis.json",
-            stage="plan", contract_ref="x",
+            name="output_plan_extra",
+            schema_file="output_gap_analysis.json",
+            stage="plan",
+            contract_ref="x",
             priority=10,
         )
         reg.register(extra)
@@ -302,8 +399,10 @@ class TestAmbiguousSelection(TestCase):
     def test_not_ambiguous_when_priorities_differ(self):
         reg = SchemaRegistry()
         extra = OutputSchemaDescriptor(
-            name="output_plan_extra", schema_file="output_gap_analysis.json",
-            stage="plan", contract_ref="x",
+            name="output_plan_extra",
+            schema_file="output_gap_analysis.json",
+            stage="plan",
+            contract_ref="x",
             priority=5,  # lower than output_gap_analysis (10)
         )
         reg.register(extra)
@@ -375,9 +474,14 @@ class TestSerialization(TestCase):
             color_eval_baseline: str
 
         summary = FakeSummary(
-            repository="test", branch="main", commit_sha="abc",
-            working_tree_clean=True, files=[], gap_matrix=[],
-            available_tools=[], color_eval_baseline="GREEN",
+            repository="test",
+            branch="main",
+            commit_sha="abc",
+            working_tree_clean=True,
+            files=[],
+            gap_matrix=[],
+            available_tools=[],
+            color_eval_baseline="GREEN",
         )
         result = reg.serialize("output_repo_summary", summary)
         self.assertFalse(result.errors)
@@ -488,8 +592,18 @@ class TestConsumerCompatibility(TestCase):
         result = reg.serialize("output_research", _research_record())
         self.assertFalse(result.errors)
         data = json.loads(result.json_str)
-        for field in ["kind", "task_id", "record_id", "revision", "status",
-                      "purpose", "search", "outputs", "review", "handoff"]:
+        for field in [
+            "kind",
+            "task_id",
+            "record_id",
+            "revision",
+            "status",
+            "purpose",
+            "search",
+            "outputs",
+            "review",
+            "handoff",
+        ]:
             self.assertIn(field, data, f"Missing field '{field}'")
 
     def test_build_output_compatible_with_contract_fields(self):
@@ -498,18 +612,33 @@ class TestConsumerCompatibility(TestCase):
         result = reg.serialize("output_built", _build_record())
         self.assertFalse(result.errors)
         data = json.loads(result.json_str)
-        for field in ["kind", "task_id", "record_id", "revision", "status",
-                      "plan_input", "execution", "implementation_validation",
-                      "post_build_e2e", "outcome", "handoff"]:
+        for field in [
+            "kind",
+            "task_id",
+            "record_id",
+            "revision",
+            "status",
+            "plan_input",
+            "execution",
+            "implementation_validation",
+            "post_build_e2e",
+            "outcome",
+            "handoff",
+        ]:
             self.assertIn(field, data, f"Missing field '{field}'")
 
     def test_gap_analysis_extracts_from_plan_correctly(self):
         """The gap_analysis extraction must preserve all expected fields."""
-        reg = SchemaRegistry()
+        SchemaRegistry()
         plan = _plan_record()
         gap = SchemaRegistry.extract_gap_analysis(plan)
-        for field in ["status", "scanner_calls", "findings",
-                      "unresolved_critical_ids", "last_recheck_ref"]:
+        for field in [
+            "status",
+            "scanner_calls",
+            "findings",
+            "unresolved_critical_ids",
+            "last_recheck_ref",
+        ]:
             self.assertIn(field, gap, f"Missing gap_analysis field '{field}'")
 
     def test_repo_summary_preserves_repo_summary_tool_fields(self):
@@ -520,8 +649,16 @@ class TestConsumerCompatibility(TestCase):
         result = reg.serialize("output_repo_summary", summary)
         self.assertFalse(result.errors)
         data = json.loads(result.json_str)
-        for field in ["repository", "branch", "commit_sha", "working_tree_clean",
-                      "files", "gap_matrix", "available_tools", "color_eval_baseline"]:
+        for field in [
+            "repository",
+            "branch",
+            "commit_sha",
+            "working_tree_clean",
+            "files",
+            "gap_matrix",
+            "available_tools",
+            "color_eval_baseline",
+        ]:
             self.assertIn(field, data, f"Missing field '{field}' from RepoSummary compatibility")
 
 
@@ -624,21 +761,30 @@ class TestIntegrationWithWorkflow(TestCase):
         result = reg.select(ctx)
         self.assertFalse(result.errors)
         names = {d.name for d in result.selected}
-        self.assertEqual(names, {
-            "output_research", "output_gap_analysis",
-            "output_built", "output_repo_summary",
-        })
+        self.assertEqual(
+            names,
+            {
+                "output_research",
+                "output_gap_analysis",
+                "output_built",
+                "output_repo_summary",
+            },
+        )
 
     def test_cross_stage_repo_summary_always_selectable(self):
         """repo_summary (stage='any') is selectable at every stage."""
         reg = SchemaRegistry()
         for stage in ["research", "plan", "build", "complete"]:
-            result = reg.select(SelectionContext(
-                stage=stage,
-                available_material={"repo_summary": True},
-            ))
+            result = reg.select(
+                SelectionContext(
+                    stage=stage,
+                    available_material={"repo_summary": True},
+                )
+            )
             names = {d.name for d in result.selected}
-            self.assertIn("output_repo_summary", names, f"repo_summary not selected at stage={stage}")
+            self.assertIn(
+                "output_repo_summary", names, f"repo_summary not selected at stage={stage}"
+            )
 
 
 class TestRegistryDoesNotDuplicateOwnership(TestCase):

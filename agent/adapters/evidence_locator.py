@@ -3,6 +3,7 @@
 Matching an excerpt is not evidence that a semantic claim is correct. Source
 identity and permissions are responsibilities of the calling host.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

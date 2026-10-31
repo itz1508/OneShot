@@ -9,25 +9,22 @@ coverage of all eight categories, controller integration, and repair loops.
 
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "agent"))
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-sys.path.insert(0, str(REPO_ROOT / "agent" / "adapters"))
 
 from gap_analysis import CapabilityPreflight, CapabilityVerdict
 
 # GapAnalysisSpecialist was removed; skip tests that depend on it.
 try:
-    from gap_analysis import GapAnalysisSpecialist, FindingStatus
+    from gap_analysis import FindingStatus, GapAnalysisSpecialist
 except ImportError:
     GapAnalysisSpecialist = None
     FindingStatus = None
 
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
 _skip_old = pytest.mark.skipif(
     GapAnalysisSpecialist is None,
     reason="GapAnalysisSpecialist removed; see test_capability_preflight.py",
@@ -36,8 +33,16 @@ _skip_old = pytest.mark.skipif(
 
 def test_preflight_has_eight_categories():
     assert len(CapabilityPreflight.CATEGORIES) == 8
-    expected = {"drift", "missing", "duplication", "contradictions",
-                "coverage", "dependencies", "feasibility", "cli_docs"}
+    expected = {
+        "drift",
+        "missing",
+        "duplication",
+        "contradictions",
+        "coverage",
+        "dependencies",
+        "feasibility",
+        "cli_docs",
+    }
     assert set(CapabilityPreflight.CATEGORIES) == expected
 
 
@@ -45,11 +50,11 @@ def test_preflight_all_categories_valid():
     pf = CapabilityPreflight()
     result = pf.run()
     for cat in result.categories:
-        assert cat.verdict == CapabilityVerdict.VALID.value, \
-            f"{cat.category}: {cat.evidence}"
+        assert cat.verdict == CapabilityVerdict.VALID.value, f"{cat.category}: {cat.evidence}"
     assert result.aggregate_verdict == CapabilityVerdict.VALID.value
     assert result.can_proceed is True
     assert result.coverage_complete is True
+
 
 @_skip_old
 class TestMissingCategory:
@@ -97,8 +102,7 @@ class TestDuplicationCategory:
             (root / "tools").mkdir(parents=True)
             (root / "tools" / "core.py").write_text("def shared():\n    return 1\n")
             (root / "tools" / "wrapper.py").write_text(
-                "from core import shared\n"
-                "def shared():\n    return core.shared()\n"
+                "from core import shared\ndef shared():\n    return core.shared()\n"
             )
             specialist = GapAnalysisSpecialist(root)
             result = specialist.analyze(check_categories=["duplication"])
@@ -123,12 +127,8 @@ class TestDuplicationCategory:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "tools").mkdir(parents=True)
-            (root / "tools" / "a.py").write_text(
-                "class A:\n    def review(self):\n    pass\n"
-            )
-            (root / "tools" / "b.py").write_text(
-                "class B:\n    def review(self):\n    pass\n"
-            )
+            (root / "tools" / "a.py").write_text("class A:\n    def review(self):\n    pass\n")
+            (root / "tools" / "b.py").write_text("class B:\n    def review(self):\n    pass\n")
             specialist = GapAnalysisSpecialist(root)
             result = specialist.analyze(check_categories=["duplication"])
             dup_findings = [f for f in result.findings if "review" in f.id]

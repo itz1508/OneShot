@@ -18,12 +18,12 @@ Mapping:
     can_retry(id)                  → tm.can_retry(id)
     retry_task(id)                 → tm.retry(id)
 """
+
 from __future__ import annotations
 
 import os
 import tempfile
 import unittest
-from pathlib import Path
 
 # conftest.py puts tools/ on sys.path.
 from task_management import TaskManager, TaskState

@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""Independent oracle tests for text_metrics — values specified before implementation verification."""
+"""Independent oracle tests for text_metrics.
 
-import sys
-from pathlib import Path
+Values specified before implementation verification.
+"""
+
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
-
 from text_metrics import count_text
 
 

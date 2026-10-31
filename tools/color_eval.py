@@ -11,7 +11,6 @@ A confirmed RED in any check makes the entire evaluation RED — no averaging.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
 
 class Color(str, Enum):
@@ -59,32 +58,56 @@ class ColorEvaluator:
                 without_prov += 1
 
         if without_prov == 0 and with_prov > 0:
-            checks.append(CheckResult("groundedness", Color.GREEN.value, f"{with_prov} findings with provenance"))
+            checks.append(
+                CheckResult(
+                    "groundedness", Color.GREEN.value, f"{with_prov} findings with provenance"
+                )
+            )
             passed_count += 1
         elif with_prov > 0:
-            checks.append(CheckResult("groundedness", Color.RED.value, f"{without_prov} findings lack provenance"))
+            checks.append(
+                CheckResult(
+                    "groundedness", Color.RED.value, f"{without_prov} findings lack provenance"
+                )
+            )
             critical.append(f"{without_prov} findings without provenance")
         else:
-            checks.append(CheckResult("groundedness", Color.RED.value, "No findings with provenance"))
+            checks.append(
+                CheckResult("groundedness", Color.RED.value, "No findings with provenance")
+            )
             critical.append("No grounded findings")
 
         # Check 2: Completeness — every finding must have validation value
         with_val = 0
         without_val = 0
         for f in findings:
-            val = f.get("validation_value") if isinstance(f, dict) else getattr(f, "validation_value", None)
+            val = (
+                f.get("validation_value")
+                if isinstance(f, dict)
+                else getattr(f, "validation_value", None)
+            )
             if val:
                 with_val += 1
             else:
                 without_val += 1
 
         if without_val == 0 and with_val > 0:
-            checks.append(CheckResult("completeness", Color.GREEN.value, f"{with_val} findings with validation"))
+            checks.append(
+                CheckResult(
+                    "completeness", Color.GREEN.value, f"{with_val} findings with validation"
+                )
+            )
             passed_count += 1
         elif with_val > 0:
-            checks.append(CheckResult("completeness", Color.YELLOW.value, f"{without_val} findings lack validation"))
+            checks.append(
+                CheckResult(
+                    "completeness", Color.YELLOW.value, f"{without_val} findings lack validation"
+                )
+            )
         else:
-            checks.append(CheckResult("completeness", Color.RED.value, "No findings with validation"))
+            checks.append(
+                CheckResult("completeness", Color.RED.value, "No findings with validation")
+            )
             critical.append("No validated findings")
 
         # Check 3: Contradictions
@@ -92,7 +115,13 @@ class ColorEvaluator:
             checks.append(CheckResult("contradictions", Color.GREEN.value, "No contradictions"))
             passed_count += 1
         else:
-            checks.append(CheckResult("contradictions", Color.YELLOW.value, f"{len(contradictions)} contradictions found"))
+            checks.append(
+                CheckResult(
+                    "contradictions",
+                    Color.YELLOW.value,
+                    f"{len(contradictions)} contradictions found",
+                )
+            )
 
         # Overall: critical failure = RED
         if critical:
@@ -103,12 +132,16 @@ class ColorEvaluator:
             overall = Color.YELLOW.value
 
         return EvalResult(
-            overall_color=overall, checks=checks,
+            overall_color=overall,
+            checks=checks,
             critical_failures=critical,
-            evidence_count=evidence_count, passed_count=passed_count,
+            evidence_count=evidence_count,
+            passed_count=passed_count,
         )
 
-    def evaluate_build(self, artifacts: list, fixture_results: dict, partial_failures: list) -> EvalResult:
+    def evaluate_build(
+        self, artifacts: list, fixture_results: dict, partial_failures: list
+    ) -> EvalResult:
         """Evaluate build output for artifacts, fixtures, and failures."""
         checks = []
         critical = []
@@ -117,11 +150,17 @@ class ColorEvaluator:
 
         # Check 1: Artifacts produced and hashed
         if artifacts and all(a.get("sha256") for a in artifacts):
-            checks.append(CheckResult("artifacts", Color.GREEN.value, f"{len(artifacts)} artifacts with SHA-256"))
+            checks.append(
+                CheckResult(
+                    "artifacts", Color.GREEN.value, f"{len(artifacts)} artifacts with SHA-256"
+                )
+            )
             evidence_count += len(artifacts)
             passed_count += 1
         elif artifacts:
-            checks.append(CheckResult("artifacts", Color.YELLOW.value, "Some artifacts missing hashes"))
+            checks.append(
+                CheckResult("artifacts", Color.YELLOW.value, "Some artifacts missing hashes")
+            )
         else:
             checks.append(CheckResult("artifacts", Color.RED.value, "No artifacts produced"))
             critical.append("No artifacts")
@@ -139,7 +178,11 @@ class ColorEvaluator:
             checks.append(CheckResult("no_failures", Color.GREEN.value, "No partial failures"))
             passed_count += 1
         else:
-            checks.append(CheckResult("no_failures", Color.RED.value, f"{len(partial_failures)} partial failures"))
+            checks.append(
+                CheckResult(
+                    "no_failures", Color.RED.value, f"{len(partial_failures)} partial failures"
+                )
+            )
             critical.append(f"{len(partial_failures)} partial failures")
 
         if critical:
@@ -150,30 +193,51 @@ class ColorEvaluator:
             overall = Color.YELLOW.value
 
         return EvalResult(
-            overall_color=overall, checks=checks,
+            overall_color=overall,
+            checks=checks,
             critical_failures=critical,
-            evidence_count=evidence_count, passed_count=passed_count,
+            evidence_count=evidence_count,
+            passed_count=passed_count,
         )
 
-    def evaluate_e2e(self, lifecycle_pass: bool, recovery_pass: bool,
-                     invalid_input_pass: bool, persistence_pass: bool) -> EvalResult:
+    def evaluate_e2e(
+        self,
+        lifecycle_pass: bool,
+        recovery_pass: bool,
+        invalid_input_pass: bool,
+        persistence_pass: bool,
+    ) -> EvalResult:
         """Evaluate E2E test results."""
         checks = [
-            CheckResult("complete_lifecycle", Color.GREEN.value if lifecycle_pass else Color.RED.value,
-                       "Lifecycle passed" if lifecycle_pass else "Lifecycle failed"),
-            CheckResult("restart_recovery", Color.GREEN.value if recovery_pass else Color.RED.value,
-                       "Recovery passed" if recovery_pass else "Recovery failed"),
-            CheckResult("invalid_input", Color.GREEN.value if invalid_input_pass else Color.RED.value,
-                       "Invalid input handled" if invalid_input_pass else "Invalid input not handled"),
-            CheckResult("persisted_results", Color.GREEN.value if persistence_pass else Color.RED.value,
-                       "Results persisted" if persistence_pass else "Results not persisted"),
+            CheckResult(
+                "complete_lifecycle",
+                Color.GREEN.value if lifecycle_pass else Color.RED.value,
+                "Lifecycle passed" if lifecycle_pass else "Lifecycle failed",
+            ),
+            CheckResult(
+                "restart_recovery",
+                Color.GREEN.value if recovery_pass else Color.RED.value,
+                "Recovery passed" if recovery_pass else "Recovery failed",
+            ),
+            CheckResult(
+                "invalid_input",
+                Color.GREEN.value if invalid_input_pass else Color.RED.value,
+                "Invalid input handled" if invalid_input_pass else "Invalid input not handled",
+            ),
+            CheckResult(
+                "persisted_results",
+                Color.GREEN.value if persistence_pass else Color.RED.value,
+                "Results persisted" if persistence_pass else "Results not persisted",
+            ),
         ]
         critical = [c.name for c in checks if c.color == Color.RED.value]
         passed = sum(1 for c in checks if c.color == Color.GREEN.value)
         overall = Color.RED.value if critical else Color.GREEN.value
 
         return EvalResult(
-            overall_color=overall, checks=checks,
+            overall_color=overall,
+            checks=checks,
             critical_failures=critical,
-            evidence_count=4, passed_count=passed,
+            evidence_count=4,
+            passed_count=passed,
         )

@@ -1,4 +1,5 @@
 """Actual V18 trace reader, with scope isolation and no invented E2E success."""
+
 from __future__ import annotations
 
 import unittest
@@ -51,7 +52,9 @@ class TraceProjectionTests(unittest.TestCase):
 
     def test_wrong_job_artifact_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
-            self.reader.project("j", [{"job_id": "j", "kind": "job_completed"}], artifact={"job_id": "other"})
+            self.reader.project(
+                "j", [{"job_id": "j", "kind": "job_completed"}], artifact={"job_id": "other"}
+            )
 
     def test_reader_inconsistent_count_rejected(self) -> None:
         class WrongTrace:
@@ -60,8 +63,11 @@ class TraceProjectionTests(unittest.TestCase):
             generation_mode = "deterministic"
             terminal_event = "job_completed"
             event_count = 99
+
         with self.assertRaises(ValueError):
-            TraceProjection(lambda *_args, **_kw: WrongTrace()).project("j", [{"kind": "job_completed"}])
+            TraceProjection(lambda *_args, **_kw: WrongTrace()).project(
+                "j", [{"kind": "job_completed"}]
+            )
 
 
 if __name__ == "__main__":

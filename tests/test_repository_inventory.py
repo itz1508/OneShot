@@ -1,4 +1,5 @@
 """Real repository Scanner integration (the Scanner is not reimplemented)."""
+
 from __future__ import annotations
 
 import tempfile
@@ -38,7 +39,9 @@ class RepositoryInventoryTests(unittest.TestCase):
             except (OSError, NotImplementedError):
                 self.skipTest("Symlinks not supported")
             result = SourceInspection(inspect_repository).inspect(root)
-            self.assertFalse(any(row.path == "alias.py" and row.text_admitted for row in result.files))
+            self.assertFalse(
+                any(row.path == "alias.py" and row.text_admitted for row in result.files)
+            )
 
     def test_complete_small_scope(self) -> None:
         with tempfile.TemporaryDirectory() as dirname:
@@ -55,7 +58,14 @@ class RepositoryInventoryTests(unittest.TestCase):
             partial = False
             limitations = []
             excluded_paths = []
-        Broken.files = (type("File", (), dict(path="../escape", size=3, text_admitted=True, sha256_hex="a" * 64))(),)
+
+        Broken.files = (
+            type(
+                "File",
+                (),
+                {"path": "../escape", "size": 3, "text_admitted": True, "sha256_hex": "a" * 64},
+            )(),
+        )
         with self.assertRaises(ValueError):
             SourceInspection(lambda _root: Broken()).inspect(Path("."))
 

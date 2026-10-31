@@ -7,13 +7,15 @@ Does NOT implement core logic, pause/resume, approval, Task Management,
 Research, Plan, or Build. Enforces least privilege via existing access control.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Any, Optional
+from typing import Any
 
 
 @dataclass
 class ToolDefinition:
     """Definition of an exposed tool."""
+
     name: str
     description: str
     input_schema: dict
@@ -24,6 +26,7 @@ class ToolDefinition:
 @dataclass
 class ToolResult:
     """Result of a tool call."""
+
     success: bool
     output: Any
     error: str = ""
@@ -35,12 +38,20 @@ class MCPToolRegistry:
     def __init__(self):
         self._tools: dict[str, ToolDefinition] = {}
 
-    def register(self, name: str, description: str, input_schema: dict,
-                 handler: Callable, permissions: list = None):
+    def register(
+        self,
+        name: str,
+        description: str,
+        input_schema: dict,
+        handler: Callable,
+        permissions: list | None = None,
+    ):
         """Register an existing operation as a tool."""
         self._tools[name] = ToolDefinition(
-            name=name, description=description,
-            input_schema=input_schema, handler=handler,
+            name=name,
+            description=description,
+            input_schema=input_schema,
+            handler=handler,
             permissions=permissions or [],
         )
 
@@ -48,7 +59,9 @@ class MCPToolRegistry:
         """List all registered tools."""
         return [{"name": t.name, "description": t.description} for t in self._tools.values()]
 
-    def call(self, tool_name: str, input_data: dict, caller_permissions: list = None) -> ToolResult:
+    def call(
+        self, tool_name: str, input_data: dict, caller_permissions: list | None = None
+    ) -> ToolResult:
         """Call a registered tool with permission check."""
         tool = self._tools.get(tool_name)
         if not tool:
@@ -63,9 +76,13 @@ class MCPToolRegistry:
         # Validate input
         for required_key, expected_type in tool.input_schema.items():
             if required_key not in input_data:
-                return ToolResult(success=False, output=None, error=f"Missing required field: {required_key}")
+                return ToolResult(
+                    success=False, output=None, error=f"Missing required field: {required_key}"
+                )
             if not isinstance(input_data[required_key], expected_type):
-                return ToolResult(success=False, output=None, error=f"Invalid type for: {required_key}")
+                return ToolResult(
+                    success=False, output=None, error=f"Invalid type for: {required_key}"
+                )
 
         try:
             result = tool.handler(input_data)
@@ -88,11 +105,17 @@ def create_default_registry() -> MCPToolRegistry:
     def repo_summary_handler(input_data: dict) -> dict:
         import sys
         from pathlib import Path
+
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from repo_summary import RepoSummaryTool
+
         tool = RepoSummaryTool(repo_path=input_data.get("repo_path"))
         summary = tool.run()
-        return {"commit_sha": summary.commit_sha, "files": summary.files, "color_eval": summary.color_eval_baseline}
+        return {
+            "commit_sha": summary.commit_sha,
+            "files": summary.files,
+            "color_eval": summary.color_eval_baseline,
+        }
 
     registry.register(
         name="repo_summary",
