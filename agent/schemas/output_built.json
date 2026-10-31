@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/itz1508/OneShot/schemas/output_built.json",
+  "title": "Build Output",
+  "description": "JSON output contract for the Build workflow stage. Derived from agent/contracts/build.yaml and agent/contracts/models.py BuildRecord.",
+  "type": "object",
+  "required": ["kind", "task_id", "record_id", "revision", "status", "plan_input", "execution", "implementation_validation", "post_build_e2e", "outcome", "handoff"],
+  "properties": {
+    "kind": { "type": "string", "const": "build" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "record_id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["draft", "in_progress", "blocked", "failed", "complete"] },
+    "updated_at": { "type": ["string", "null"], "description": "UTC ISO 8601 with timezone" },
+    "plan_input": {
+      "type": "object",
+      "properties": {
+        "record_ref": { "type": ["string", "null"] },
+        "record_id": { "type": ["string", "null"] },
+        "record_revision": { "type": ["integer", "null"] },
+        "artifact_manifest_ref": { "type": ["string", "null"] },
+        "accepted_milestone_ids": { "type": "array", "items": { "type": "string" } },
+        "accepted_criterion_ids": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "workspace_snapshot_ref": { "type": ["string", "null"] },
+        "environment_ref": { "type": ["string", "null"] },
+        "started_at": { "type": ["string", "null"] },
+        "finished_at": { "type": ["string", "null"] },
+        "milestone_results": { "type": "array" },
+        "changes": { "type": "array" },
+        "command_receipts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "command", "cwd", "exit_code"],
+            "properties": {
+              "id": { "type": "string" },
+              "command": { "type": "string" },
+              "cwd": { "type": "string" },
+              "exit_code": { "type": "integer" },
+              "stdout_ref": { "type": ["string", "null"] },
+              "stderr_ref": { "type": ["string", "null"] },
+              "receipt_ref": { "type": ["string", "null"] },
+              "at": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "artifact_manifest_ref": { "type": ["string", "null"] },
+        "cleanup": { "type": "array" }
+      }
+    },
+    "implementation_validation": {
+      "type": "object",
+      "properties": {
+        "status": { "enum": ["not_run", "failed", "passed", "blocked"] },
+        "checks": { "type": "array" },
+        "regressions": { "type": "array" }
+      }
+    },
+    "post_build_e2e": {
+      "type": "object",
+      "properties": {
+        "status": { "enum": ["not_run", "failed", "passed", "blocked"] },
+        "real_entrypoint_ref": { "type": ["string", "null"] },
+        "environment_ref": { "type": ["string", "null"] },
+        "cases": { "type": "array" },
+        "chaos_cases": { "type": "array" },
+        "independent_result_checks": { "type": "array" },
+        "coverage_gaps": { "type": "array" }
+      }
+    },
+    "issues_and_corrections": {
+      "type": "object",
+      "properties": {
+        "findings": { "type": "array" },
+        "gap_fix_receipt_refs": { "type": "array", "items": { "type": "string" } },
+        "revalidation_receipt_refs": { "type": "array", "items": { "type": "string" } },
+        "blockers": { "type": "array" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["not_verified", "failed", "blocked", "verified"] },
+        "user_visible_result_ref": { "type": ["string", "null"] },
+        "criterion_results": { "type": "array" },
+        "remaining_limitations": { "type": "array" },
+        "summary": { "type": ["string", "null"] }
+      }
+    },
+    "progress_log": { "type": "array" },
+    "decision_log": { "type": "array" },
+    "checkpoint": { "type": "object" },
+    "handoff": {
+      "type": "object",
+      "required": ["to", "ready"],
+      "properties": {
+        "to": { "const": "complete" },
+        "ready": { "type": "boolean" },
+        "completion_receipt_ref": { "type": ["string", "null"] },
+        "validation_receipt_ref": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

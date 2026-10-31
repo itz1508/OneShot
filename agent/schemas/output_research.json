@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/itz1508/OneShot/schemas/output_research.json",
+  "title": "Research Output",
+  "description": "JSON output contract for the Research workflow stage. Derived from agent/contracts/research.yaml and agent/contracts/models.py ResearchRecord.",
+  "type": "object",
+  "required": ["kind", "task_id", "record_id", "revision", "status", "purpose", "search", "outputs", "review", "handoff"],
+  "properties": {
+    "kind": { "type": "string", "const": "research" },
+    "task_id": { "type": "string", "minLength": 1 },
+    "record_id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["draft", "in_progress", "blocked", "failed", "complete"] },
+    "updated_at": { "type": ["string", "null"], "description": "UTC ISO 8601 with timezone" },
+    "purpose": {
+      "type": "object",
+      "required": ["user_outcome"],
+      "properties": {
+        "user_outcome": { "type": "string" },
+        "original_request_ref": { "type": ["string", "null"] },
+        "accepted_requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "statement": { "type": "string" },
+              "authority_ref": { "type": ["string", "null"] },
+              "scope": { "enum": ["in_scope", "out_of_scope"], "default": "in_scope" }
+            }
+          }
+        },
+        "scope": { "type": "array" },
+        "constraints": { "type": "array" },
+        "superseded_requirements": { "type": "array" }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "properties": {
+        "repo_root": { "type": ["string", "null"] },
+        "active_source_root": { "type": ["string", "null"] },
+        "git_revision": { "type": ["string", "null"] },
+        "dirty_tree_ref": { "type": ["string", "null"] },
+        "environment_ref": { "type": ["string", "null"] }
+      }
+    },
+    "search": {
+      "type": "object",
+      "properties": {
+        "todo_search_ref": { "type": ["string", "null"] },
+        "questions": { "type": "array" },
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "location", "revision_or_hash"],
+            "properties": {
+              "id": { "type": "string" },
+              "location": { "type": "string" },
+              "revision_or_hash": { "type": "string" },
+              "authority": { "type": ["string", "null"] },
+              "inspected_at": { "type": ["string", "null"] },
+              "evidence_ref": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "claim": { "type": "string" },
+              "evidence_refs": { "type": "array", "items": { "type": "string" } },
+              "assessment": { "enum": ["supported", "contradicted", "uncertain", "not_checked"] },
+              "limitations": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "contradictions": { "type": "array" },
+        "uncertainties": { "type": "array" }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "properties": {
+        "evidence_refs": { "type": "array", "items": { "type": "string" } },
+        "candidate_plan_ref": { "type": ["string", "null"] },
+        "fixture_refs": { "type": "array", "items": { "type": "string" } },
+        "success_criteria_refs": { "type": "array", "items": { "type": "string" } },
+        "requirement_trace": { "type": "array" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "coverage": { "enum": ["not_checked", "incomplete", "sufficient"] },
+        "evidence_grounding": { "enum": ["not_checked", "failed", "passed"] },
+        "unsupported_claims": { "type": "array" },
+        "unresolved_issues": { "type": "array" },
+        "blockers": { "type": "array" },
+        "disposition": { "enum": ["not_checked", "research_again", "needs_user", "ready_for_plan"] },
+        "review_receipt_ref": { "type": ["string", "null"] }
+      }
+    },
+    "progress_log": { "type": "array" },
+    "decision_log": { "type": "array" },
+    "checkpoint": { "type": "object" },
+    "handoff": {
+      "type": "object",
+      "required": ["to", "ready"],
+      "properties": {
+        "to": { "const": "plan" },
+        "ready": { "type": "boolean" },
+        "artifact_manifest_ref": { "type": ["string", "null"] },
+        "validation_receipt_ref": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

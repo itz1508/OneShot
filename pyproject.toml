@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oneshot"
+version = "1.0.0"
+description = "OneShot — deterministic AI agent workflow harness with contract validation, scanner adapters, and checkpoint/resume"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [{ name = "OneShot Contributors" }]
+keywords = ["agent", "workflow", "contracts", "testing", "validation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    "PyYAML>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.10",
+]
+ml = [
+    "mlflow>=3.0",
+]
+
+[project.scripts]
+oneshot = "agent.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agent", "tools", "bin"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["tools", "agent", "agent/contracts", "agent/adapters"]
+addopts = ["-q", "--tb=short"]
+markers = [
+    "e2e: end-to-end tests that exercise the full workflow",
+    "negative: tests that verify failure modes fail closed",
+    "recovery: tests that verify checkpoint/resume/restart",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = [".git", ".pytest_cache", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "C4"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent", "tools", "bin"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

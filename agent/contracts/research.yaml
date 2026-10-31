@@ -1,6 +1,7 @@
 # Reusable Research record template. Create an actual record when Research begins.
-# Fields are claims of state; check_contracts.py validates them, not the YAML parser.
+# Fields are claims of state; the YAML parser does not validate them.
 kind: research
+contract_version: "1.1"
 task_id: '<task_id>'
 record_id: '<research_record_id>'
 revision: 1

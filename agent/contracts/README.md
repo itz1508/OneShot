@@ -1,15 +1,14 @@
 # OneShot Research, Plan and Build records
 
-**Purpose.** One task must remain understandable and resumable without chat history. The three YAML templates record accepted requirements, investigation, decisions, corrections and verified outcomes. They do **not** provide an agent runtime, a Scanner, a hook system, or a new database. `check_contracts.py` is a read-only contract invariant checker, not an execution controller.
+**Purpose.** One task must remain understandable and resumable without chat history. The three YAML templates record accepted requirements, investigation, decisions, corrections and verified outcomes. They do **not** provide an agent runtime, a Scanner, a hook system, or a new database.
 
 ## Files and ownership
 
 - `agent/contracts/research.yaml`: Research input, inspected evidence, requirement trace, candidate plan, independent fixture references and Review.
 - `agent/contracts/plan.yaml`: executable Plan reference, Scanner Gap Analysis (missing, drift, overlap, duplication, contradiction, dependency, feasibility, coverage), Gap Fix and **Fixture Validation + Chaos**.
 - `agent/contracts/build.yaml`: execution receipts, implementation checks, actual **post-Build E2E**, recovery and final result.
-- `agent/contracts/check_contracts.py`: independently check record readiness and cross-record references; call from the **existing** host controller at handoff. Does not invoke tools, write state, or judge prose quality.
 
-The legacy `src/` source, old tests and numbered 00–11 assignments are preserved under [`archive/legacy-src-pre-harness-2026-10-29`](https://github.com/itz1508/OneShot/tree/archive/legacy-src-pre-harness-2026-10-29), not active on `main`. The Databricks workspace reportedly contains `tools/`, but its actual files and integration points have **not** been verified here. This checkout contains **templates and a verifier, not a running agent harness**. Do not restore archived modules or invent System Scanner bindings.
+The legacy `src/` source, old tests and numbered 00–11 assignments are preserved under [`archive/legacy-src-pre-harness-2026-10-29`](https://github.com/itz1508/OneShot/tree/archive/legacy-src-pre-harness-2026-10-29), not active on `main`. This checkout contains **templates and a verifier, not a running agent harness**. Do not restore archived modules or invent System Scanner bindings.
 
 ## Lifecycle and persistence
 
@@ -33,27 +32,12 @@ The legacy `src/` source, old tests and numbered 00–11 assignments are preserv
 - If a record changes during validation or commit, repeat against the new revision; do not write readiness decisions to a stale revision. The verifier is read-only; the host must perform a revision-guarded update.
 - Do not infer live tool/provider executions from YAML/Markdown fields. A host must verify tool identity, executed command, real entrypoint, receipt integrity and observed result. Pure contract validation does **not** establish semantic Research quality, actual Scanner invocation, actual E2E, or production readiness.
 
-## Run the independent checker
+## Run validation
 
-The verifier accepts three **instantiated** `.json` records with Python standard library only; `.yaml` requires an already-installed `PyYAML` (no implicit package installation). Readiness validation **fails closed** without actual evidence resolution:
-
-```shell
-python agent/contracts/check_contracts.py <research.json> <plan.json> <build.json> \
-  --evidence-index <verified_evidence_index.json> --evidence-root <task_artifact_root>
-```
-
-`verified_evidence_index.json` maps each reference to `{ "path": "relative/path", "sha256": "<64-lowercase-hex>" }`. The checker refuses missing, changed, symlinked or outside-root files. For native Task Management artifact IDs, provide the actual store-backed resolver when calling `validate_records(research, plan, build, resolve=...)`; do not fabricate a filesystem index. The host owns access control and obtaining trusted receipts.
-
-Check that the **templates** parse as YAML (draft records must not be mistaken for completed work), if PyYAML is installed:
+Validation uses Pydantic models and the workflow controller. Readiness validation **fails closed** without actual evidence resolution:
 
 ```shell
-python -c "import pathlib,yaml; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in pathlib.Path('agent/contracts').glob('*.yaml')]; print('YAML templates parsed')"
-```
-
-For contract logic tests (standard-library `unittest`, no pytest required):
-
-```shell
-python -m unittest discover -s tests -p 'test_workflow_contracts.py' -v
+python -m pytest tests/test_workflow_contracts.py -v
 ```
 
 These are **contract tests**, not proof of the actual connected host harness. For true E2E, run the configured host against the real built system and independently check requested outputs and chaos/recovery results.

@@ -11,4 +11,4 @@
 - Distinguish supported, contradicted, uncertain, and not-checked material.
 - Every finding must have provenance.
 - Blocking user-owned information returns to Main Agent; researchable unknowns stay as Research questions.
-- Validate Research alone with check_contracts.validate_research() before handoff.
+- Validate Research record before handoff.

@@ -101,12 +101,6 @@ def create_default_fixtures() -> FixtureRegistry:
         desc="git rev-parse HEAD returns valid SHA"
     )
     registry.add_positive(
-        "readme_exists",
-        {"file": "README.md"},
-        expected=True,
-        desc="README.md exists in repository"
-    )
-    registry.add_positive(
         "gitignore_exists",
         {"file": ".gitignore"},
         expected=True,

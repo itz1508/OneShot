@@ -12,4 +12,4 @@
 ## Key rules
 - Scanner returns evidence or explicitly not_checked; no shallow presence checks.
 - Chaos defined under fixture_validation_chaos, not an independent stage.
-- Validate Plan alone with check_contracts.validate_plan() before handoff.
+- Validate Plan record before handoff.

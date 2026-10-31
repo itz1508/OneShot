@@ -22,12 +22,12 @@ The OneShot Workflow Harness executes a multi-phase plan (Research → Plan → 
 python -m pytest tests/ -v
 ```
 
-159 passed, 22 skipped (V18 FileStore). PYTHONPATH: `tools/`, `agent/`, `agent/contracts/`, `agent/adapters/`.
+159 passed, 22 skipped. Path resolution is automatic via `conftest.py` and `[tool.pytest.ini_options]` in `pyproject.toml` — no manual `PYTHONPATH` required.
 
 ## Key files
 
 - `agent/main.py` — OneShotController (stage routing, Scanner invocation, fixture validation, workflow harness)
-- `agent/contracts/check_contracts.py` — per-stage validators + cross-record validate_records
+- `agent/contracts/models.py` — Pydantic v2 validators for Research/Plan/Build records
 - `agent/adapters/repository_inventory.py` — Scanner inventory adapter (wraps host RepositoryInspector)
 - `agent/adapters/source_comparison.py` — Scanner comparison adapter (wraps host SourceComparator)
 - `tools/fixtures.py` — FixtureRegistry with independent expected results

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/itz1508/OneShot/schemas/output_gap_analysis.json",
+  "title": "Gap Analysis Output",
+  "description": "JSON output contract for the Plan-stage Gap Analysis. Derived from agent/contracts/plan.yaml gap_analysis section and agent/gap_analysis.py PreflightResult.",
+  "type": "object",
+  "required": ["status", "scanner_calls", "findings", "unresolved_critical_ids"],
+  "properties": {
+    "task_id": { "type": "string", "description": "Parent task ID from TaskManager" },
+    "plan_record_id": { "type": ["string", "null"], "description": "Plan record this gap analysis belongs to" },
+    "plan_revision": { "type": ["integer", "null"], "minimum": 1 },
+    "status": { "enum": ["not_checked", "findings_open", "recheck_required", "resolved", "blocked"] },
+    "scanner_calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["outcome"],
+        "properties": {
+          "at": { "type": ["string", "null"] },
+          "tool_ref": { "type": ["string", "null"] },
+          "scope_ref": { "type": ["string", "null"] },
+          "input_revision": { "type": ["integer", "null"] },
+          "findings_ref": { "type": ["string", "null"] },
+          "receipt_ref": { "type": ["string", "null"] },
+          "outcome": { "enum": ["passed", "failed", "not_checked"] }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": ["string", "null"], "description": "missing|drift|overlap|duplication|contradiction|dependency|feasibility|coverage|regression|other" },
+          "severity": { "type": ["string", "null"], "enum": ["critical", "high", "medium", "low", null] },
+          "evidence_refs": { "type": "array", "items": { "type": "string" } },
+          "root_cause": { "type": ["string", "null"] },
+          "owner": { "type": ["string", "null"] },
+          "action": { "type": ["string", "null"] },
+          "status": { "enum": ["open", "resolved", "false_positive", "deferred", "blocked"] },
+          "fix_receipt_ref": { "type": ["string", "null"] },
+          "recheck_ref": { "type": ["string", "null"] },
+          "disposition_reason": { "type": ["string", "null"] },
+          "approval_ref": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "unresolved_critical_ids": { "type": "array", "items": { "type": "string" } },
+    "last_recheck_ref": { "type": ["string", "null"] },
+    "capability_preflight": {
+      "type": ["object", "null"],
+      "description": "Optional CapabilityPreflight result from agent/gap_analysis.py",
+      "properties": {
+        "aggregate_verdict": { "enum": ["VALID", "INVALID", "NOT_VALIDATED"] },
+        "coverage_complete": { "type": "boolean" },
+        "scanner_identity": { "type": "string" },
+        "invalid_count": { "type": "integer" },
+        "not_validated_count": { "type": "integer" },
+        "can_proceed": { "type": "boolean" }
+      }
+    }
+  }
+}

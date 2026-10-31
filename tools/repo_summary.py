@@ -107,6 +107,22 @@ class RepoSummaryTool:
                 h.update(chunk)
         return h.hexdigest()
 
+    def _evaluate_gap_color(self, area_id: str, area_files: list, all_files: list) -> str:
+        """Independently evaluate gap color based on actual evidence.
+
+        GREEN: capability exists with test coverage.
+        YELLOW: capability exists but no test coverage.
+        RED: capability missing and action is build.
+        """
+        # Check if test files exist for this area
+        test_files = [f for f in all_files if f.startswith("tests/test_") and 
+                      any(kw in f for kw in [area_id, area_id.replace("0", "")])]
+        if not area_files:
+            return "RED"  # Missing capability
+        if not test_files:
+            return "YELLOW"  # Exists but untested
+        return "GREEN"  # Exists and tested
+
     def build_gap_matrix(self, files: list) -> list:
         """Build the gap matrix from template and actual repo state."""
         # Check which capabilities exist as source files
@@ -126,7 +142,7 @@ class RepoSummaryTool:
                 current_state=current,
                 action=action,
                 evidence=evidence,
-                color_eval="GREEN"  # All start GREEN since repo is clean and ready
+                color_eval=self._evaluate_gap_color(area_id, area_files, files)
             )
             gap_entries.append(entry)
 
@@ -150,13 +166,6 @@ class RepoSummaryTool:
         try:
             import pytest
             tools.append("pytest — test framework")
-        except ImportError:
-            pass
-
-        # Check for Databricks SDK (available but not mandatory)
-        try:
-            import databricks.sdk
-            tools.append("databricks-sdk — workspace operations (available, not mandatory)")
         except ImportError:
             pass
 

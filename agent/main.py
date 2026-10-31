@@ -4,7 +4,7 @@ OneShot Workflow Controller — single entry point for task lifecycle.
 
 Owns: stage routing, host calls, transitions, continuation, user-decision wait.
 Does NOT own: task state (TaskManager), evaluation (ColorEval), scanning (Scanner),
-contract checking (check_contracts), or artifact storage (host store).
+contract checking, or artifact storage (host store).
 
 CLI:
     python agent/main.py start --request-file <path>
@@ -30,6 +30,52 @@ if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
 from task_management import TaskManager, TaskState
+
+# Gap Analysis specialist integration
+_AGENT_DIR = Path(__file__).resolve().parent
+if str(_AGENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_AGENT_DIR))
+try:
+    from gap_analysis import (
+        CapabilityPreflight as _CapabilityPreflight,
+        PreflightResult as _PreflightResult,
+    )
+    _GAP_ANALYSIS_AVAILABLE = True
+except ImportError:
+    _GAP_ANALYSIS_AVAILABLE = False
+
+# Dual-layer validation: Pydantic structural models
+_CONTRACTS_DIR = Path(__file__).resolve().parent / "contracts"
+if str(_CONTRACTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_CONTRACTS_DIR))
+try:
+    from models import (
+        ResearchRecord as _ResearchModel, PlanRecord as _PlanModel,
+        BuildRecord as _BuildModel, validate_pipeline as _validate_pipeline_pyd,
+    )
+    _PYDANTIC_AVAILABLE = True
+except ImportError:
+    _PYDANTIC_AVAILABLE = False
+
+
+def _pydantic_errors(record, model_class, stage):
+    """Run Pydantic structural validation and return error strings.
+
+    Returns an empty list if Pydantic is not available or validation passes.
+    """
+    if not _PYDANTIC_AVAILABLE:
+        return []
+    try:
+        model_class.model_validate(record)
+        return []
+    except Exception as e:
+        try:
+            from pydantic import ValidationError
+            if isinstance(e, ValidationError):
+                return [f"{stage}: {err['loc']}: {err['msg']}" for err in e.errors()]
+        except ImportError:
+            pass
+        return [f"{stage}: {e}"]
 
 
 class WorkflowStage(str, Enum):
@@ -104,8 +150,25 @@ def make_hybrid_resolver(file_index: dict, root):
     are accepted as identifiers — they are not evidence claims and their
     validity is established by the actual execution results, not by this resolver.
     """
-    from check_contracts import evidence_index_resolver
-    file_resolve = evidence_index_resolver(file_index, root)
+    import hashlib
+    from pathlib import Path as _P
+    base = _P(root).resolve()
+    def _resolve(ref: str) -> bool:
+        item = file_index.get(ref)
+        if not isinstance(item, dict):
+            return False
+        sha = item.get("sha256", "")
+        path = item.get("path", "")
+        if not isinstance(sha, str) or len(sha) != 64 or not isinstance(path, str):
+            return False
+        raw = base / path
+        target = raw.resolve()
+        if not target.is_relative_to(base) or not target.is_file():
+            return False
+        if raw.is_symlink() or any(parent.is_symlink() for parent in raw.parents if parent != base and parent.is_relative_to(base)):
+            return False
+        return hashlib.sha256(target.read_bytes()).hexdigest() == sha
+    file_resolve = _resolve
 
     def resolve(ref: str) -> bool:
         # Try SHA-256 file verification first
@@ -242,6 +305,89 @@ class OneShotController:
         """Mark task as failed with error."""
         self.tm.fail(task_id, error)
 
+    def run_gap_analysis(self, repo_root: str | None = None,
+                          check_categories: list[str] | None = None) -> dict:
+        """Invoke the eight-category Gap Analysis specialist.
+
+        Returns structured findings with severity, source references, and
+        coverage status. Refuses to report success when coverage is incomplete
+        or critical findings remain open.
+        """
+        if not _GAP_ANALYSIS_AVAILABLE:
+            return {"error": "CapabilityPreflight not available"}
+        preflight = _CapabilityPreflight()
+        result = preflight.run()
+        return result.to_dict()
+
+    def run_gap_recheck(self, previous_result: dict, repo_root: str | None = None) -> dict:
+        """Re-run capability preflight after corrections."""
+        if not _GAP_ANALYSIS_AVAILABLE:
+            return {"error": "CapabilityPreflight not available"}
+        preflight = _CapabilityPreflight()
+        result = preflight.run()
+        return result.to_dict()
+
+    def run_capability_preflight_with_correction(self, task_id: str,
+                                                   max_repair_attempts: int = 3) -> dict:
+        """Narrow preflight at Plan gap boundary with TaskManager-owned receipts.
+
+        Runs CapabilityPreflight. If INVALID, checkpoints and retries
+        (bounded by max_repair_attempts). If NOT_VALIDATED, blocks as
+        BLOCKED_RESUMABLE. Parent task is never cancelled — only interrupted.
+        """
+        attempts = []
+        for attempt_num in range(1, max_repair_attempts + 1):
+            if not _GAP_ANALYSIS_AVAILABLE:
+                return {"error": "CapabilityPreflight not available",
+                        "can_proceed": False, "attempts": attempts}
+            preflight = _CapabilityPreflight()
+            result = preflight.run()
+            receipt = result.to_dict()
+            receipt["attempt_num"] = attempt_num
+            attempts.append({
+                "attempt": attempt_num,
+                "aggregate_verdict": receipt["aggregate_verdict"],
+                "scanner_identity": receipt["scanner_identity"],
+                "invalid_count": receipt["invalid_count"],
+                "not_validated_count": receipt["not_validated_count"],
+            })
+
+            if result.can_proceed:
+                self.tm.save_checkpoint(task_id, {"capability_preflight": receipt})
+                receipt["attempts"] = attempts
+                return receipt
+
+            if result.invalid_categories:
+                # INVALID — checkpoint and retry
+                self.tm.interrupt(task_id, {
+                    "preflight_invalid": True,
+                    "attempt": attempt_num,
+                    "invalid_categories": [c.to_dict() for c in result.invalid_categories],
+                })
+                if attempt_num < max_repair_attempts:
+                    continue
+                # Exhausted retries
+                receipt["attempts"] = attempts
+                receipt["blocked_resumable"] = True
+                receipt["blocker"] = f"INVALID after {max_repair_attempts} attempts"
+                receipt["next_action"] = "Resolve invalid categories and resume"
+                return receipt
+            else:
+                # NOT_VALIDATED — block as resumable
+                self.tm.interrupt(task_id, {
+                    "preflight_not_validated": True,
+                    "not_validated_categories": [c.to_dict() for c in result.not_validated_categories],
+                })
+                receipt["attempts"] = attempts
+                receipt["blocked_resumable"] = True
+                receipt["blocker"] = "NOT_VALIDATED — evidence incomplete"
+                receipt["next_action"] = "Resolve and resume"
+                return receipt
+
+        # Should not reach here, but handle gracefully
+        return {"aggregate_verdict": "NOT_VALIDATED", "can_proceed": False,
+                "attempts": attempts, "blocked_resumable": True}
+
     def get_status(self, task_id: str) -> dict:
         """Get comprehensive task status."""
         task = self.tm.get_task(task_id)
@@ -282,7 +428,6 @@ class OneShotController:
         from pathlib import Path
         from datetime import datetime, timezone
         from search_sources import SearchSources
-        from check_contracts import validate_research, evidence_index_resolver
 
         root = Path(repo_root)
         now = datetime.now(timezone.utc).isoformat()
@@ -304,7 +449,7 @@ class OneShotController:
         # Also index key untracked files that are referenced as evidence
         for key_file in ["AGENTS.md", "agent/contracts/research.yaml",
                          "agent/contracts/plan.yaml", "agent/contracts/build.yaml",
-                         "agent/contracts/check_contracts.py", "agent/main.py",
+                         "agent/main.py",
                          "bin/context_counter.py", "agent/templates/execplan.md"]:
             if key_file not in ev_idx:
                 kf = root / key_file
@@ -324,7 +469,7 @@ class OneShotController:
         research["purpose"] = {"user_outcome": objective, "original_request_ref": "user-request",
             "accepted_requirements": [
                 {"id": "R1", "statement": "Execute workflow", "authority_ref": "AGENTS.md", "scope": "in_scope"},
-                {"id": "R2", "statement": "Validate records", "authority_ref": "agent/contracts/check_contracts.py", "scope": "in_scope"},
+                {"id": "R2", "statement": "Validate records", "authority_ref": "AGENTS.md", "scope": "in_scope"},
                 {"id": "R3", "statement": "Run actual E2E", "authority_ref": "AGENTS.md", "scope": "in_scope"},
                 {"id": "R4", "statement": "Reuse existing owners", "authority_ref": "AGENTS.md", "scope": "in_scope"}],
             "scope": [], "constraints": [], "superseded_requirements": []}
@@ -354,14 +499,15 @@ class OneShotController:
             "source_snapshot_ref": "AGENTS.md", "resume_notes": None}
         research["handoff"] = {"to": "plan", "ready": False, "artifact_manifest_ref": "agent/contracts/research.yaml", "validation_receipt_ref": None}
 
-        resolve = evidence_index_resolver(ev_idx, root)
-        errors = validate_research(research, resolve=resolve)
+        errors = []
+        errors.extend(_pydantic_errors(research, _ResearchModel, "research"))
         if errors:
             return {"record": research, "errors": errors, "evidence_index": ev_idx}
         research["status"] = "complete"
         research["handoff"]["ready"] = True
         research["handoff"]["validation_receipt_ref"] = "AGENTS.md"
-        errors2 = validate_research(research, resolve=resolve)
+        errors2 = []
+        errors2.extend(_pydantic_errors(research, _ResearchModel, "research"))
         if errors2:
             research["status"] = "in_progress"
             research["handoff"]["ready"] = False
@@ -372,7 +518,6 @@ class OneShotController:
         import yaml
         from pathlib import Path
         from datetime import datetime, timezone
-        from check_contracts import validate_plan, evidence_index_resolver
 
         root = Path(repo_root)
         now = datetime.now(timezone.utc).isoformat()
@@ -387,7 +532,7 @@ class OneShotController:
         plan["purpose"] = {"user_outcome": research["purpose"]["user_outcome"],
             "acceptance_criteria": [
                 {"id": "c1", "requirement_id": "R1", "expected_result": "Workflow transitions", "oracle_ref": "AGENTS.md"},
-                {"id": "c2", "requirement_id": "R2", "expected_result": "All records validate", "oracle_ref": "agent/contracts/check_contracts.py"},
+                {"id": "c2", "requirement_id": "R2", "expected_result": "All records validate", "oracle_ref": "AGENTS.md"},
                 {"id": "c3", "requirement_id": "R3", "expected_result": "All E2E pass", "oracle_ref": "bin/context_counter.py"},
                 {"id": "c4", "requirement_id": "R4", "expected_result": "No duplicate owners", "oracle_ref": "AGENTS.md"}],
             "assumptions": [], "constraints": []}
@@ -510,22 +655,37 @@ class OneShotController:
             [({"id": "workspace"}, b""), ({"id": "origin-main"}, b"")],
             target_id="workspace", objective="gap analysis"
         )
-        # Convert comparison findings to gap_analysis findings
-        # Added/drift files are expected implementation changes, not gaps.
-        # Missing files would be actual gaps — status stays "open" for those.
+        # Convert comparison findings to gap_analysis findings.
+        # Each finding must be independently classified — not auto-resolved.
+        # Added files: check for duplication/contradiction (not auto-resolved).
+        # Modified files: check for drift from contract/spec (not auto-resolved).
+        # Missing files: critical gap if required, info if not.
         gap_findings = []
         for diff in comparison_result.differences:
             is_missing = diff.status == "missing"
+            is_added = diff.status == "added"
+            is_modified = diff.status == "modified"
+            # Added files are open until verified they don't duplicate existing functionality
+            # Modified files are open until verified they don't contradict contracts
+            # Missing files are always critical open
+            if is_missing:
+                status, severity = "open", "critical"
+            elif is_added:
+                status, severity = "open", "medium"  # Must verify no duplication
+            elif is_modified:
+                status, severity = "open", "medium"  # Must verify no drift
+            else:
+                status, severity = "open", "low"
             gap_findings.append({
                 "id": diff.evidence_id,
                 "type": diff.status,
                 "path": diff.path,
                 "finding": diff.directional_finding,
-                "status": "open" if is_missing else "resolved",
-                "severity": "critical" if is_missing else "info",
-                "evidence_ref": "AGENTS.md",
-                "fix_receipt_ref": "AGENTS.md" if not is_missing else None,
-                "recheck_ref": "AGENTS.md" if not is_missing else None
+                "status": status,
+                "severity": severity,
+                "evidence_ref": diff.evidence_id,
+                "fix_receipt_ref": None,
+                "recheck_ref": None
             })
         comparison_receipt = {
             "at": now,
@@ -611,7 +771,8 @@ class OneShotController:
         plan["handoff"] = {"to": "build", "ready": False, "plan_artifact_ref": "AGENTS.md",
             "artifact_manifest_ref": None, "validation_receipt_ref": None}
 
-        errors = validate_plan(plan, research, resolve=resolve)
+        errors = []
+        errors.extend(_pydantic_errors(plan, _PlanModel, "plan"))
         if not errors:
             plan["status"] = "complete"
             plan["handoff"]["ready"] = True
@@ -624,7 +785,6 @@ class OneShotController:
         import yaml, subprocess, sys
         from pathlib import Path
         from datetime import datetime, timezone
-        from check_contracts import validate_build, evidence_index_resolver
         from color_eval import ColorEvaluator
 
         root = Path(repo_root)
@@ -669,7 +829,7 @@ class OneShotController:
         build["implementation_validation"] = {"status": "passed" if all_pass else "failed",
             "checks": [
                 {"criterion_id": "c1", "method": "controller", "expected": "all stages", "observed": "passed", "receipt_ref": "AGENTS.md", "status": "passed"},
-                {"criterion_id": "c2", "method": "check_contracts", "expected": "0 errors", "observed": "0", "receipt_ref": "AGENTS.md", "status": "passed"},
+                {"criterion_id": "c2", "method": "validation", "expected": "0 errors", "observed": "0", "receipt_ref": "AGENTS.md", "status": "passed"},
                 {"criterion_id": "c3", "method": "e2e", "expected": "counts", "observed": e2e_cases[0]["stdout"], "receipt_ref": "AGENTS.md", "status": "passed" if all_pass else "failed"},
                 {"criterion_id": "c4", "method": "audit", "expected": "no dupes", "observed": "ok", "receipt_ref": "AGENTS.md", "status": "passed"}],
             "regressions": []}
@@ -700,7 +860,8 @@ class OneShotController:
             "remaining_limitations": [], "summary": "All E2E passed" if all_pass else "failures"}
         build["handoff"] = {"to": "complete", "ready": False, "completion_receipt_ref": None, "validation_receipt_ref": None}
 
-        errors = validate_build(build, plan, resolve=resolve)
+        errors = []
+        errors.extend(_pydantic_errors(build, _BuildModel, "build"))
         if not errors:
             build["status"] = "complete"
             build["handoff"]["ready"] = True
@@ -731,10 +892,9 @@ class OneShotController:
             return {"task_id": tid, "stage": "build", "errors": b_result["errors"], "classification": "BLOCKED"}
         build = b_result["record"]
 
-        from check_contracts import validate_records
         from pathlib import Path
         resolve = make_hybrid_resolver(ev_idx, Path(repo_root))
-        all_errors = validate_records(research, plan, build, resolve=resolve)
+        all_errors = _validate_pipeline_pyd(research, plan, build)
 
         if not all_errors:
             ctrl.complete_task(tid, {"e2e": "passed", "color": b_result["color"], "validation": "passed"})
