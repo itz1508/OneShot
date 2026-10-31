@@ -1,26 +1,54 @@
 #!/usr/bin/env python3
-"""
-Tests for OneShot Assignments 03-10: research, plan, and build components.
+"""Behavioral tests for OneShot Assignments 03-10 — research, plan, and build.
+
+Four of the modules this file originally covered were retired by commit
+d90b655 (approval, memory_retrieve, plan_review, research_output,
+research_review). Per PR #8 review item D2 ("do not delete behavioral
+coverage or restore legacy modules simply to satisfy imports"), tests for
+the FOUR MODULES STILL PRESENT in the checkout stay active and run;
+tests for the retired modules are kept as `@pytest.mark.skip` entries
+with explicit `ExecPlan D2` reasons so the coverage status is visible
+rather than hidden.
+
+Kept and running:    TestSearchSources, TestFixtures, TestBuildExecutor, TestMCPTools.
+Skipped (D2):        TestResearchOutput, TestResearchReview, TestPlanReview, TestApproval.
 """
 
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "tools"))
+# conftest.py adds tools/ to sys.path.
 
 from search_sources import SearchSources
-from research_output import ResearchOutputBuilder, ResearchOutput
-from research_review import ResearchReview, ColorEval
-from plan_review import PlanReview
 from fixtures import FixtureRegistry, create_default_fixtures
-from approval import AuthorizationGate
 from build_executor import BuildExecutor
 from mcp_tools import MCPToolRegistry, create_default_registry
+
+# ---------------------------------------------------------------------------
+# Retired modules — importable only if someone restores them under ExecPlan D2.
+# Classes that reference these names are decorated with @pytest.mark.skip so
+# collection still succeeds and the gap is visible rather than hidden.
+# ---------------------------------------------------------------------------
+try:
+    from research_output import ResearchOutputBuilder, ResearchOutput  # noqa: F401
+except ImportError:
+    ResearchOutputBuilder = ResearchOutput = None  # type: ignore[assignment]
+try:
+    from research_review import ResearchReview, ColorEval  # noqa: F401
+except ImportError:
+    ResearchReview = ColorEval = None  # type: ignore[assignment]
+try:
+    from plan_review import PlanReview  # noqa: F401
+except ImportError:
+    PlanReview = None  # type: ignore[assignment]
+try:
+    from approval import AuthorizationGate  # noqa: F401
+except ImportError:
+    AuthorizationGate = None  # type: ignore[assignment]
 
 
 class TestSearchSources:
@@ -50,6 +78,7 @@ class TestSearchSources:
         assert first.size >= 0
 
 
+@pytest.mark.skip(reason='D2: tools/research_output.py retired by d90b655 — ExecPlan D2 decision pending.')
 class TestResearchOutput:
     """Assignment 04: Research Output Package."""
 
@@ -83,6 +112,7 @@ class TestResearchOutput:
         assert len(result.commit_sha) == 40
 
 
+@pytest.mark.skip(reason='D2: tools/research_review.py retired by d90b655 — ExecPlan D2 decision pending.')
 class TestResearchReview:
     """Assignment 05: Research Review (Optional)."""
 
@@ -116,6 +146,7 @@ class TestResearchReview:
         assert result.contradictions_found == 1
 
 
+@pytest.mark.skip(reason='D2: tools/plan_review.py retired by d90b655 — ExecPlan D2 decision pending.')
 class TestPlanReview:
     """Assignment 06: Plan Review."""
 
@@ -179,6 +210,7 @@ class TestFixtures:
         assert all(r["passed"] for r in results)
 
 
+@pytest.mark.skip(reason='D2: tools/approval.py retired by d90b655 — see tests/test_authorization.py for the migrated user-approval surface.')
 class TestApproval:
     """Assignment 08: Authorization (user + host enforcement)."""
 
