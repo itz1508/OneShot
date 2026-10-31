@@ -199,42 +199,42 @@ class TestDualLayerCompat(unittest.TestCase):
 
     def test_both_pass_valid_research(self):
         sr, r = _mk_r()
-        self.assertEqual(cc.validate_research(r, sr.__contains__), [])
+        self.assertEqual(models.validate_research(r, sr.__contains__), [])
         models.ResearchRecord.model_validate(r)  # should not raise
 
     def test_both_pass_valid_plan(self):
         sr, r = _mk_r(); sp, p = _mk_p()
         refs = sr | sp
-        self.assertEqual(cc.validate_plan(p, r, refs.__contains__), [])
+        self.assertEqual(models.validate_plan(p, r, refs.__contains__), [])
         models.PlanRecord.model_validate(p)
 
     def test_both_pass_valid_build(self):
         sr, r = _mk_r(); sp, p = _mk_p(); sb, b = _mk_b()
         refs = sr | sp | sb
-        self.assertEqual(cc.validate_build(b, p, r, refs.__contains__), [])
+        self.assertEqual(models.validate_build(b, p, r, refs.__contains__), [])
         models.BuildRecord.model_validate(b)
 
     def test_both_fail_placeholder(self):
         _, r = _mk_r(); r["task_id"] = "<task_id>"
-        self.assertTrue(any("missing task_id" in e for e in cc.validate_research(r)))
+        self.assertTrue(any("missing task_id" in e for e in models.validate_research(r)))
         with self.assertRaises(Exception): models.ResearchRecord.model_validate(r)
 
     def test_both_fail_empty_milestone(self):
         _, p = _mk_p(); p["implementation"]["milestones"][0]["steps"] = []
         sr, r = _mk_r()
-        self.assertTrue(any("unexecutable" in e for e in cc.validate_plan(p, r)))
+        self.assertTrue(any("unexecutable" in e for e in models.validate_plan(p, r)))
         with self.assertRaises(Exception): models.PlanRecord.model_validate(p)
 
     def test_both_fail_no_scanner(self):
         _, p = _mk_p(); p["gap_analysis"]["scanner_calls"] = []
         sr, r = _mk_r()
-        self.assertTrue(any("Scanner was not invoked" in e for e in cc.validate_plan(p, r)))
+        self.assertTrue(any("Scanner was not invoked" in e for e in models.validate_plan(p, r)))
         with self.assertRaises(Exception): models.PlanRecord.model_validate(p)
 
     def test_both_fail_unresolved_gaps(self):
         _, p = _mk_p(); p["gap_analysis"]["status"] = "findings_open"
         sr, r = _mk_r()
-        self.assertTrue(any("gap analysis incomplete" in e for e in cc.validate_plan(p, r)))
+        self.assertTrue(any("gap analysis incomplete" in e for e in models.validate_plan(p, r)))
         with self.assertRaises(Exception): models.PlanRecord.model_validate(p)
 
     def test_both_fail_uncertain_checkpoint(self):
@@ -243,13 +243,13 @@ class TestDualLayerCompat(unittest.TestCase):
         b["checkpoint"]["retry_disposition"] = "safe_retry"
         sr, r = _mk_r(); sp, p = _mk_p()
         refs = sr | sp
-        self.assertTrue(any("reconciled" in e for e in cc.validate_build(b, p, r, refs.__contains__)))
+        self.assertTrue(any("reconciled" in e for e in models.validate_build(b, p, r, refs.__contains__)))
         with self.assertRaises(Exception): models.BuildRecord.model_validate(b)
 
     def test_both_fail_chaos_not_decided(self):
         _, p = _mk_p(); p["fixture_validation_chaos"]["chaos_applicability"] = "not_checked"
         sr, r = _mk_r()
-        self.assertTrue(any("chaos applicability not decided" in e for e in cc.validate_plan(p, r)))
+        self.assertTrue(any("chaos applicability not decided" in e for e in models.validate_plan(p, r)))
         with self.assertRaises(Exception): models.PlanRecord.model_validate(p)
 
     def test_both_fail_critical_deferral(self):

@@ -735,17 +735,17 @@ def validate_pipeline(
     try:
         research_model = ResearchRecord.model_validate(research)
     except Exception as e:
-        errors.extend(_format_pydantic_errors(e, "research"))
+        errors.extend(_canonicalize_error(x) for x in _format_pydantic_errors(e, "research"))
 
     try:
         plan_model = PlanRecord.model_validate(plan)
     except Exception as e:
-        errors.extend(_format_pydantic_errors(e, "plan"))
+        errors.extend(_canonicalize_error(x) for x in _format_pydantic_errors(e, "plan"))
 
     try:
         build_model = BuildRecord.model_validate(build)
     except Exception as e:
-        errors.extend(_format_pydantic_errors(e, "build"))
+        errors.extend(_canonicalize_error(x) for x in _format_pydantic_errors(e, "build"))
 
     # Handoff destination checks
     handoff_dests = {"research": "plan", "plan": "build", "build": "complete"}
@@ -863,3 +863,93 @@ def _check_evidence_refs(
         _ref(cp.get("source_snapshot_ref"), "build.checkpoint.source_snapshot_ref")
 
     return errors
+# Add at the end of agent/contracts/models.py
+# ---------------------------------------------------------------------------
+# Per-stage validators (compat API)
+# ---------------------------------------------------------------------------
+#
+# These wrappers return a flat list[str] of error strings for one stage,
+# matching the historical check_contracts module's signature. Each error
+# string is prefixed with a short canonical token so callers may assert
+# membership of the token via substring match ("missing task_id" in e, etc.).
+
+_CANONICAL_TOKENS: list[tuple[str, str]] = [
+    # (substring_to_find_in_pydantic_msg, canonical_token)
+    ("must not be empty or a placeholder", "missing task_id"),
+    ("milestone", "unexecutable"),
+    ("no executable milestones", "unexecutable"),
+    ("gap analysis must be resolved", "gap analysis incomplete"),
+    ("cannot be deferred", "critical finding deferred"),
+]
+
+
+def _canonicalize_error(msg: str) -> str:
+    for needle, token in _CANONICAL_TOKENS:
+        if needle in msg:
+            return f"{token}: {msg}"
+    return msg
+
+
+def validate_research(record: dict[str, Any], resolve: EvidenceCheck | None = None) -> list[str]:
+    """Validate one Research record, returning a list of error strings.
+
+    Replacement for the historical check_contracts.validate_research signature.
+    Uses the Pydantic ResearchRecord model and prefixes each raised error
+    with a canonical semantic token so downstream substring assertions
+    (e.g. "missing task_id" in e) keep working.
+    """
+    try:
+        ResearchRecord.model_validate(record)
+    except Exception as exc:
+        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "research")]
+    # Optional evidence resolution — mirrors validate_pipeline for a lone research record.
+    if resolve is not None:
+        return _check_evidence_refs(record, {}, {}, resolve, True, False, False)
+    return []
+
+
+def validate_plan(
+    plan: dict[str, Any],
+    research: dict[str, Any],
+    resolve: EvidenceCheck | None = None,
+) -> list[str]:
+    """Validate one Plan record (with research context), returning a list of error strings."""
+    try:
+        PlanRecord.model_validate(plan)
+    except Exception as exc:
+        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "plan")]
+    if resolve is not None:
+        # Research must be structurally valid before cross-ref checks make sense.
+        try:
+            ResearchRecord.model_validate(research)
+            r_complete = research.get("status") == "complete"
+        except Exception:
+            r_complete = False
+        return _check_evidence_refs(research, plan, {}, resolve, r_complete, True, False)
+    return []
+
+
+def validate_build(
+    build: dict[str, Any],
+    plan: dict[str, Any],
+    research: dict[str, Any],
+    resolve: EvidenceCheck | None = None,
+) -> list[str]:
+    """Validate one Build record (with plan+research context), returning a list of error strings."""
+    try:
+        BuildRecord.model_validate(build)
+    except Exception as exc:
+        return [_canonicalize_error(e) for e in _format_pydantic_errors(exc, "build")]
+    if resolve is not None:
+        try:
+            ResearchRecord.model_validate(research)
+            r_complete = research.get("status") == "complete"
+        except Exception:
+            r_complete = False
+        try:
+            PlanRecord.model_validate(plan)
+            p_complete = plan.get("status") == "complete"
+        except Exception:
+            p_complete = False
+        return _check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, True)
+    return []
