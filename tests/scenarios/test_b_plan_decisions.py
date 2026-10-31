@@ -170,8 +170,16 @@ class UnsupportedFindingDecisionGatingTest(_BaselineContractTest):
         )
 
     def test_unsupported_finding_with_validate_first_passes(self):
-        """VALIDATE_FIRST is also a legitimate way to retain an unsupported finding."""
+        """VALIDATE_FIRST is also a legitimate way to retain an unsupported finding.
+
+        While the gate is active, the Build must not have accepted the
+        affected milestone — otherwise it is a stale admission (that is
+        the shape of the Scenario-3 negative control). The passing case
+        is: VALIDATE_FIRST declared, Build has not yet accepted m1.
+        """
         self.r["search"]["findings"][0]["assessment"] = "uncertain"
+        # Build has not resumed yet (S3 handoff shape).
+        self.b["plan_input"]["accepted_milestone_ids"] = []
         self.p["claim_decisions"] = [
             {
                 "id": "d1",

@@ -73,6 +73,24 @@ class FindingAssessment(str, Enum):
     NOT_CHECKED = "not_checked"
 
 
+class PlanApplicability(str, Enum):
+    """Plan-stage decision about an externally sourced Research finding.
+
+    USE                 — the finding is accepted as grounding for executable
+                          Plan content.
+    DO_NOT_USE          — the finding is retained (not deleted) but no
+                          executable step may derive from it; dependent Build
+                          steps are rejected at admission.
+    VALIDATE_FIRST      — dependent Build steps are gated pending new evidence
+                          and a subsequent accepted Plan revision; the finding
+                          stays visible in Research.
+    """
+
+    USE = "USE"
+    DO_NOT_USE = "DO_NOT_USE"
+    VALIDATE_FIRST = "VALIDATE_FIRST"
+
+
 class GapStatus(str, Enum):
     NOT_CHECKED = "not_checked"
     FINDINGS_OPEN = "findings_open"
@@ -414,6 +432,26 @@ class GapFinding(BaseModel):
         return self
 
 
+class ClaimDecision(BaseModel):
+    """Plan applicability decision bound to a single Research finding.
+
+    One decision per source finding (enforced in cross-record validation).
+    DO_NOT_USE forbids dependent Build steps; VALIDATE_FIRST gates them
+    pending new evidence; USE admits them.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    source_finding_id: str
+    applicability: PlanApplicability
+    reason: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+    affected_step_ids: list[str] = Field(default_factory=list)
+    revision: int = Field(ge=1)
+    recorded_at: str | None = None
+
+
 class GapAnalysis(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -508,6 +546,7 @@ class PlanRecord(BaseModel):
     implementation: PlanImplementation
     gap_analysis: GapAnalysis
     fixture_validation_chaos: FixtureValidationChaos
+    claim_decisions: list[ClaimDecision] = Field(default_factory=list)
 
     progress_log: list[Any] = Field(default_factory=list)
     decision_log: list[Any] = Field(default_factory=list)
@@ -788,7 +827,27 @@ def _check_imperative_invariants(
             if not isinstance(f, dict):
                 continue
             if f.get("assessment") != "supported":
-                errors.append(f"research: unsupported finding {f.get('id')}")
+                # Gate B04: a plan DO_NOT_USE or VALIDATE_FIRST decision
+                # retains an unsupported finding without blocking Research.
+                # The finding itself MUST still carry evidence_refs — otherwise
+                # it is noise, not a retained claim.
+                fid = f.get("id")
+                decisions = plan.get("claim_decisions") or []
+                bound = [
+                    d
+                    for d in decisions
+                    if isinstance(d, dict)
+                    and d.get("source_finding_id") == fid
+                    and d.get("applicability") in ("DO_NOT_USE", "VALIDATE_FIRST")
+                ]
+                has_evidence = bool(f.get("evidence_refs"))
+                if not bound or not has_evidence:
+                    reason = (
+                        "missing evidence_refs"
+                        if not has_evidence
+                        else "no plan DO_NOT_USE/VALIDATE_FIRST decision"
+                    )
+                    errors.append(f"research: unsupported finding {fid} — {reason}")
 
         outputs = research.get("outputs") or {}
         trace = outputs.get("requirement_trace") or []
@@ -866,6 +925,68 @@ def _check_imperative_invariants(
 
         _unfinished(build, "build", True)
 
+    # Gate B02-B08: Plan applicability decision cross-record checks.
+    decisions = plan.get("claim_decisions") or []
+    if decisions:
+        # (a) duplicate decision IDs within the Plan.
+        _duplicates(decisions, "plan.claim_decisions")
+
+        # (b) at most one decision per source finding.
+        seen_findings: dict[str, str] = {}
+        for d in decisions:
+            if not isinstance(d, dict):
+                continue
+            fid = d.get("source_finding_id")
+            if not isinstance(fid, str):
+                continue
+            if fid in seen_findings:
+                errors.append(
+                    f"plan.claim_decisions: one per finding ({fid}) — "
+                    f"ids {seen_findings[fid]} and {d.get('id')}"
+                )
+            else:
+                seen_findings[fid] = d.get("id") or "?"
+
+        # (c) each decision must reference an existing finding on Research.
+        research_findings = {
+            f.get("id")
+            for f in (research.get("search") or {}).get("findings") or []
+            if isinstance(f, dict)
+        }
+        plan_milestone_ids = {
+            m.get("id")
+            for m in (plan.get("implementation") or {}).get("milestones") or []
+            if isinstance(m, dict)
+        }
+        for d in decisions:
+            if not isinstance(d, dict):
+                continue
+            did = d.get("id") or "?"
+            fid = d.get("source_finding_id")
+            if fid not in research_findings:
+                errors.append(f"plan.decision {did}: unknown finding {fid}")
+            for sid in d.get("affected_step_ids") or []:
+                if sid not in plan_milestone_ids:
+                    errors.append(f"plan.decision {did}: unknown step {sid}")
+
+        # (d) Build admission: a milestone accepted by the Build whose
+        # provenance includes a DO_NOT_USE or VALIDATE_FIRST decision is
+        # rejected. We treat `plan_input.accepted_milestone_ids` as the
+        # Build's provenance claim; any decision whose `affected_step_ids`
+        # names an accepted milestone blocks it.
+        accepted_milestones = set(
+            (build.get("plan_input") or {}).get("accepted_milestone_ids") or []
+        )
+        if accepted_milestones:
+            for d in decisions:
+                if not isinstance(d, dict):
+                    continue
+                mode = d.get("applicability")
+                if mode not in ("DO_NOT_USE", "VALIDATE_FIRST"):
+                    continue
+                for sid in d.get("affected_step_ids") or []:
+                    if sid in accepted_milestones:
+                        errors.append(f"build: {mode} blocks step {sid} (decision {d.get('id')})")
     return errors
 
 
