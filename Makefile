@@ -8,7 +8,7 @@ install:
 	$(PIP) install -r requirements.txt
 
 dev-install:
-	$(PIP) install -r requirements-dev.txt
+	$(PIP) install -e ".[dev]"
 
 test:
 	$(PYTHON) -m pytest tests/ -q
