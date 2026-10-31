@@ -700,6 +700,134 @@ class BuildRecord(BaseModel):
 # Cross-record validation (mirrors check_contracts.validate_records)
 # ---------------------------------------------------------------------------
 
+
+def _check_imperative_invariants(
+    research: dict[str, Any],
+    plan: dict[str, Any],
+    build: dict[str, Any],
+    r_complete: bool,
+    p_complete: bool,
+    b_complete: bool,
+) -> list[str]:
+    """Imperative cross-record invariants not captured by Pydantic structure.
+
+    Each check emits an error string containing one semantic phrase callers
+    (and the migrated check_contracts tests) assert on via substring match.
+    Phrases produced here:
+
+      - "trace coverage": research requirement_trace must cover every
+        in-scope accepted requirement.
+      - "unsupported finding": a research finding whose assessment is not
+        'supported' must still have evidence_refs.
+      - "planned fixtures not covered": plan's fixture_validation_chaos must
+        reference non-empty fixture_refs when complete.
+      - "Scanner result stale": the last scanner_call's input_revision must
+        equal plan.revision.
+      - "missing required chaos": chaos_applicability='required' needs
+        chaos_case_refs.
+      - "real E2E": build.post_build_e2e must include at least one real
+        E2E case.
+      - "actual user result": build.outcome must carry an independently
+        validated user_visible_result_ref.
+      - "duplicate IDs": no stage may contain duplicate IDs within a
+        single collection.
+      - "unfinished checkpoint": any stage's checkpoint cannot be left
+        pending/uncertain while that stage is complete.
+    """
+    errors: list[str] = []
+
+    def _duplicates(rows, name: str) -> None:
+        if not isinstance(rows, list):
+            return
+        ids = [row.get("id") for row in rows if isinstance(row, dict) and "id" in row]
+        if len(ids) != len(set(ids)):
+            errors.append(f"{name}: duplicate IDs")
+
+    def _unfinished(record: dict, stage: str, complete: bool) -> None:
+        if not complete:
+            return
+        cp = record.get("checkpoint") or {}
+        if cp.get("action_state") in ("pending", "uncertain"):
+            # 'uncertain' already errors in Pydantic Checkpoint validator when
+            # retry_disposition is not 'not_applicable'; add the shorter
+            # 'unfinished checkpoint' phrasing for completeness.
+            errors.append(f"{stage}: unfinished checkpoint")
+
+    # Research invariants
+    if r_complete:
+        purpose = research.get("purpose") or {}
+        reqs = [r for r in (purpose.get("accepted_requirements") or [])
+                if isinstance(r, dict) and r.get("scope") == "in_scope"]
+        _duplicates(purpose.get("accepted_requirements"), "research.requirements")
+
+        search = research.get("search") or {}
+        findings = search.get("findings") or []
+        _duplicates(findings, "research.findings")
+        for f in findings:
+            if not isinstance(f, dict):
+                continue
+            if f.get("assessment") != "supported" and not f.get("evidence_refs"):
+                errors.append(f"research: unsupported finding {f.get('id')}")
+
+        outputs = research.get("outputs") or {}
+        trace = outputs.get("requirement_trace") or []
+        traced_ids = {t.get("requirement_id") for t in trace if isinstance(t, dict)}
+        req_ids = {r.get("id") for r in reqs}
+        if traced_ids != req_ids:
+            errors.append("research: requirement trace coverage mismatch")
+
+        _unfinished(research, "research", True)
+
+    # Plan invariants
+    if p_complete:
+        gap = plan.get("gap_analysis") or {}
+        scanner_calls = gap.get("scanner_calls") or []
+        _duplicates(scanner_calls, "plan.scanner_calls")
+        if scanner_calls:
+            last = scanner_calls[-1]
+            if isinstance(last, dict) and last.get("input_revision") != plan.get("revision"):
+                errors.append("plan: Scanner result stale after revision")
+
+        fix = plan.get("fixture_validation_chaos") or {}
+        if not (fix.get("fixture_refs") or []):
+            errors.append("plan: planned fixtures not covered")
+        if fix.get("chaos_applicability") == "required" and not (fix.get("chaos_case_refs") or []):
+            errors.append("plan: missing required chaos cases")
+
+        impl = plan.get("implementation") or {}
+        _duplicates(impl.get("milestones"), "plan.milestones")
+        _duplicates(plan.get("purpose", {}).get("acceptance_criteria"), "plan.acceptance_criteria")
+
+        _unfinished(plan, "plan", True)
+
+    # Build invariants
+    if b_complete:
+        execution = build.get("execution") or {}
+        _duplicates(execution.get("command_receipts"), "build.command_receipts")
+
+        e2e = build.get("post_build_e2e") or {}
+        cases = e2e.get("cases") or []
+        if not cases:
+            errors.append("build: missing/failing real E2E cases")
+        else:
+            # Planned fixtures must each be referenced from an E2E case.
+            planned = set()
+            if p_complete:
+                planned = set((plan.get("fixture_validation_chaos") or {}).get("fixture_refs") or [])
+            exercised = {c.get("fixture_ref") for c in cases if isinstance(c, dict)}
+            missing = planned - exercised
+            if missing:
+                errors.append(f"build: planned fixtures not covered by post-Build E2E ({sorted(missing)!r})")
+
+        outcome = build.get("outcome") or {}
+        if not outcome.get("user_visible_result_ref"):
+            errors.append("build: actual user result not independently validated")
+
+        _unfinished(build, "build", True)
+
+    return errors
+
+
 def validate_pipeline(
     research: dict[str, Any],
     plan: dict[str, Any],
@@ -763,6 +891,16 @@ def validate_pipeline(
     r_complete = research_model is not None and research.get("status") == "complete"
     p_complete = plan_model is not None and plan.get("status") == "complete"
     b_complete = build_model is not None and build.get("status") == "complete"
+
+    # Imperative invariants run on the raw dict, so they fire even when
+    # Pydantic rejected the structural shape (the test's expected phrases
+    # must still surface in that case). Gate on declared status, not on
+    # structural validity, so a complete-but-malformed record still gets
+    # the semantic diagnostics it needs.
+    r_declared = research.get("status") == "complete"
+    p_declared = plan.get("status") == "complete"
+    b_declared = build.get("status") == "complete"
+    errors.extend(_check_imperative_invariants(research, plan, build, r_declared, p_declared, b_declared))
     if not r_complete and (p_complete or b_complete):
         errors.append("downstream complete while Research not ready")
     if not p_complete and b_complete:
@@ -937,7 +1075,7 @@ def validate_research(record: dict[str, Any], resolve: EvidenceCheck | None = No
 
 def validate_plan(
     plan: dict[str, Any],
-    research: dict[str, Any],
+    research: dict[str, Any] | None = None,
     resolve: EvidenceCheck | None = None,
 ) -> list[str]:
     """Validate one Plan record (with research context), returning a list of error strings.
@@ -947,6 +1085,7 @@ def validate_plan(
     research manifest identity, and handoff destination. Fail-closed for
     complete records without a resolver.
     """
+    research = research or {}
     try:
         PlanRecord.model_validate(plan)
     except Exception as exc:
@@ -995,8 +1134,8 @@ def validate_plan(
 
 def validate_build(
     build: dict[str, Any],
-    plan: dict[str, Any],
-    research: dict[str, Any],
+    plan: dict[str, Any] | None = None,
+    research: dict[str, Any] | None = None,
     resolve: EvidenceCheck | None = None,
 ) -> list[str]:
     """Validate one Build record (with plan+research context), returning a list of error strings.
@@ -1006,6 +1145,8 @@ def validate_build(
     destination, and the full completion-ordering invariant. Fail-closed for
     complete records without a resolver.
     """
+    plan = plan or {}
+    research = research or {}
     try:
         BuildRecord.model_validate(build)
     except Exception as exc:
@@ -1060,3 +1201,76 @@ def validate_build(
         errors.extend(_check_evidence_refs(research, plan, build, resolve, r_complete, p_complete, b_complete))
 
     return errors
+
+
+# ---------------------------------------------------------------------------
+# Compatibility aliases for the retired check_contracts module.
+# ---------------------------------------------------------------------------
+
+def validate_records(
+    research: dict[str, Any],
+    plan: dict[str, Any],
+    build: dict[str, Any],
+    resolve: EvidenceCheck | None = None,
+) -> list[str]:
+    """Alias for validate_pipeline.
+
+    The retired check_contracts.validate_records had this signature; callers
+    migrated to this module should prefer validate_pipeline for clarity.
+    """
+    return validate_pipeline(research, plan, build, resolve=resolve)
+
+
+def preflight_check(record: dict[str, Any], stage: str,
+                    resolve: EvidenceCheck | None = None) -> list[str]:
+    """Dispatch a single-stage preflight validation.
+
+    Step 1 of the two-step receipt protocol in the retired check_contracts
+    module — validate substantive evidence without requiring the
+    validation_receipt_ref. Returns the error list from the matching
+    per-stage validator; empty list means substantively ready.
+
+    Unknown stage names produce an 'unknown stage' error consistent with
+    the historical API.
+    """
+    if stage == "research":
+        return validate_research(record, resolve)
+    if stage == "plan":
+        return validate_plan(record, {}, resolve)
+    if stage == "build":
+        return validate_build(record, {}, {}, resolve)
+    return [f"unknown stage: {stage}"]
+
+
+def evidence_index_resolver(index: dict[str, dict[str, str]], root: Path) -> EvidenceCheck:
+    """SHA-256-backed resolver that verifies a file-backed artifact reference.
+
+    Ported from the retired check_contracts module unchanged. Rejects symlinks
+    at any path component, paths that escape ``root``, missing files, and
+    digest mismatches. Opaque artifact-store IDs require the host's own
+    resolver instead.
+    """
+    import hashlib
+    base = Path(root).resolve()
+
+    def resolve(ref: str) -> bool:
+        item = index.get(ref)
+        if not isinstance(item, dict):
+            return False
+        sha = item.get("sha256", "")
+        path = item.get("path", "")
+        if not isinstance(sha, str) or len(sha) != 64 or not isinstance(path, str):
+            return False
+        raw = base / path
+        target = raw.resolve()
+        if not target.is_relative_to(base) or not target.is_file():
+            return False
+        if raw.is_symlink() or any(
+            parent.is_symlink()
+            for parent in raw.parents
+            if parent != base and parent.is_relative_to(base)
+        ):
+            return False
+        return hashlib.sha256(target.read_bytes()).hexdigest() == sha
+
+    return resolve

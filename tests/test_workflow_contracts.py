@@ -10,11 +10,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-PATH = Path(__file__).resolve().parents[1] / "agent/contracts/check_contracts.py"
-SPEC = importlib.util.spec_from_file_location("check_contracts", PATH)
-assert SPEC and SPEC.loader
-module = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(module)
+# Migrated from the retired check_contracts module to the models module.
+# The names used below (validate_records / validate_research / validate_plan /
+# validate_build / preflight_check / evidence_index_resolver) are provided
+# by agent/contracts/models.py as compatibility aliases.
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent" / "contracts"))
+import models as module
 
 
 class ContractTest(unittest.TestCase):
