@@ -1,0 +1,69 @@
+# Durable Plan, Scanner Gap Analysis, Gap Fix and pre-Build Fixture Validation + Chaos.
+kind: plan
+task_id: '<task_id>'
+record_id: '<plan_record_id>'
+revision: 1
+status: draft # draft | in_progress | blocked | failed | complete
+updated_at: null
+
+research_input:
+  record_ref: '<research_record_ref>'
+  record_id: '<research_record_id>'
+  record_revision: null
+  artifact_manifest_ref: null
+  accepted_requirement_ids: [] # every accepted in-scope Research requirement
+
+purpose:
+  user_outcome: '<observable_user_outcome>'
+  acceptance_criteria: [] # [{id, requirement_id, expected_result, oracle_ref}]
+  assumptions: [] # [{id, statement, justification_ref}]
+  constraints: []
+
+implementation:
+  proposed_final_tree_ref: null
+  file_actions: [] # [{area, current_path, target_path, action, evidence_refs, outcome}]
+  milestones: [] # [{id, goal, files, steps, commands, expected_observations, status}]
+  dependencies: [] # [{milestone_id, depends_on_ids}]
+  command_environment_ref: null
+  rollback_or_recovery: null
+
+# Scanner is the existing System tool. The Plan agent interprets findings and fixes
+# ALL actionable gaps; never create another scanner or gap-fix service.
+gap_analysis:
+  status: not_checked # not_checked | findings_open | recheck_required | resolved | blocked
+  scanner_calls: [] # [{at, tool_ref, scope_ref, input_revision, findings_ref, receipt_ref, outcome}]
+  findings: [] # [{id, type, severity, evidence_refs, root_cause, owner, action, status, fix_receipt_ref, recheck_ref, disposition_reason, approval_ref}]
+  # type: missing | drift | overlap | duplication | contradiction | dependency | feasibility | coverage | regression | other
+  # status: open | resolved | false_positive | deferred | blocked
+  # deferred = noncritical and explicitly approved; false_positive = evidence-grounded.
+  unresolved_critical_ids: []
+  last_recheck_ref: null
+
+fixture_validation_chaos:
+  status: not_checked # not_checked | failed | passed | blocked
+  fixture_refs: []
+  oracle_evidence_refs: [] # independent expected outcomes
+  chaos_applicability: not_checked # not_checked | required | not_applicable
+  chaos_case_refs: [] # fault inputs, expected detection and recovery
+  chaos_exclusion_reason: null # specific reason when not_applicable
+  prebuild_validation_receipt_refs: [] # actually validated definitions and oracle provenance
+  coverage_gaps: [] # [{id, severity, blocking, reason, disposition}]
+
+progress_log: []
+decision_log: []
+checkpoint:
+  last_completed_step: null
+  next_step: null
+  action_id: null
+  action_state: none # none | pending | uncertain | completed
+  action_receipt_ref: null
+  retry_disposition: not_applicable # not_applicable | safe_retry | reconcile_first | blocked
+  source_snapshot_ref: null
+  resume_notes: null
+
+handoff:
+  to: build
+  ready: false
+  plan_artifact_ref: null # self-contained ExecPlan
+  artifact_manifest_ref: null # hash-checked Plan + fixture evidence
+  validation_receipt_ref: null

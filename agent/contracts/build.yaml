@@ -1,0 +1,71 @@
+# Durable Build record; completion requires actual post-Build E2E validation.
+kind: build
+task_id: '<task_id>'
+record_id: '<build_record_id>'
+revision: 1
+status: draft # draft | in_progress | blocked | failed | complete
+updated_at: null
+
+plan_input:
+  record_ref: '<plan_record_ref>'
+  record_id: '<plan_record_id>'
+  record_revision: null
+  artifact_manifest_ref: null
+  accepted_milestone_ids: []
+  accepted_criterion_ids: []
+
+execution:
+  workspace_snapshot_ref: null
+  environment_ref: null
+  started_at: null
+  finished_at: null
+  milestone_results: [] # [{id, status, changed_files, command_receipts, artifact_refs}]
+  changes: [] # [{path, action, requirement_ids, before_ref, after_ref}]
+  command_receipts: [] # [{id, command, cwd, exit_code, stdout_ref, stderr_ref, receipt_ref, at}]
+  artifact_manifest_ref: null
+  cleanup: [] # [{path, justification, replacement_verified_ref, status}]
+
+implementation_validation:
+  status: not_run # not_run | failed | passed | blocked
+  checks: [] # [{criterion_id, method, expected, observed, receipt_ref, status}]
+  regressions: []
+
+post_build_e2e:
+  status: not_run # not_run | failed | passed | blocked
+  real_entrypoint_ref: null
+  environment_ref: null
+  cases: [] # [{fixture_ref, expected_ref, observed_ref, receipt_ref, status}]
+  chaos_cases: [] # [{chaos_ref, injected_fault, expected_recovery, observed_ref, receipt_ref, status}]
+  independent_result_checks: [] # [{criterion_id, expected_ref, observed_ref, receipt_ref, status}]
+  coverage_gaps: [] # [{id, severity, blocking, reason, disposition}]
+
+issues_and_corrections:
+  findings: [] # [{id, originating_stage, evidence_refs, severity, root_cause, fix, status, fix_receipt_ref, revalidation_ref, approval_ref}]
+  gap_fix_receipt_refs: []
+  revalidation_receipt_refs: []
+  blockers: []
+
+progress_log: []
+decision_log: []
+checkpoint:
+  last_completed_step: null
+  next_step: null
+  action_id: null
+  action_state: none # none | pending | uncertain | completed
+  action_receipt_ref: null
+  retry_disposition: not_applicable # not_applicable | safe_retry | reconcile_first | blocked
+  source_snapshot_ref: null
+  resume_notes: null
+
+outcome:
+  status: not_verified # not_verified | failed | blocked | verified
+  user_visible_result_ref: null
+  criterion_results: [] # [{criterion_id, status, evidence_ref}]
+  remaining_limitations: []
+  summary: null
+
+handoff:
+  to: complete
+  ready: false
+  completion_receipt_ref: null
+  validation_receipt_ref: null

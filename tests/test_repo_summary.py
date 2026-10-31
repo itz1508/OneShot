@@ -108,7 +108,7 @@ class TestRepoSummary:
     def test_script_executes_via_cli(self):
         """Script runs successfully from command line."""
         result = subprocess.run(
-            [sys.executable, str(REPO_ROOT / "src" / "repo_summary.py"), "--output-format", "json"],
+            [sys.executable, str(REPO_ROOT / "tools" / "repo_summary.py"), "--output-format", "json"],
             capture_output=True, text=True, timeout=30, cwd=str(REPO_ROOT)
         )
         assert result.returncode == 0, f"Script failed: {result.stderr}"

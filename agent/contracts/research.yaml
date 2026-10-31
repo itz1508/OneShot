@@ -1,0 +1,65 @@
+# Reusable Research record template. Create an actual record when Research begins.
+# Fields are claims of state; check_contracts.py validates them, not the YAML parser.
+kind: research
+task_id: '<task_id>'
+record_id: '<research_record_id>'
+revision: 1
+status: draft # draft | in_progress | blocked | failed | complete
+updated_at: null # UTC ISO 8601 with timezone, on persistence
+
+purpose:
+  user_outcome: '<observable_user_outcome>'
+  original_request_ref: '<original_input_ref>'
+  accepted_requirements: [] # [{id, statement, authority_ref, scope: in_scope|out_of_scope}]
+  scope: []
+  constraints: []
+  superseded_requirements: [] # [{ref, replaced_by_ref, reason}]
+
+workspace:
+  repo_root: null # verified workspace path when applicable
+  active_source_root: null # must be verified, not inferred from GitHub history
+  git_revision: null
+  dirty_tree_ref: null
+  environment_ref: null
+
+search:
+  todo_search_ref: null
+  questions: [] # [{id, question, status: answered|researchable|needs_user|not_checked, evidence_refs}]
+  sources: [] # [{id, location, revision_or_hash, authority, inspected_at, evidence_ref}]
+  findings: [] # [{id, claim, evidence_refs, assessment: supported|contradicted|uncertain|not_checked, limitations}]
+  contradictions: [] # [{id, competing_evidence_refs, disposition, resolution_ref}]
+  uncertainties: [] # [{id, impact, owner, researchable, resolution, blocking}]
+
+outputs:
+  evidence_refs: []
+  candidate_plan_ref: null # populated from output_plan template
+  fixture_refs: [] # independent expected results, never copied from Build
+  success_criteria_refs: []
+  requirement_trace: [] # [{requirement_id, finding_ids, fixture_ids, criterion_ids, disposition}]
+
+review:
+  coverage: not_checked # not_checked | incomplete | sufficient
+  evidence_grounding: not_checked # not_checked | failed | passed
+  unsupported_claims: [] # [{finding_id, reason, disposition}]
+  unresolved_issues: [] # [{id, severity, blocking, disposition, evidence_refs}]
+  blockers: [] # only blocking, user-owned choices or essential missing evidence
+  disposition: not_checked # not_checked | research_again | needs_user | ready_for_plan
+  review_receipt_ref: null
+
+progress_log: [] # append {at, step, result, evidence_ref, next_step}
+decision_log: [] # append {at, decision, why, evidence_refs, impact}
+checkpoint:
+  last_completed_step: null
+  next_step: null
+  action_id: null # stable action identity for retries
+  action_state: none # none | pending | uncertain | completed
+  action_receipt_ref: null
+  retry_disposition: not_applicable # not_applicable | safe_retry | reconcile_first | blocked
+  source_snapshot_ref: null # baseline used to judge stale actions/receipts
+  resume_notes: null
+
+handoff:
+  to: plan
+  ready: false # derived by validation; never manually asserted without evidence
+  artifact_manifest_ref: null # hash-checked artifact manifest
+  validation_receipt_ref: null
