@@ -10,8 +10,11 @@ Reusable, pure-Python primitives used by `agent/main.py::OneShotController`. Eac
 | `color_eval.py` | GREEN / YELLOW / RED evaluation with evidence; one RED collapses the overall color | `tests/test_color_eval.py` |
 | `fixtures.py` | FixtureRegistry with independent expected results and the G03 `expected_rejection` shape | `tests/test_research_plan_build.py::TestFixtures` + `tests/scenarios/test_fixtures_negative_shape.py` |
 | `search_sources.py` | Repository file inventory via `git ls-tree` / `git grep` (same view the agent-read deny list sees) | `tests/test_research_plan_build.py::TestSearchSources` |
+| `scanner/__init__.py` + `scanner/__main__.py` | `scan_match_variable` extracts names/pattern matches, `scan_edit_change` previews immutable digest-bound changes, `scan_edit_write` requires explicit Build-only authorization and allowed paths, and `scan_filesystems` inventories Git-visible files; JSON-stdin CLI is `python -m tools.scanner` | `tests/test_scanner_api.py` |
 | `text_metrics.py` | Deterministic text counting (Unicode code points, UTF-8 bytes, whitespace words) — zero external calls | `tests/test_text_metrics.py` |
 | `build_executor.py` | Build execution with SHA-256 artifact hashes, Agent → Tool → Result tracing, and 06.6 authorization refusal of a non-callable `tool_fn` | `tests/test_research_plan_build.py::TestBuildExecutor` + `tests/scenarios/test_build_executor_authorization.py` |
+
+The optional root `Scanner.ts` is a typed facade over the Python `tools.scanner` CLI, not a second scanner implementation. Audit Discovery may use matching, preview, and inventory only. The effectful write function is an explicitly authorized Build-only operation; the caller still owns Build admission and durable receipts.
 
 ## Design principles
 

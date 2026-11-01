@@ -58,7 +58,9 @@ All M0–M8 milestones are implemented and verified; eleven G01–G11 gap closur
 - `agent/adapters/` — Scanner adapters: `repository_inventory.py`, `source_comparison.py`, `content_integrity.py`, `evidence_locator.py`, `trace_projection.py`.
 - `agent/reference/` — Stage-specific guidance: `research_guidance.md`, `plan_guidance.md`, `build_guidance.md`.
 - `agent/contracts/` — Contract YAMLs, Pydantic validators (`models.py`), `README.md`.
-- `tools/` — 8 active tool implementations (see [tools/README.md](tools/README.md)).
+- `tools/` — workflow primitives plus `tools/scanner/` for the named Scan operations (see [tools/README.md](tools/README.md)).
+- `Scanner.ts` — TypeScript facade for `tools.scanner`; no additional implementation or configured TypeScript build pipeline.
+- `tests/test_scanner_api.py` — focused matching, preview, write-boundary and filesystem tests.
 - `tests/` — 19 baseline test modules plus 25 scenario modules in [`tests/scenarios/`](tests/scenarios/) covering contracts, workflow, the five S1–S5 connected E2E scenarios, and the G01–G11 gap closures.
 - `pyproject.toml`, `conftest.py`, `requirements.txt` — project configuration. Install dev extras via `python -m pip install --editable ".[dev]"`.
 - `.github/workflows/ci.yml` — CI pipeline (ruff + pytest across Python 3.10/3.11/3.12).
