@@ -251,6 +251,16 @@ def _mk_b():
                 {"criterion_id": "c1", "status": "passed", "evidence_ref": r("e2e")}
             ],
         },
+        manifest_binding={
+            "task_id": "t1",
+            "research_revision": 2,
+            "plan_revision": 2,
+            "scanner_identity": "stub-identity",
+            "detector_identities": {"stub": "stub-identity"},
+            "fixture_oracle_sha": "0" * 64,
+            "oracle_revision": 1,
+            "build_receipt_sha": "0" * 64,
+        },
         handoff={
             "to": "complete",
             "ready": True,

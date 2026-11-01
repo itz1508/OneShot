@@ -1734,6 +1734,55 @@ class OneShotController:
             "validation_receipt_ref": None,
         }
 
+        # G07 — manifest binding. The Build attempt is pinned to the exact
+        # Research / Plan revisions, scanner identity (from the preflight
+        # receipt on the Plan), detector identities (per-adapter sha-of-source
+        # or declared tool_ref), fixture oracle sha (file-level SHA-256 of
+        # the independent oracle file), oracle revision (ORACLE_CATALOG_REVISION
+        # from agent/contracts/oracles.py), and a derived build_receipt_sha
+        # (sha-256 of the serialised execution.command_receipts list).
+        import hashlib as _hashlib_g07
+        import json as _json_g07
+
+        _scanner_identity = ""
+        _plan_scanner_calls = (plan.get("gap_analysis") or {}).get("scanner_calls") or []
+        for _call in _plan_scanner_calls:
+            if _call.get("method") == "capability_preflight":
+                _scanner_identity = _call.get("scanner_identity", "") or ""
+                break
+        _detector_identities = {
+            call.get("tool_ref", "unknown"): str(call.get("scanner_identity", "") or "")
+            for call in _plan_scanner_calls
+            if call.get("tool_ref")
+        }
+        try:
+            from oracles import ORACLE_CATALOG_REVISION as _ORACLE_REV  # noqa: N811
+
+            _oracle_module = root / "agent" / "contracts" / "oracles.py"
+            _fixture_sha = (
+                _hashlib_g07.sha256(_oracle_module.read_bytes()).hexdigest()
+                if _oracle_module.is_file()
+                else ""
+            )
+        except Exception:
+            _ORACLE_REV = 1  # noqa: N806 — matches import alias name
+            _fixture_sha = ""
+        _receipts_payload = _json_g07.dumps(
+            build["execution"].get("command_receipts") or [], sort_keys=True
+        ).encode("utf-8")
+        _build_receipt_sha = _hashlib_g07.sha256(_receipts_payload).hexdigest()
+
+        build["manifest_binding"] = {
+            "task_id": task_id,
+            "research_revision": int(plan["research_input"]["record_revision"]),
+            "plan_revision": int(plan["revision"]),
+            "scanner_identity": _scanner_identity or "unknown",
+            "detector_identities": _detector_identities,
+            "fixture_oracle_sha": _fixture_sha or "no_oracle_module",
+            "oracle_revision": int(_ORACLE_REV),
+            "build_receipt_sha": _build_receipt_sha,
+        }
+
         # Scenario bundle merge for Build: filter the accepted milestone list
         # through claim_decisions on the Plan (DO_NOT_USE / VALIDATE_FIRST
         # transitively block affected milestones from admission), and let the

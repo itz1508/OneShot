@@ -1,0 +1,228 @@
+"""G07 — manifest binding on BuildRecord.
+
+A completed Build must carry a `manifest_binding` with
+(task_id, research_revision, plan_revision, scanner_identity,
+detector_identities, fixture_oracle_sha, oracle_revision,
+build_receipt_sha). validate_pipeline cross-checks the manifest's
+plan_revision and research_revision against the Plan and Research
+revisions on the same triple.
+
+Red (baseline before this change) is already implicit — build_plan
+would complete without a manifest_binding and validate_pipeline would
+not refuse it. Green assertions:
+
+  * build.manifest_binding is a non-empty dict after a successful
+    run_workflow.
+  * All required fields are present.
+  * validate_pipeline refuses VERIFIED when manifest_binding is
+    tampered with (plan_revision stale).
+"""
+
+from __future__ import annotations
+
+import copy
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+_REPO = Path(__file__).resolve().parents[2]
+for sub in ("agent", "agent/contracts", "tools"):
+    sp = str(_REPO / sub)
+    if sp not in sys.path:
+        sys.path.insert(0, sp)
+
+from main import OneShotController  # noqa: E402
+from models import validate_pipeline  # noqa: E402
+
+
+class ManifestBindingPopulatedTest(unittest.TestCase):
+    def setUp(self):
+        os.environ["ONESHOT_TRUSTED_TEST_INPUT"] = "1"
+
+    def tearDown(self):
+        os.environ.pop("ONESHOT_TRUSTED_TEST_INPUT", None)
+
+    def test_build_carries_manifest_binding(self):
+        with tempfile.TemporaryDirectory(prefix="g07-pop-") as td:
+            storage = Path(td) / "tasks.json"
+            ctrl = OneShotController(storage_path=str(storage))
+            result = ctrl.run_workflow(
+                "g07-populated",
+                str(_REPO),
+                storage_path=str(storage),
+                input_bundle={
+                    "requirements": [
+                        {
+                            "id": "R1",
+                            "statement": "Count characters",
+                            "scope": "in_scope",
+                            "authority_ref": "AGENTS.md",
+                        }
+                    ],
+                    "findings": [
+                        {
+                            "id": "F1",
+                            "claim": "bin/context_counter.py counts characters",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "assessment": "supported",
+                            "limitations": "",
+                        }
+                    ],
+                    "requirement_trace": [
+                        {
+                            "requirement_id": "R1",
+                            "finding_ids": ["F1"],
+                            "fixture_ids": ["bin/context_counter.py"],
+                            "criterion_ids": ["agent/contracts/build.yaml"],
+                            "disposition": "covered",
+                        }
+                    ],
+                    "accepted_requirement_ids": ["R1"],
+                    "plan_milestones": [
+                        {
+                            "id": "m1",
+                            "goal": "x",
+                            "files": [],
+                            "steps": ["x"],
+                            "commands": ["x"],
+                            "expected_observations": ["x"],
+                            "status": "pending",
+                        }
+                    ],
+                    "acceptance_criteria": [
+                        {
+                            "id": "c1",
+                            "requirement_id": "R1",
+                            "expected_result": "x",
+                            "oracle_ref": "AGENTS.md",
+                        }
+                    ],
+                    "claim_decisions": [
+                        {
+                            "id": "d1",
+                            "source_finding_id": "F1",
+                            "applicability": "USE",
+                            "reason": "x",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "affected_step_ids": ["m1"],
+                            "revision": 1,
+                            "recorded_at": "2026-11-01T00:00:00Z",
+                        }
+                    ],
+                    "gap_findings_mark_resolved": {
+                        "fix_receipt_ref": "AGENTS.md",
+                        "recheck_ref": "AGENTS.md",
+                    },
+                },
+            )
+            build = result["build"]
+            manifest = build.get("manifest_binding")
+            self.assertIsNotNone(manifest, "manifest_binding missing from Build")
+            self.assertEqual(manifest["task_id"], build["task_id"])
+            self.assertEqual(manifest["plan_revision"], result["plan"]["revision"])
+            self.assertEqual(manifest["research_revision"], result["research"]["revision"])
+            for key in (
+                "scanner_identity",
+                "detector_identities",
+                "fixture_oracle_sha",
+                "oracle_revision",
+                "build_receipt_sha",
+            ):
+                self.assertIn(key, manifest)
+                self.assertTrue(manifest[key], f"manifest.{key} must be non-empty")
+
+    def test_stale_plan_revision_in_manifest_rejected(self):
+        """Tampered manifest with wrong plan_revision must surface a
+        cross-record error from validate_pipeline."""
+        with tempfile.TemporaryDirectory(prefix="g07-stale-") as td:
+            storage = Path(td) / "tasks.json"
+            ctrl = OneShotController(storage_path=str(storage))
+            result = ctrl.run_workflow(
+                "g07-stale",
+                str(_REPO),
+                storage_path=str(storage),
+                input_bundle={
+                    "requirements": [
+                        {
+                            "id": "R1",
+                            "statement": "Count",
+                            "scope": "in_scope",
+                            "authority_ref": "AGENTS.md",
+                        }
+                    ],
+                    "findings": [
+                        {
+                            "id": "F1",
+                            "claim": "x",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "assessment": "supported",
+                            "limitations": "",
+                        }
+                    ],
+                    "requirement_trace": [
+                        {
+                            "requirement_id": "R1",
+                            "finding_ids": ["F1"],
+                            "fixture_ids": ["bin/context_counter.py"],
+                            "criterion_ids": ["agent/contracts/build.yaml"],
+                            "disposition": "covered",
+                        }
+                    ],
+                    "accepted_requirement_ids": ["R1"],
+                    "plan_milestones": [
+                        {
+                            "id": "m1",
+                            "goal": "x",
+                            "files": [],
+                            "steps": ["x"],
+                            "commands": ["x"],
+                            "expected_observations": ["x"],
+                            "status": "pending",
+                        }
+                    ],
+                    "acceptance_criteria": [
+                        {
+                            "id": "c1",
+                            "requirement_id": "R1",
+                            "expected_result": "x",
+                            "oracle_ref": "AGENTS.md",
+                        }
+                    ],
+                    "claim_decisions": [
+                        {
+                            "id": "d1",
+                            "source_finding_id": "F1",
+                            "applicability": "USE",
+                            "reason": "x",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "affected_step_ids": ["m1"],
+                            "revision": 1,
+                            "recorded_at": "2026-11-01T00:00:00Z",
+                        }
+                    ],
+                    "gap_findings_mark_resolved": {
+                        "fix_receipt_ref": "AGENTS.md",
+                        "recheck_ref": "AGENTS.md",
+                    },
+                },
+            )
+            # Tamper with the build's manifest_binding.plan_revision.
+            research = result["research"]
+            plan = result["plan"]
+            tampered = copy.deepcopy(result["build"])
+            tampered["manifest_binding"]["plan_revision"] = 99
+            # Re-build the hybrid resolver on the triple's evidence index.
+            # The simplest way to prove the cross-record check fires is
+            # to compare without a resolver — validate_pipeline still
+            # runs the cross-record manifest check.
+            errors = validate_pipeline(research, plan, tampered)
+            self.assertTrue(
+                any("plan_revision mismatch" in e for e in errors),
+                f"expected 'plan_revision mismatch' error; got: {errors}",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

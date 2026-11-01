@@ -698,6 +698,36 @@ class Outcome(BaseModel):
     summary: str | None = None
 
 
+class ManifestBinding(BaseModel):
+    """G07 — immutable binding of a Build attempt to the records,
+    detectors, fixtures, and receipts it was authorised against.
+
+    Required at COMPLETE Build status; omitted (or empty) at DRAFT /
+    IN_PROGRESS. `validate_pipeline` cross-checks `plan_revision` and
+    `research_revision` against the sibling records' current revisions,
+    so a Build attempt pinned to a stale Plan or stale Research is
+    rejected before it can be reported VERIFIED.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    task_id: str
+    research_revision: int = Field(ge=1)
+    plan_revision: int = Field(ge=1)
+    scanner_identity: str
+    detector_identities: dict[str, str] = Field(default_factory=dict)
+    fixture_oracle_sha: str
+    oracle_revision: int = Field(ge=1)
+    build_receipt_sha: str
+
+    @field_validator("task_id", "scanner_identity", "fixture_oracle_sha", "build_receipt_sha")
+    @classmethod
+    def not_placeholder(cls, v):
+        if not _is_filled(v):
+            raise ValueError("manifest field must not be empty or a placeholder")
+        return v
+
+
 class BuildRecord(BaseModel):
     """Pydantic model for the Build contract record."""
 
@@ -716,6 +746,7 @@ class BuildRecord(BaseModel):
     post_build_e2e: PostBuildE2E
     issues_and_corrections: IssuesAndCorrections
     outcome: Outcome
+    manifest_binding: ManifestBinding | None = None
 
     progress_log: list[Any] = Field(default_factory=list)
     decision_log: list[Any] = Field(default_factory=list)
@@ -750,6 +781,9 @@ class BuildRecord(BaseModel):
                 raise ValueError("post-Build E2E not passed")
             if self.outcome.status != OutcomeStatus.VERIFIED:
                 raise ValueError("outcome not verified")
+            # G07 — a verified Build must carry a complete manifest.
+            if self.manifest_binding is None:
+                raise ValueError("missing manifest_binding on complete build")
         return self
 
 
@@ -924,6 +958,43 @@ def _check_imperative_invariants(
             errors.append("build: actual user result not independently validated by E2E")
 
         _unfinished(build, "build", True)
+
+        # G07 — manifest-binding cross-record consistency.
+        manifest = build.get("manifest_binding")
+        if manifest is None:
+            errors.append("build: missing manifest_binding (G07)")
+        elif isinstance(manifest, dict):
+            if manifest.get("task_id") and manifest["task_id"] != build.get("task_id"):
+                errors.append(
+                    f"build.manifest_binding.task_id mismatch: "
+                    f"{manifest['task_id']!r} != {build.get('task_id')!r}"
+                )
+            if p_complete and manifest.get("plan_revision") not in (
+                plan.get("revision"),
+                None,
+            ):
+                errors.append(
+                    f"build.manifest_binding.plan_revision mismatch: "
+                    f"{manifest['plan_revision']!r} != {plan.get('revision')!r}"
+                )
+            if r_complete and manifest.get("research_revision") not in (
+                research.get("revision"),
+                None,
+            ):
+                errors.append(
+                    f"build.manifest_binding.research_revision mismatch: "
+                    f"{manifest['research_revision']!r} != "
+                    f"{research.get('revision')!r}"
+                )
+            # Required scalar manifest fields must be present and non-empty.
+            for key in (
+                "scanner_identity",
+                "fixture_oracle_sha",
+                "build_receipt_sha",
+            ):
+                val = manifest.get(key)
+                if not val or (isinstance(val, str) and not val.strip()):
+                    errors.append(f"build.manifest_binding.{key}: missing or empty")
 
     # Gate B02-B08: Plan applicability decision cross-record checks.
     decisions = plan.get("claim_decisions") or []
