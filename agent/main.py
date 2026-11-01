@@ -483,6 +483,7 @@ class OneShotController:
         BLOCKED_RESUMABLE. Parent task is never cancelled — only interrupted.
         """
         attempts: list[dict] = []
+        last_identity: str | None = None
         for attempt_num in range(1, max_repair_attempts + 1):
             if not _GAP_ANALYSIS_AVAILABLE:
                 return {
@@ -508,6 +509,40 @@ class OneShotController:
                 self.tm.save_checkpoint(task_id, {"capability_preflight": receipt})
                 receipt["attempts"] = attempts
                 return dict(receipt)
+
+            # G06 — a retry MUST be against a different detector
+            # identity than the previous attempt. A no-change retry is
+            # a stall and is refused with BLOCKED_RESUMABLE instead of
+            # consuming another attempt budget.
+            current_identity = receipt.get("scanner_identity", "")
+            if (
+                attempt_num > 1
+                and last_identity is not None
+                and current_identity == last_identity
+            ):
+                self.tm.interrupt(
+                    task_id,
+                    {
+                        "preflight_stall": True,
+                        "scanner_identity": current_identity,
+                        "message": (
+                            "preflight re-run with unchanged scanner identity; "
+                            "refusing to repeat without a material correction"
+                        ),
+                    },
+                )
+                receipt["attempts"] = attempts
+                receipt["blocked_resumable"] = True
+                receipt["blocker"] = (
+                    "no_material_correction: scanner_identity unchanged "
+                    "since previous attempt"
+                )
+                receipt["next_action"] = (
+                    "Apply a material correction to the detector / source "
+                    "before retrying"
+                )
+                return dict(receipt)
+            last_identity = current_identity
 
             if result.invalid_categories:
                 # INVALID — checkpoint and retry
