@@ -335,15 +335,19 @@ class TestPromptStore:
         store = PromptStore()
         author = PromptAuthor()
         a = author.author_candidate(_spec())
-        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        _r_a_eval = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, _r_a_eval)
         store.register(a_eval)
+        store.register_receipt(_r_a_eval)
         active = store.activate(a.prompt_id, 1, actor="owner")
         assert active.status == PromptStatus.ACTIVE
 
         # Create and activate a second revision; the first must be SUPERSEDED.
         b = author.supersede(active, recovery_behavior="replacement b")
-        b_eval = author.apply_receipt(b, _make_passing_receipt(b))
+        _r_b_eval = _make_passing_receipt(b)
+        b_eval = author.apply_receipt(b, _r_b_eval)
         store.register(b_eval)
+        store.register_receipt(_r_b_eval)
         store.activate(b.prompt_id, 2, actor="owner")
 
         rev1 = store.get(a.prompt_id, 1)
@@ -360,15 +364,19 @@ class TestPromptStore:
         store = PromptStore()
         author = PromptAuthor()
         a = author.author_candidate(_spec())
-        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        _r_a_eval = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, _r_a_eval)
         store.register(a_eval)
+        store.register_receipt(_r_a_eval)
         store.activate(a.prompt_id, 1, actor="owner")
 
         b = author.supersede(
             store.get(a.prompt_id, 1), recovery_behavior="replacement b"
         )
-        b_eval = author.apply_receipt(b, _make_passing_receipt(b))
+        _r_b_eval = _make_passing_receipt(b)
+        b_eval = author.apply_receipt(b, _r_b_eval)
         store.register(b_eval)
+        store.register_receipt(_r_b_eval)
         store.activate(b.prompt_id, 2, actor="owner")
 
         store.rollback(a.prompt_id, 1, actor="owner")
@@ -382,8 +390,10 @@ class TestPromptStore:
         store = PromptStore()
         author = PromptAuthor()
         a = author.author_candidate(_spec())
-        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        _r_a_eval = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, _r_a_eval)
         store.register(a_eval)
+        store.register_receipt(_r_a_eval)
         store.activate(a.prompt_id, 1, actor="owner")
         with pytest.raises(PromptStoreError):
             store.archive(a.prompt_id, 1, actor="owner")
@@ -392,8 +402,10 @@ class TestPromptStore:
         store = PromptStore()
         author = PromptAuthor()
         a = author.author_candidate(_spec())
-        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        _r_a_eval = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, _r_a_eval)
         store.register(a_eval)
+        store.register_receipt(_r_a_eval)
         assert store.active_revision("research-counter") is None
         store.activate(a.prompt_id, 1, actor="owner")
         active = store.active_revision("research-counter", stage=Stage.RESEARCH)
@@ -434,3 +446,162 @@ def _make_passing_receipt(prompt: PromptDefinition) -> EvaluationReceipt:
         f"receipt did not pass: failures_by_axis={receipt.failures_by_axis}"
     )
     return receipt
+
+
+# ---------------------------------------------------------------------------
+# M1 — Lifecycle repair regression tests
+#
+# Each test here pins behavior for a specific defect the review named:
+#   (a) PromptDefinition itself was mutable — frozen=True
+#   (b) activation did not independently verify the evaluation receipt
+#   (c) activation accepted any actor — authorized_actors allowlist
+#   (d) revision>=2 lineage — supersedes must reference the prior revision
+# ---------------------------------------------------------------------------
+
+
+class TestM1LifecycleRepair:
+    def test_prompt_definition_is_frozen(self):
+        """A PromptDefinition instance must refuse direct attribute mutation.
+
+        Pre-M1 defect: `ConfigDict(extra="forbid")` only rejected unknown
+        keys; it did not freeze the instance. A caller holding a reference
+        to an ACTIVE prompt could do
+        `prompt.status = PromptStatus.UNEVALUATED` and silently downgrade
+        it, bypassing the six-state machine entirely.
+        """
+        author = PromptAuthor()
+        prompt = author.author_candidate(_spec())
+        with pytest.raises((TypeError, ValidationError)):
+            prompt.status = PromptStatus.ACTIVE  # type: ignore[misc]
+        with pytest.raises((TypeError, ValidationError)):
+            prompt.content_digest = "0" * 64  # type: ignore[misc]
+        # List fields on frozen BaseModels remain Python objects — rebinding
+        # the attribute is refused, which is the enforcement we care about.
+        with pytest.raises((TypeError, ValidationError)):
+            prompt.stable_instructions = ["mutated"]  # type: ignore[misc]
+
+    def test_activate_rejects_prompt_without_registered_receipt(self):
+        """activate() must independently verify the receipt is registered.
+
+        Pre-M1 defect: `apply_receipt` set the `evaluation_receipt_ref` on
+        the prompt, but `activate()` only checked `status == EVALUATED`.
+        A tampered or dropped receipt did not block activation.
+        """
+        store = PromptStore()
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        receipt = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, receipt)
+        store.register(a_eval)
+        # Deliberately DO NOT call store.register_receipt(receipt).
+        with pytest.raises(PromptStoreError, match="not registered"):
+            store.activate(a.prompt_id, 1, actor="owner")
+
+    def test_activate_rejects_forged_receipt(self):
+        """A receipt whose identity does not match the prompt must be rejected.
+
+        We register a legitimate receipt under a different (prompt_id,
+        revision) and point the prompt at that receipt's digest — the
+        receipt-identity check must refuse.
+        """
+        store = PromptStore()
+        author = PromptAuthor()
+        a = author.author_candidate(_spec(prompt_id="prompt-a"))
+        b = author.author_candidate(_spec(prompt_id="prompt-b"))
+        rec_b = _make_passing_receipt(b)
+        store.register_receipt(rec_b)
+        # Build a prompt that claims rec_b's digest. Since PromptDefinition
+        # is frozen, we must mint a NEW instance via model_dump + override.
+        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        data = a_eval.model_dump()
+        data["evaluation_receipt_ref"] = rec_b.receipt_digest
+        from agent.prompt_authoring.types import PromptDefinition
+        forged = PromptDefinition.model_validate(data)
+        store.register(forged)
+        with pytest.raises(PromptStoreError, match="identity/digest does not match"):
+            store.activate(a.prompt_id, 1, actor="owner")
+
+    def test_activate_rejects_unauthorized_actor(self):
+        """When a closed allowlist is configured, unknown actors must be refused.
+
+        Pre-M1 defect: `actor` was only recorded in the audit log; anyone
+        with a reference to the store could call `.activate(..., actor="x")`.
+        """
+        store = PromptStore(authorized_actors={"release-owner"})
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        receipt = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, receipt)
+        store.register(a_eval)
+        store.register_receipt(receipt)
+        # Backward-compat path (None allowlist) still accepts any actor;
+        # we verify the closed-list path refuses an unknown actor.
+        with pytest.raises(PromptStoreError, match="not in the authorized_actors"):
+            store.activate(a.prompt_id, 1, actor="anonymous")
+        # Authorized actor succeeds.
+        active = store.activate(a.prompt_id, 1, actor="release-owner")
+        assert active.status == PromptStatus.ACTIVE
+
+    def test_authorization_allowlist_is_opt_in(self):
+        """Backward compatibility: an unconfigured store accepts any actor."""
+        store = PromptStore()
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        receipt = _make_passing_receipt(a)
+        a_eval = author.apply_receipt(a, receipt)
+        store.register(a_eval)
+        store.register_receipt(receipt)
+        active = store.activate(a.prompt_id, 1, actor="literally-anyone")
+        assert active.status == PromptStatus.ACTIVE
+
+    def test_revision_lineage_revise_resets_supersedes(self):
+        """`revise()` is a SAME-LINE bump — supersedes stays None.
+
+        This test pins the design decision: revise is for working on a
+        non-ACTIVE candidate; it does not record cross-revision lineage.
+        The regression axis (`_accepted_regression`) is what enforces the
+        back-reference requirement, and only on revisions that reached
+        evaluation.
+        """
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        b = author.revise(a, recovery_behavior="revised")
+        assert b.revision == 2
+        assert b.supersedes is None
+
+    def test_revision_lineage_supersede_wires_back_reference(self):
+        """`supersede()` sets supersedes = f'{prompt_id}@{prev_revision}'."""
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        a_eval = author.apply_receipt(a, _make_passing_receipt(a))
+        b = author.supersede(a_eval, recovery_behavior="replacement b")
+        assert b.revision == 2
+        assert b.supersedes == f"{a.prompt_id}@1"
+
+    def test_store_refuses_rev2_with_wrong_supersedes(self):
+        """store.register(rev2) refuses a mismatched supersedes string.
+
+        Belt-and-braces: even if a caller hand-rolls a revision 2 with
+        the wrong back-reference, the store detects it at registration
+        time. Pre-M1 the check existed in `store.py:88-93` but no test
+        exercised it.
+        """
+        store = PromptStore()
+        author = PromptAuthor()
+        a = author.author_candidate(_spec())
+        store.register(a)
+        # Hand-roll rev 2 pointing at the wrong prior revision.
+        b = author.supersede(
+            author.apply_receipt(a, _make_passing_receipt(a)),
+            recovery_behavior="bogus",
+        )
+        data = b.model_dump()
+        data["supersedes"] = f"{a.prompt_id}@42"
+        # Recompute content_digest with the altered supersedes string.
+        from agent.prompt_authoring.types import PromptDefinition, canonical_content_digest
+        # Re-derive the digest to pass PromptDefinition's model_validator;
+        # the altered supersedes string must be baked into the digest.
+        data["content_digest"] = canonical_content_digest(data)
+        forged = PromptDefinition.model_validate(data)
+        with pytest.raises(PromptStoreError, match="does not reference the prior"):
+            store.register(forged)

@@ -154,7 +154,7 @@ class PromptDefinition(BaseModel):
     digest stable.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_\-]*$")
     revision: int = Field(ge=1)
