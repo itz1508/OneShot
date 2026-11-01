@@ -26,8 +26,9 @@ class Stage(str, Enum):
     """Stages Prompt Authoring may generate prompts for.
 
     Research / plan / build are the three OneShot workflow stages.
-    `discovery` is the Audit Discovery read-only role (the serialized stage name remains stable). `handoff`
-    covers the Handoff Evaluator. `provider_adapter` covers prompts
+    `discovery` denotes the Audit Discovery read-only role.
+    Its serialized stage name is stable. `handoff` covers the Handoff Evaluator.
+    `provider_adapter` covers prompts
     that live inside a provider adapter module (translation prompts).
     """
 
