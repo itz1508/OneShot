@@ -235,16 +235,37 @@ class TaskManager:
         """Re-read the on-disk snapshot into _tasks.
 
         Caller is expected to hold the file lock.
+
+        G11 reopen (fail-closed on corruption during subsequent writes):
+        the same quarantine + CorruptStoreError policy that `_load_safely`
+        applies at construction time applies here too. A corrupt file is
+        moved aside with a `.json.corrupt-<ts>` suffix; when
+        `allow_corrupt` is False (the default), the next write raises
+        `CorruptStoreError` so callers see history loss rather than
+        silently continue with an empty store. When `allow_corrupt=True`,
+        the store falls back to empty.
         """
         self._tasks.clear()
-        if self.storage_path.exists():
-            try:
-                with open(self.storage_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                for tid, rec in data.items():
-                    self._tasks[tid] = TaskRecord(**rec)
-            except (json.JSONDecodeError, TypeError, KeyError):
-                self._tasks = {}
+        if not self.storage_path.exists():
+            return
+        try:
+            with open(self.storage_path, encoding="utf-8") as f:
+                data = json.load(f)
+            for tid, rec in data.items():
+                self._tasks[tid] = TaskRecord(**rec)
+        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            # Quarantine the broken snapshot so a human can inspect it.
+            corrupt = self.storage_path.with_suffix(f".json.corrupt-{int(time.time())}")
+            with suppress(OSError):
+                shutil.move(str(self.storage_path), str(corrupt))
+            self._tasks = {}
+            if not getattr(self, "_allow_corrupt", False):
+                raise CorruptStoreError(
+                    f"on-disk snapshot {self.storage_path} became corrupt mid-run "
+                    f"and was quarantined to {corrupt} "
+                    f"({type(exc).__name__}: {exc}). "
+                    "Pass allow_corrupt=True to continue with an empty store."
+                ) from exc
 
     # ----- CRUD -------------------------------------------------------------
 
