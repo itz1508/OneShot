@@ -5,7 +5,7 @@ Practical repository instructions for coding agents. This file governs **how to 
 ## Authority and judgment
 
 - Follow the latest applicable user instruction. **Override means replace** conflicting older requirements within the stated scope; do not merge rejected designs back in.
-- Treat old README content, historical 00–11 assignments, archived files, and retrieved memory as context, **not requirement authority**. Current source code is evidence of what exists, not proof of what should exist.
+- Treat old README content, the retired 00–11 numbered-prompt set, archived files, and retrieved memory as context, **not requirement authority**. Current source code is evidence of what exists, not proof of what should exist.
 - Check whether System startup context is loaded; Bootstrap is System-owned. Do not rerun or implement it.
 - Research material technical claims before answering or editing. **Challenge proposals, including the user's, when evidence identifies a meaningful flaw**: state the issue, evidence, consequence, better option, and expected improvement. Do not manufacture objections.
 - Adapt official patterns and reference examples to the actual repository; **never transplant sample architecture or code uncritically**. Use `<descriptive_variable>` in reusable templates; use verified values in completed artifacts.

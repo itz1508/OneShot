@@ -248,27 +248,6 @@ def _build_record() -> dict:
     }
 
 
-def _repo_summary_dict() -> dict:
-    return {
-        "repository": "https://github.com/itz1508/OneShot",
-        "branch": "main",
-        "commit_sha": "abc123def456",
-        "working_tree_clean": False,
-        "files": ["AGENTS.md", "pyproject.toml"],
-        "gap_matrix": [
-            {
-                "area": "00 — Authority",
-                "requirement": "ground decisions",
-                "current_state": "Implemented",
-                "action": "adapt",
-                "evidence": "Files: ['AGENTS.md']",
-                "color_eval": "GREEN",
-            },
-        ],
-        "available_tools": ["git", "python3.12", "pytest"],
-        "color_eval_baseline": "GREEN",
-    }
-
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -287,7 +266,6 @@ class TestRegistryConstruction(TestCase):
                 "output_research",
                 "output_gap_analysis",
                 "output_built",
-                "output_repo_summary",
             },
         )
 
@@ -322,7 +300,6 @@ class TestSchemaSelection(TestCase):
         self.assertFalse(result.errors)
         names = [d.name for d in result.selected]
         self.assertIn("output_research", names)
-        self.assertIn("output_repo_summary", names)  # stage=any
         self.assertNotIn("output_built", names)
         self.assertNotIn("output_gap_analysis", names)
 
@@ -331,7 +308,6 @@ class TestSchemaSelection(TestCase):
         result = reg.select(SelectionContext(stage="plan"))
         names = [d.name for d in result.selected]
         self.assertIn("output_gap_analysis", names)
-        self.assertIn("output_repo_summary", names)
         self.assertNotIn("output_research", names)
         self.assertNotIn("output_built", names)
 
@@ -340,19 +316,17 @@ class TestSchemaSelection(TestCase):
         result = reg.select(SelectionContext(stage="build"))
         names = [d.name for d in result.selected]
         self.assertIn("output_built", names)
-        self.assertIn("output_repo_summary", names)
         self.assertNotIn("output_research", names)
 
     def test_select_with_material_filter(self):
         reg = SchemaRegistry()
         ctx = SelectionContext(
             stage="research",
-            available_material={"research_record": True, "repo_summary": False},
+            available_material={"research_record": True},
         )
         result = reg.select(ctx)
         names = [d.name for d in result.selected]
         self.assertIn("output_research", names)
-        self.assertNotIn("output_repo_summary", names)  # material not available
 
     def test_select_explicit_request(self):
         reg = SchemaRegistry()
@@ -371,7 +345,7 @@ class TestSchemaSelection(TestCase):
         reg = SchemaRegistry()
         ctx = SelectionContext(
             stage="research",
-            available_material={"research_record": False, "repo_summary": False},
+            available_material={"research_record": False},
         )
         result = reg.select(ctx)
         self.assertTrue(result.errors)
@@ -443,70 +417,11 @@ class TestSerialization(TestCase):
         self.assertEqual(parsed["plan_record_id"], "plan-001")
         self.assertEqual(len(parsed["findings"]), 1)
 
-    def test_serialize_repo_summary(self):
-        reg = SchemaRegistry()
-        result = reg.serialize("output_repo_summary", _repo_summary_dict())
-        self.assertFalse(result.errors)
-        parsed = json.loads(result.json_str)
-        self.assertEqual(parsed["repository"], "https://github.com/itz1508/OneShot")
-        self.assertEqual(parsed["color_eval_baseline"], "GREEN")
-
     def test_serialize_missing_schema(self):
         reg = SchemaRegistry()
         result = reg.serialize("nonexistent", {})
         self.assertTrue(result.errors)
         self.assertIn("not found", result.errors[0])
-
-    def test_serialize_dataclass(self):
-        reg = SchemaRegistry()
-        # Test with a dataclass (simulates RepoSummary)
-        from dataclasses import dataclass as dc_dataclass
-
-        @dc_dataclass
-        class FakeSummary:
-            repository: str
-            branch: str
-            commit_sha: str
-            working_tree_clean: bool
-            files: list
-            gap_matrix: list
-            available_tools: list
-            color_eval_baseline: str
-
-        summary = FakeSummary(
-            repository="test",
-            branch="main",
-            commit_sha="abc",
-            working_tree_clean=True,
-            files=[],
-            gap_matrix=[],
-            available_tools=[],
-            color_eval_baseline="GREEN",
-        )
-        result = reg.serialize("output_repo_summary", summary)
-        self.assertFalse(result.errors)
-        parsed = json.loads(result.json_str)
-        self.assertEqual(parsed["repository"], "test")
-
-    def test_serialize_multiple(self):
-        reg = SchemaRegistry()
-        sel_result = reg.select(SelectionContext(stage="build"))
-        data_map = {
-            "output_built": _build_record(),
-            "output_repo_summary": _repo_summary_dict(),
-        }
-        results = reg.serialize_multiple(sel_result.selected, data_map)
-        self.assertEqual(len(results), 2)
-        for r in results:
-            self.assertFalse(r.errors, f"Errors for {r.output_name}: {r.errors}")
-
-    def test_serialize_multiple_missing_data(self):
-        reg = SchemaRegistry()
-        sel = reg.select(SelectionContext(stage="build"))
-        data_map = {"output_built": _build_record()}  # missing repo_summary
-        results = reg.serialize_multiple(sel.selected, data_map)
-        has_error = any(r.errors for r in results)
-        self.assertTrue(has_error)
 
 
 class TestStructuralValidation(TestCase):
@@ -572,12 +487,6 @@ class TestSchemaLoading(TestCase):
         self.assertIsNotNone(schema)
         self.assertEqual(schema["title"], "Build Output")
 
-    def test_load_schema_repo_summary(self):
-        reg = SchemaRegistry()
-        schema = reg.load_schema("output_repo_summary")
-        self.assertIsNotNone(schema)
-        self.assertEqual(schema["title"], "Repository Summary Output")
-
     def test_load_schema_missing(self):
         reg = SchemaRegistry()
         self.assertIsNone(reg.load_schema("nonexistent"))
@@ -641,26 +550,6 @@ class TestConsumerCompatibility(TestCase):
         ]:
             self.assertIn(field, gap, f"Missing gap_analysis field '{field}'")
 
-    def test_repo_summary_preserves_repo_summary_tool_fields(self):
-        """Serialized repo summary must contain all fields from
-        tools/repo_summary.py RepoSummary dataclass."""
-        reg = SchemaRegistry()
-        summary = _repo_summary_dict()
-        result = reg.serialize("output_repo_summary", summary)
-        self.assertFalse(result.errors)
-        data = json.loads(result.json_str)
-        for field in [
-            "repository",
-            "branch",
-            "commit_sha",
-            "working_tree_clean",
-            "files",
-            "gap_matrix",
-            "available_tools",
-            "color_eval_baseline",
-        ]:
-            self.assertIn(field, data, f"Missing field '{field}' from RepoSummary compatibility")
-
 
 class TestOutputPersistence(TestCase):
     """Verify actual output generation and persistence to disk."""
@@ -679,41 +568,6 @@ class TestOutputPersistence(TestCase):
         finally:
             os.unlink(path)
 
-    def test_persist_all_four_outputs(self):
-        reg = SchemaRegistry()
-        outputs = {
-            "output_research": _research_record(),
-            "output_gap_analysis": SchemaRegistry.extract_gap_analysis(_plan_record()),
-            "output_built": _build_record(),
-            "output_repo_summary": _repo_summary_dict(),
-        }
-        for name, data in outputs.items():
-            result = reg.serialize(name, data)
-            self.assertFalse(result.errors, f"Failed to serialize {name}: {result.errors}")
-            # Verify the JSON can be round-tripped
-            parsed = json.loads(result.json_str)
-            self.assertIsInstance(parsed, dict)
-            # Verify structural validation passes
-            errors = reg.validate_json(name, result.json_str)
-            self.assertEqual(errors, [], f"Structural validation errors for {name}: {errors}")
-
-    def test_persist_multiple_outputs_to_disk(self):
-        reg = SchemaRegistry()
-        sel = reg.select(SelectionContext(stage="build"))
-        data_map = {
-            "output_built": _build_record(),
-            "output_repo_summary": _repo_summary_dict(),
-        }
-        results = reg.serialize_multiple(sel.selected, data_map)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for r in results:
-                self.assertFalse(r.errors)
-                path = Path(tmpdir) / f"{r.output_name}.json"
-                path.write_text(r.json_str)
-                # Verify it can be read back
-                loaded = json.loads(path.read_text())
-                self.assertIsInstance(loaded, dict)
-
 
 class TestIntegrationWithWorkflow(TestCase):
     """Integration: use the registry alongside the workflow controller outputs."""
@@ -727,7 +581,7 @@ class TestIntegrationWithWorkflow(TestCase):
         self.assertFalse(r_sel.errors)
         r_data = {"output_research": _research_record()}
         r_results = reg.serialize_multiple(r_sel.selected, r_data)
-        # repo_summary not available, so it should error (expected)
+        # repo_summary was retired; this stage only selects output_research.
         r_ok = [r for r in r_results if not r.errors]
         self.assertTrue(any(r.output_name == "output_research" for r in r_ok))
 
@@ -755,7 +609,7 @@ class TestIntegrationWithWorkflow(TestCase):
                 "research_record": True,
                 "gap_analysis": True,
                 "build_record": True,
-                "repo_summary": True,
+                # (repo_summary retired)
             }
         )
         result = reg.select(ctx)
@@ -767,24 +621,8 @@ class TestIntegrationWithWorkflow(TestCase):
                 "output_research",
                 "output_gap_analysis",
                 "output_built",
-                "output_repo_summary",
             },
         )
-
-    def test_cross_stage_repo_summary_always_selectable(self):
-        """repo_summary (stage='any') is selectable at every stage."""
-        reg = SchemaRegistry()
-        for stage in ["research", "plan", "build", "complete"]:
-            result = reg.select(
-                SelectionContext(
-                    stage=stage,
-                    available_material={"repo_summary": True},
-                )
-            )
-            names = {d.name for d in result.selected}
-            self.assertIn(
-                "output_repo_summary", names, f"repo_summary not selected at stage={stage}"
-            )
 
 
 class TestRegistryDoesNotDuplicateOwnership(TestCase):

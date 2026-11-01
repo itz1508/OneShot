@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""
-OneShot Assignment 03: Repository Search and Source Discovery
+"""Repository file inventory via `git ls-tree` and `git grep`.
 
-Uses supported built-in tools and existing infrastructure — not a custom
-filesystem reader. Searches the OneShot repository for all source files,
-config, tests, and evidence. Produces a grounded file inventory with
-types, sizes, and content summaries.
+Reusable primitive: `SearchSources(repo_path)` enumerates every tracked
+file at HEAD, filters by extension or glob, and reads file info (type,
+size, line count, 200-char content summary). Used by
+`agent.main.OneShotController.research_plan` to build the SHA-256
+evidence index at Research stage entry, and by the baseline
+`tests/test_research_plan_build.py::TestSearchSources` suite.
+
+All operations shell out to `git` (no custom filesystem walker) so the
+inventory is always what git-grep / rg would see — the same view that
+the agent-read deny list in `.agents/settings.json` operates against.
 """
 
 import subprocess

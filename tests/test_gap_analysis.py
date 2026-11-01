@@ -143,7 +143,7 @@ class TestContradictionsCategory:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "tools").mkdir(parents=True)
-            (root / "tools" / "repo_summary.py").write_text(
+            (root / "tools" / "color_eval.py").write_text(
                 'color_eval="GREEN"  # All start GREEN\n'
             )
             specialist = GapAnalysisSpecialist(root)

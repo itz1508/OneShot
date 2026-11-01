@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""
-OneShot Assignment 07: Fixtures with Independent Expected Results
+"""Fixture registry with independent expected results (G03 contract).
 
-Positive cases (known-good → expected pass) and negative cases (known-bad →
-expected fail). Expected results are independent — not derived from implementation
-output. Fixture data grounded in actual repository state.
+Positive cases carry a known-good input + an expected result pinned
+BEFORE execution. Negative cases carry an `expected_rejection` shape
+that pins the exact failure identity: either
+  * `{"exception_type": "<ClassName>"}` — the executor must raise an
+    exception whose class name matches, or
+  * `{"expected_result": <value>}` — the executor must return exactly
+    that value (useful for structured error dicts, None, "", etc.).
+
+The shape is the G03 reopen fix: a non-matching exception or a
+non-matching result both count as failure, closing the gap where any
+exception was previously treated as pass. The legacy "any exception
+counts" behaviour remains available when `expected_rejection` is
+omitted, but is marked for retirement.
+
+Used by `tools.build_executor.BuildExecutor` and exercised by
+`tests/scenarios/test_fixtures_negative_shape.py`.
 """
 
 from collections.abc import Callable

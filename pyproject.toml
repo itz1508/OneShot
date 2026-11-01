@@ -34,9 +34,6 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
-ml = [
-    "mlflow>=3.0",
-]
 
 [project.scripts]
 oneshot = "agent.main:main"
