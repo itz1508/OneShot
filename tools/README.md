@@ -6,19 +6,16 @@ This directory contains the active tool implementations used by the OneShot work
 
 | File | Responsibility |
 |------|----------------|
-| `task_management.py` | Task state, checkpoints, resume, event log |
+| `task_management.py` | Task state, checkpoints, resume, event log, atomic/CAS persistence (`set_task_metadata` with `if_revision`, `set_decision_wait`, `CorruptStoreError`) |
 | `color_eval.py` | GREEN/AMBER/RED evaluation with evidence |
-| `fixtures.py` | FixtureRegistry with independent expected results |
+| `fixtures.py` | FixtureRegistry with independent expected results (G03 `expected_rejection` shape) |
 | `search_sources.py` | Repository file search and inventory |
 | `text_metrics.py` | Text counting (characters, bytes, words) |
-| `build_executor.py` | Build execution with trace and artifact capture |
+| `build_executor.py` | Build execution with trace and artifact capture; refuses unauthorized `tool_fn` |
 | `mcp_tools.py` | MCP tool registry (no core logic, permission-gated) |
-| `memory_retrieve.py` | Task retrieval and checkpoint resume |
-| `plan_review.py` | Plan grounding and best-practice review |
 | `repo_summary.py` | Repository summary with gap matrix |
-| `research_output.py` | Research output builder with provenance |
-| `research_review.py` | Research review with color evaluation |
-| `approval.py` | Authorization gate (user + host enforcement) |
+
+Previously-tracked modules (`approval.py`, `memory_retrieve.py`, `plan_review.py`, `research_output.py`, `research_review.py`) were consolidated into `agent/main.py` and its sibling adapters under `agent/adapters/` during the migration to the OneShotController workflow harness.
 
 ## Design principles
 

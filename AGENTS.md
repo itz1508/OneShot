@@ -52,14 +52,14 @@ Practical repository instructions for coding agents. This file governs **how to 
 
 ### Implemented paths — verified in this checkout
 
-All M0–M8 milestones are implemented and verified. 159 tests pass, 22 skipped.
+All M0–M8 milestones are implemented and verified; eleven G01–G11 gap closures and five S1–S5 connected E2E scenarios sit on top of them. On the current HEAD: **374 passed, 55 skipped** (429 collected). See `README.md` for the scenario and gap-closure matrix.
 
 - `agent/main.py` — OneShotController with stage routing, Scanner invocation, fixture validation, checkpoint/resume.
 - `agent/adapters/` — Scanner adapters: `repository_inventory.py`, `source_comparison.py`, `content_integrity.py`, `evidence_locator.py`, `trace_projection.py`.
 - `agent/reference/` — Stage-specific guidance: `research_guidance.md`, `plan_guidance.md`, `build_guidance.md`.
 - `agent/contracts/` — Contract YAMLs, Pydantic validators (`models.py`), `README.md`.
-- `tools/` — 14 active tool implementations (see [tools/README.md](tools/README.md)).
-- `tests/` — 15 test files covering contracts, workflow, E2E, adapters, and tools.
+- `tools/` — 8 active tool implementations (see [tools/README.md](tools/README.md)).
+- `tests/` — 19 baseline test modules plus 25 scenario modules in [`tests/scenarios/`](tests/scenarios/) covering contracts, workflow, the five S1–S5 connected E2E scenarios, and the G01–G11 gap closures.
 - `pyproject.toml`, `conftest.py`, `requirements.txt` — project configuration. Install dev extras via `python -m pip install --editable ".[dev]"`.
 - `.github/workflows/ci.yml` — CI pipeline (ruff + pytest across Python 3.10/3.11/3.12).
 - `bin/context_counter.py` — demo build target for E2E.
@@ -163,6 +163,50 @@ A self-contained ExecPlan must be understandable by an agent with **no prior con
 - **Recovery:** current state, how to resume safely, and whether rerunning commands or steps could duplicate/overwrite prior work.
 
 Execute milestones in sequence without asking for generic “next steps.” Investigate nonblocking ambiguity; ask only about genuinely blocking user-owned decisions. For difficult unknowns, use small isolated prototypes or library-source inspection, record evidence, then integrate only what is justified. Commit coherent work when commits are authorized; do not include unrelated changes. Record commit IDs in the ExecPlan.
+
+## Project baseline rules — apply when the project adopts the pattern
+
+This OneShot checkout is a Python workflow harness; the Research/Plan/Build harness **does not** currently ship a web stack, SQL route handlers, or a migration tool. The four rules below are general-authority project baseline rules recorded here so they apply **automatically** when the project adopts any of those patterns. Each rule carries its scope and the exact action a coding agent must take.
+
+### 1. `.env.example` is the single source of configuration shape
+
+- **Rule.** Copy `.env.example` to `.env` before running anything that reads environment configuration. Tests, the dev server, and any environment-driven controller invocation fail without it.
+- **Scope.** Applies whenever `.env.example` is present at the repository root. OneShot itself does not yet ship one — add `.env.example` the moment any configuration key graduates from a code-local default to an environment variable.
+- **Agent action.** If `.env` is missing and `.env.example` exists, copy `.env.example` to `.env` with the shipped defaults before invoking tests, the dev server, or the controller. **Do not** commit a populated `.env` — `.gitignore` already excludes `.env` and `.env.*` with a `!.env.example` exception.
+
+### 2. No raw SQL in route handlers
+
+- **Rule.** Never put raw SQL strings inside route handlers. Route handlers call into a repository / query layer that owns parameterized SQL.
+- **Scope.** Applies whenever this project adopts HTTP route handlers backed by SQL (Flask / FastAPI / Django endpoints invoking a database). Currently OneShot has no route handlers — this rule binds forward.
+- **Agent action.** Reject any handler diff that embeds `conn.execute("SELECT …")` / `cur.execute("INSERT …")` directly. Add the query to a sibling repository / data-access module and have the handler call that module.
+- **In-scope today.** The one place SQL exists in this repo is `bin/sqlite_effect_runner.py` — a deterministic effect runner, not a route handler. Its `conn.execute(...)` calls use parameter binding and are not covered by this rule.
+
+### 3. Migrations are append-only once merged
+
+- **Rule.** Never edit a database migration after it has been merged to `main`. Add a new migration instead.
+- **Scope.** Applies whenever this project adopts a migration tool (Alembic, Django migrations, etc.). Currently OneShot has no migrations directory — this rule binds forward.
+- **Agent action.** If a merged migration contains a mistake, reject any diff that rewrites it in place. Author a **new, forward-only migration** that undoes or corrects the mistake, and reference the original migration by filename / revision id in the new migration's docstring. Mergeable code review on migrations therefore reads: file created, file never modified.
+
+### 4. Lock reads of generated and vendored code
+
+- **Rule.** Agents must not read generated or vendored artifacts: `**/dist/**`, `**/build/**`, `**/*.generated.*`, `**/vendor/**`.
+- **Why double-locked.** The repo's `.gitignore` already excludes `node_modules/`, `dist/`, and `build/` from search by default (git-grep / rg respect `.gitignore`). The policy below locks **agent reads** on top of that so even a direct-path open is refused.
+- **Enforcement.** [`.agents/settings.json`](.agents/settings.json) carries the deny list:
+
+  ```json
+  {
+    "permissions": {
+      "deny": [
+        "Read(./**/dist/**/*)",
+        "Read(./**/build/**/*)",
+        "Read(./**/*.generated.*)",
+        "Read(./**/vendor/**/*)"
+      ]
+    }
+  }
+  ```
+
+- **Agent action.** Treat a read against any of those globs as refused. If a legitimate task requires looking at a generated artifact, re-run the generator from source and reason about the source instead; if a vendored dependency really needs inspection, treat it as a dependency version question and consult the lockfile / package manifest, not the vendored tree.
 
 ## Validation and completion
 

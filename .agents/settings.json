@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/dist/**/*)",
+      "Read(./**/build/**/*)",
+      "Read(./**/*.generated.*)",
+      "Read(./**/vendor/**/*)"
+    ]
+  }
+}
