@@ -647,6 +647,14 @@ class SemanticGapAnalysis:
 
     # --- duplication: two source files owning the same public callable name
     #     with the same signature counts as duplicated responsibility.
+    #
+    # Known CLI-entrypoint names (`main`, `cli`, `run`) are PER-MODULE
+    # convention — every CLI script defines its own `main()` guarded by
+    # `if __name__ == "__main__":`. Flagging those as duplication is
+    # a false positive (the project convention is to have one `main` per
+    # CLI module), so they are excluded from the detector.
+    _CLI_ENTRYPOINT_NAMES = frozenset({"main", "cli", "run"})
+
     def detect_duplication(self, sources: dict[str, str]) -> list[SemanticFinding]:
         owners: dict[tuple[str, int], list[str]] = {}
         for path, src in sources.items():
@@ -654,9 +662,27 @@ class SemanticGapAnalysis:
                 tree = _ast.parse(src)
             except SyntaxError:
                 continue
+            # A module is treated as a CLI script when its top-level body
+            # contains an `if __name__ == '__main__':` guard; a `main()`
+            # defined in such a module is a conventional entrypoint, not
+            # a duplicated public callable.
+            is_cli_script = any(
+                isinstance(n, _ast.If)
+                and isinstance(n.test, _ast.Compare)
+                and any(
+                    isinstance(t, _ast.Constant) and t.value == "__main__"
+                    for t in n.test.comparators
+                )
+                for n in tree.body
+            )
             for node in tree.body:
                 if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
                     if node.name.startswith("_"):
+                        continue
+                    if (
+                        is_cli_script
+                        and node.name in self._CLI_ENTRYPOINT_NAMES
+                    ):
                         continue
                     arity = len(node.args.args) + len(node.args.kwonlyargs)
                     key = (node.name, arity)

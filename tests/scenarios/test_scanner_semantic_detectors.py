@@ -142,3 +142,70 @@ class DependenciesDetectorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CLIEntrypointExemptionTest(unittest.TestCase):
+    """Gap-analysis review of 26cf698: the duplication detector flagged
+    `main/0` across five CLI scripts (agent/main.py, bin/*.py, tools/*.py)
+    as a duplicate callable. Those are per-module CLI entrypoints guarded
+    by `if __name__ == "__main__":` — the project convention, not a
+    duplicated responsibility.
+
+    After the fix, `detect_duplication` recognises the `__main__` guard
+    and excludes `main` / `cli` / `run` from the duplication report when
+    the module is a CLI script.
+    """
+
+    _CLI_HEAD = (
+        "def {name}():\n"
+        "    pass\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    raise SystemExit({name}())\n"
+    )
+
+    def test_cli_main_entrypoints_not_flagged(self):
+        sources = {
+            "bin/a.py": self._CLI_HEAD.format(name="main"),
+            "bin/b.py": self._CLI_HEAD.format(name="main"),
+            "tools/c.py": self._CLI_HEAD.format(name="main"),
+        }
+        findings = SemanticGapAnalysis().detect_duplication(sources)
+        self.assertEqual(
+            findings,
+            [],
+            f"CLI `main` entrypoints must not be flagged as duplication; got {findings}",
+        )
+
+    def test_non_cli_duplicate_main_still_flagged(self):
+        """A module WITHOUT a `__main__` guard that defines `main` is not a
+        CLI entrypoint — the detector must still flag it when two such
+        modules share the same `main` signature."""
+        sources = {
+            "tools/foo.py": "def main():\n    pass\n",
+            "tools/bar.py": "def main():\n    pass\n",
+        }
+        findings = SemanticGapAnalysis().detect_duplication(sources)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("main", findings[0].affected_subject)
+
+    def test_cli_other_public_name_still_flagged(self):
+        """The exemption is narrow — a CLI script's other PUBLIC callable
+        (not `main` / `cli` / `run`) is still a duplication finding when
+        another file shares the same name/arity."""
+        sources = {
+            "bin/a.py": (
+                "def helper(x):\n"
+                "    return x\n"
+                "\n"
+                "def main():\n"
+                "    pass\n"
+                "\n"
+                "if __name__ == '__main__':\n"
+                "    main()\n"
+            ),
+            "tools/b.py": "def helper(x):\n    return x\n",
+        }
+        findings = SemanticGapAnalysis().detect_duplication(sources)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("helper", findings[0].affected_subject)
