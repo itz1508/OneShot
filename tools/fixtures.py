@@ -14,13 +14,28 @@ from typing import Any
 
 @dataclass
 class FixtureCase:
-    """A single fixture case."""
+    """A single fixture case.
+
+    For NEGATIVE cases, prefer `expected_rejection` to pin the shape of the
+    expected failure. Two shapes are supported:
+      * `{"exception_type": "<ClassName>"}` — the executor must raise an
+        exception whose qualified or unqualified class name equals the
+        given name.
+      * `{"expected_result": <value>}` — the executor must return exactly
+        the given value (e.g. a specific error dict / None / "" and NOT
+        any mismatching value).
+    When `expected_rejection` is omitted the historical rule applies:
+    any exception OR any result != `expected_result` counts as pass; this
+    is retained only for backward compatibility and SHOULD NOT be relied
+    on by new tests.
+    """
 
     name: str
     input: dict
     expected_result: Any  # Defined BEFORE execution, independent
     expected_pass: bool  # True for positive, False for negative
     description: str = ""
+    expected_rejection: dict | None = None
 
 
 class FixtureRegistry:
@@ -34,9 +49,23 @@ class FixtureRegistry:
         """Add a positive case (known-good → expected pass)."""
         self._positive.append(FixtureCase(name, input_data, expected, True, desc))
 
-    def add_negative(self, name: str, input_data: dict, expected: Any, desc: str = ""):
-        """Add a negative case (known-bad → expected fail)."""
-        self._negative.append(FixtureCase(name, input_data, expected, False, desc))
+    def add_negative(
+        self,
+        name: str,
+        input_data: dict,
+        expected: Any,
+        desc: str = "",
+        expected_rejection: dict | None = None,
+    ):
+        """Add a negative case (known-bad → expected fail).
+
+        See FixtureCase for the `expected_rejection` shape. New callers
+        SHOULD pass `expected_rejection` to make the negative case assert
+        the specific safety boundary that must fire.
+        """
+        self._negative.append(
+            FixtureCase(name, input_data, expected, False, desc, expected_rejection)
+        )
 
     def get_positive(self) -> list[FixtureCase]:
         return list(self._positive)
@@ -62,20 +91,62 @@ class FixtureRegistry:
         return results
 
     def run_negative(self, executor: Callable) -> list[dict]:
-        """Run all negative cases. Each must fail (not match expected)."""
+        """Run all negative cases.
+
+        When `case.expected_rejection` is set, the specific rejection shape
+        must match; a mismatched or unrelated failure fails the case. When
+        it is absent, backwards-compat applies (any exception OR a result
+        != `expected_result` passes), with a `warning` field reporting
+        the loose rule used.
+        """
         results = []
         for case in self._negative:
+            observed_exc: Exception | None = None
+            actual: Any = None
             try:
                 actual = executor(case.input)
-                # Negative case: execution should fail or not match expected
-                passed = (actual != case.expected_result) or actual is None
-            except Exception:
-                passed = True  # Exception is expected for negative cases
+            except Exception as e:  # noqa: BLE001 — we classify below
+                observed_exc = e
+
+            exp = case.expected_rejection
+            warning: str | None = None
+            if exp:
+                if "exception_type" in exp:
+                    want = exp["exception_type"]
+                    passed = observed_exc is not None and (
+                        type(observed_exc).__qualname__ == want
+                        or type(observed_exc).__name__ == want
+                    )
+                    rejection_kind = "exception"
+                elif "expected_result" in exp:
+                    passed = observed_exc is None and actual == exp["expected_result"]
+                    rejection_kind = "result"
+                else:
+                    passed = False
+                    rejection_kind = "misconfigured"
+                    warning = (
+                        "expected_rejection must contain 'exception_type' or 'expected_result'"
+                    )
+            else:
+                # Backwards-compatible loose rule — flagged with a warning.
+                passed = (
+                    observed_exc is not None or actual != case.expected_result or actual is None
+                )
+                rejection_kind = "exception" if observed_exc is not None else "result_mismatch"
+                warning = (
+                    "legacy negative-case rule in use; set expected_rejection "
+                    "to pin the required rejection shape"
+                )
+
             results.append(
                 {
                     "name": case.name,
                     "expected_pass": False,
                     "passed": passed,
+                    "rejection_kind": rejection_kind,
+                    "observed_exception": (type(observed_exc).__name__ if observed_exc else None),
+                    "observed_result": actual,
+                    "warning": warning,
                 }
             )
         return results

@@ -111,10 +111,24 @@ class BuildExecutor:
         result = BuildResult()
 
         for step in build_steps:
+            tool_name = step.get("tool", "unknown")
+            tool_input = step.get("input", {})
+            tool_fn = step.get("function")
+            # Audit item 06.6: a Build step whose `function` is missing or
+            # not callable is UNAUTHORISED — refuse it, do not pretend it
+            # was executed with a no-op.
+            if tool_fn is None or not callable(tool_fn):
+                result.partial_failures.append(
+                    {
+                        "step": tool_name,
+                        "error": (
+                            "unauthorized_tool_fn: step is missing a callable "
+                            "`function` entry; refusing to execute"
+                        ),
+                    }
+                )
+                continue
             try:
-                tool_name = step.get("tool", "unknown")
-                tool_input = step.get("input", {})
-                tool_fn = step.get("function", lambda x: None)
                 self.call_tool(tool_name, tool_input, tool_fn)
 
                 if step.get("artifact_path"):
@@ -124,7 +138,7 @@ class BuildExecutor:
             except Exception as e:
                 result.partial_failures.append(
                     {
-                        "step": step.get("tool", "unknown"),
+                        "step": tool_name,
                         "error": str(e),
                     }
                 )

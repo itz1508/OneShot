@@ -57,11 +57,10 @@ All M0–M8 milestones are implemented and verified. 159 tests pass, 22 skipped.
 - `agent/main.py` — OneShotController with stage routing, Scanner invocation, fixture validation, checkpoint/resume.
 - `agent/adapters/` — Scanner adapters: `repository_inventory.py`, `source_comparison.py`, `content_integrity.py`, `evidence_locator.py`, `trace_projection.py`.
 - `agent/reference/` — Stage-specific guidance: `research_guidance.md`, `plan_guidance.md`, `build_guidance.md`.
-- `agent/templates/` — Reusable templates: `research_input.md`, `output_plan.md`, `output_fixture.md`, `output_success_criteria.md`, `output_validation.md`, `execplan.md`.
 - `agent/contracts/` — Contract YAMLs, Pydantic validators (`models.py`), `README.md`.
 - `tools/` — 14 active tool implementations (see [tools/README.md](tools/README.md)).
 - `tests/` — 15 test files covering contracts, workflow, E2E, adapters, and tools.
-- `pyproject.toml`, `conftest.py`, `requirements.txt`, `requirements-dev.txt` — project configuration.
+- `pyproject.toml`, `conftest.py`, `requirements.txt` — project configuration. Install dev extras via `python -m pip install --editable ".[dev]"`.
 - `.github/workflows/ci.yml` — CI pipeline (ruff + pytest across Python 3.10/3.11/3.12).
 - `bin/context_counter.py` — demo build target for E2E.
 - No active `src/` directory; historical `src/` is preserved only in git history.

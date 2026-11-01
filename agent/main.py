@@ -262,6 +262,63 @@ class OneShotController:
             task_id, TaskState.RUNNING, detail=f"Stage -> {to_stage.value}: {detail}"
         )
 
+    def _load_decision_waits(self, task_id: str) -> None:
+        """Rebuild self._decision_waits for a task from TaskManager metadata.
+
+        Pending user decisions are persisted on TaskRecord.metadata so a
+        restarted controller can resume them. This helper keeps the
+        in-memory cache in sync with that persisted state.
+        """
+        task = self.tm.get_task(task_id)
+        if not task:
+            return
+        waits_raw = (task.metadata or {}).get("decision_waits") or {}
+        if not isinstance(waits_raw, dict):
+            return
+        for request_id, data in waits_raw.items():
+            if request_id in self._decision_waits:
+                continue
+            try:
+                self._decision_waits[request_id] = UserDecisionWait(
+                    task_id=data["task_id"],
+                    input_request_id=data["input_request_id"],
+                    stage=data.get("stage", ""),
+                    action=data.get("action", ""),
+                    request_revision=int(data.get("request_revision", 1)),
+                    question=data.get("question", ""),
+                    permissible_answers=list(data.get("permissible_answers") or []),
+                    answered=bool(data.get("answered", False)),
+                    answer=data.get("answer"),
+                    created_at=float(data.get("created_at", time.time())),
+                )
+            except (KeyError, TypeError, ValueError):
+                # Corrupt entry — skip rather than crash the controller.
+                continue
+
+    def _persist_decision_wait(self, wait: UserDecisionWait) -> None:
+        """Persist a single UserDecisionWait to TaskManager metadata."""
+        task = self.tm.get_task(wait.task_id)
+        if not task:
+            return
+        waits = (task.metadata or {}).get("decision_waits") or {}
+        if not isinstance(waits, dict):
+            waits = {}
+        waits[wait.input_request_id] = {
+            "task_id": wait.task_id,
+            "input_request_id": wait.input_request_id,
+            "stage": wait.stage,
+            "action": wait.action,
+            "request_revision": wait.request_revision,
+            "question": wait.question,
+            "permissible_answers": list(wait.permissible_answers),
+            "answered": wait.answered,
+            "answer": wait.answer,
+            "created_at": wait.created_at,
+        }
+        task.metadata["decision_waits"] = waits
+        # Reuse TaskManager's atomic save path.
+        self.tm._save()  # noqa: SLF001 — same owner, intentional reach-in
+
     def request_user_decision(
         self, task_id: str, question: str, permissible_answers: list[str] | None = None
     ) -> str:
@@ -280,6 +337,7 @@ class OneShotController:
             permissible_answers=permissible_answers or [],
         )
         self._decision_waits[request_id] = wait
+        self._persist_decision_wait(wait)
         self.tm.interrupt(
             task_id,
             {
@@ -293,6 +351,9 @@ class OneShotController:
 
     def provide_user_decision(self, task_id: str, input_request_id: str, answer: str) -> bool:
         """Provide an answer to a pending user-decision wait."""
+        # Hydrate the in-memory cache from TaskManager so a fresh
+        # process can answer a wait persisted in a prior run.
+        self._load_decision_waits(task_id)
         wait = self._decision_waits.get(input_request_id)
         if not wait or wait.task_id != task_id:
             return False
@@ -306,11 +367,17 @@ class OneShotController:
             return False  # Invalid answer
         wait.answered = True
         wait.answer = answer
+        self._persist_decision_wait(wait)
         self.tm.resume(task_id)
         return True
 
     def has_pending_decision(self, task_id: str) -> UserDecisionWait | None:
-        """Check if a task has a pending user-decision wait."""
+        """Check if a task has a pending user-decision wait.
+
+        Hydrates from TaskManager metadata so a fresh controller still
+        sees waits persisted in a prior run (audit item 01.6).
+        """
+        self._load_decision_waits(task_id)
         for w in self._decision_waits.values():
             if w.task_id == task_id and not w.answered:
                 return w
@@ -1588,6 +1655,38 @@ def main() -> int:
     sub.add_parser("list", help="List all tasks")
     sub.add_parser("capabilities", help="List registered capabilities")
 
+    rn = sub.add_parser(
+        "run",
+        help="Execute the full Research→Plan→Build workflow for a request",
+    )
+    rn.add_argument(
+        "--request-file",
+        required=True,
+        type=Path,
+        help="UTF-8 file containing the task request / objective text.",
+    )
+    rn.add_argument(
+        "--storage",
+        type=Path,
+        default=Path("/tmp/oneshot_tasks.json"),
+        help="TaskManager storage path (JSON).",
+    )
+    rn.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Workspace root used for Research / Scanner / Build evidence.",
+    )
+    rn.add_argument(
+        "--bundle",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON file whose contents are passed as input_bundle to "
+            "the controller. Used by the five-scenario acceptance suite."
+        ),
+    )
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -1624,6 +1723,32 @@ def main() -> int:
         caps = ctrl.registry.list_capabilities()
         print(json.dumps([asdict(c) for c in caps], indent=2))
         return 0
+
+    if args.command == "run":
+        request_text = args.request_file.read_text(encoding="utf-8").strip()
+        bundle = None
+        if args.bundle is not None:
+            bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+        result = ctrl.run_workflow(
+            request_text,
+            str(args.repo_root),
+            storage_path=str(args.storage),
+            input_bundle=bundle,
+        )
+        # Serialise only the top-level status fields by default; dump the
+        # full generated records when they fit. Records live in result for
+        # callers that imported run_workflow directly.
+        summary = {
+            "task_id": result.get("task_id"),
+            "classification": result.get("classification"),
+            "stage": result.get("stage"),
+            "errors": result.get("errors") or [],
+            "cross_record_errors": result.get("cross_record_errors") or [],
+            "all_pass": result.get("all_pass"),
+            "color": result.get("color"),
+        }
+        print(json.dumps(summary, indent=2, default=str))
+        return 0 if result.get("classification") == "VERIFIED" else 1
 
     return 0
 
