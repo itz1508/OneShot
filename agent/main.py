@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -67,6 +68,55 @@ try:
     _PYDANTIC_AVAILABLE = True
 except ImportError:
     _PYDANTIC_AVAILABLE = False
+
+
+# G08 — trusted-test bundle fields.
+#
+# `input_bundle` is the test-harness seam. Four fields
+#   * `gap_findings`
+#   * `gap_findings_mark_resolved`
+#   * `accepted_milestone_ids`
+#   * `accepted_criterion_ids`
+# can supply trusted Plan resolution that would normally come from the
+# real workflow. Production invocations must not carry them; only test
+# runs that explicitly set `ONESHOT_TRUSTED_TEST_INPUT=1` may use them.
+# When the gate is off and these fields appear in a bundle, they are
+# ignored and recorded in `self._last_dropped_bundle_fields`.
+_TRUSTED_TEST_FIELDS = frozenset(
+    [
+        "gap_findings",
+        "gap_findings_mark_resolved",
+        "accepted_milestone_ids",
+        "accepted_criterion_ids",
+    ]
+)
+
+
+def _trusted_test_input_enabled() -> bool:
+    """Return True when the trusted-test-input bundle fields are
+    permitted (env `ONESHOT_TRUSTED_TEST_INPUT=1`). Read at call
+    time, not at import, so tests can monkeypatch the environment.
+    """
+    return os.environ.get("ONESHOT_TRUSTED_TEST_INPUT") == "1"
+
+
+def _sanitise_input_bundle(bundle):
+    """Drop trusted-test-input fields from a bundle when the gate is off.
+
+    Returns (sanitised_bundle, dropped_field_names).
+    """
+    if bundle is None:
+        return None, []
+    if _trusted_test_input_enabled():
+        return bundle, []
+    dropped: list[str] = []
+    clean: dict = {}
+    for key, value in bundle.items():
+        if key in _TRUSTED_TEST_FIELDS:
+            dropped.append(key)
+            continue
+        clean[key] = value
+    return clean, dropped
 
 
 def _pydantic_errors(record, model_class, stage):
@@ -215,6 +265,7 @@ class OneShotController:
     """Single workflow controller — routing, transitions, continuation."""
 
     def __init__(self, storage_path: str | None = None):
+        self._last_dropped_bundle_fields: list[str] = []
         self.tm = TaskManager(storage_path=storage_path or "/tmp/oneshot_tasks.json")
         self.registry = CapabilityRegistry()
         self._decision_waits: dict[str, UserDecisionWait] = {}
@@ -540,6 +591,9 @@ class OneShotController:
     # ------------------------------------------------------------------
 
     def research_plan(self, task_id, objective, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Research: inspect source, gather evidence, validate."""
         import hashlib
         import subprocess
@@ -578,7 +632,9 @@ class OneShotController:
             "agent/contracts/plan.yaml",
             "agent/contracts/build.yaml",
             "agent/main.py",
+            "agent/gap_analysis.py",
             "bin/context_counter.py",
+            "bin/sqlite_effect_runner.py",
         ]:
             if key_file not in ev_idx:
                 kf = root / key_file
@@ -793,6 +849,9 @@ class OneShotController:
         return {"record": research, "errors": errors2, "evidence_index": ev_idx}
 
     def review_research_plan(self, task_id, research, evidence_index, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Plan: create Plan record from accepted Research."""
         from datetime import datetime, timezone
         from pathlib import Path
@@ -1095,9 +1154,63 @@ class OneShotController:
         scanner_receipt["findings_ref"] = "AGENTS.md"
 
         unresolved = [f for f in gap_findings if f["type"] == "missing"]
+        # G05: run the eight-category capability preflight BEFORE
+        # constructing plan.gap_analysis. Receipt is appended to
+        # scanner_calls and the result influences the status/findings
+        # the actual gap_analysis emits.
+        preflight_receipt = None
+        try:
+            from gap_analysis import CapabilityPreflight
+
+            _preflight = CapabilityPreflight(scanner_source_path=root / "agent" / "gap_analysis.py")
+            _pf_result = _preflight.run()
+            preflight_receipt = {
+                "at": now,
+                "tool_ref": "agent/gap_analysis.py",
+                "method": "capability_preflight",
+                "host_scanner": "capability-chaos-8",
+                "scope_ref": "AGENTS.md",
+                "scanner_identity": _pf_result.scanner_identity,
+                "input_revision": plan["revision"],
+                "aggregate_verdict": _pf_result.aggregate_verdict,
+                "invalid_categories": [c.category for c in _pf_result.invalid_categories],
+                "not_validated_categories": [
+                    c.category for c in _pf_result.not_validated_categories
+                ],
+                "coverage_complete": _pf_result.coverage_complete,
+                "limitations": list(_pf_result.limitations),
+                "receipt_ref": "AGENTS.md",
+                "findings_ref": "AGENTS.md",
+                "outcome": "passed" if _pf_result.can_proceed else "partial",
+            }
+        except Exception as _preflight_exc:  # noqa: BLE001 — recorded, not swallowed
+            preflight_receipt = {
+                "at": now,
+                "tool_ref": "agent/gap_analysis.py",
+                "method": "capability_preflight",
+                "host_scanner": "capability-chaos-8",
+                "scope_ref": "AGENTS.md",
+                "scanner_identity": "",
+                "input_revision": plan["revision"],
+                "aggregate_verdict": "not_validated",
+                "invalid_categories": [],
+                "not_validated_categories": [],
+                "coverage_complete": False,
+                "limitations": [
+                    f"preflight raised {type(_preflight_exc).__name__}: {_preflight_exc}"
+                ],
+                "receipt_ref": "AGENTS.md",
+                "findings_ref": "AGENTS.md",
+                "outcome": "partial",
+            }
+
         plan["gap_analysis"] = {
             "status": "resolved" if not unresolved else "findings_open",
-            "scanner_calls": [scanner_receipt, comparison_receipt],
+            "scanner_calls": (
+                [preflight_receipt, scanner_receipt, comparison_receipt]
+                if preflight_receipt is not None
+                else [scanner_receipt, comparison_receipt]
+            ),
             "findings": gap_findings,
             "unresolved_critical_ids": [f["id"] for f in unresolved],
             "last_recheck_ref": "AGENTS.md",
@@ -1272,6 +1385,9 @@ class OneShotController:
         return {"record": plan, "errors": errors}
 
     def build_plan(self, task_id, plan, evidence_index, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Build: run context_counter.py, capture receipts, validate."""
         import subprocess
         import sys

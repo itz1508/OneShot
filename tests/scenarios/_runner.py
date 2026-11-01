@@ -78,6 +78,10 @@ def _record_assertion(result: ScenarioResult, name: str, ok: bool, detail: str) 
 
 def run_scenario(name: str, scenario: dict[str, Any]) -> ScenarioResult:
     """Execute one scenario end-to-end and return a verdict."""
+    # Scenario harness is the designated trusted-test-input seam
+    # (G08). Flip the env flag so the controller accepts bundle fields
+    # like `gap_findings_mark_resolved` that production refuses.
+    os.environ["ONESHOT_TRUSTED_TEST_INPUT"] = "1"
     repo_root = str(_REPO_ROOT)
     storage_dir = tempfile.mkdtemp(prefix=f"oneshot-{name}-")
     storage_path = os.path.join(storage_dir, "tasks.json")
