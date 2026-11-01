@@ -117,28 +117,31 @@ tm.set_task_metadata("t1", rec.metadata, if_revision=1)
 
 
 class CorruptSnapshotRecoveryTest(unittest.TestCase):
-    def test_truncated_json_does_not_crash_load(self):
-        """A partial write must not permanently lock the store.
+    def test_truncated_json_raises_corrupt_store_error_by_default(self):
+        """G11 reopen (second concern): a corrupt snapshot must FAIL
+        CLOSED by default rather than silently continue with an empty
+        store (which was equivalent to losing durable history)."""
+        from task_management import CorruptStoreError
 
-        The §2 contract says 'explicit recovery on corrupt/partial
-        snapshots'. Baseline crashes with a json.JSONDecodeError.
-        """
         with tempfile.TemporaryDirectory(prefix="g11-corrupt-") as td:
             storage = Path(td) / "tasks.json"
-            # Simulate half-written file.
             storage.write_text('{"t": {"task_id": "t", "state": "pending"')
-            # TaskManager must either recover or raise a *typed* and
-            # *recoverable* error — not a bare JSONDecodeError that
-            # bubbles to the caller.
-            try:
-                tm = TaskManager(storage_path=str(storage))
-                # If it recovered, there must be some tasks dict + an
-                # on-disk backup of the corrupt bytes.
-                self.assertIsInstance(tm._tasks, dict)
-            except Exception as exc:
-                # Accept a typed recoverable error — but not a raw
-                # json error.
-                self.assertNotIsInstance(exc, json.JSONDecodeError, type(exc).__name__)
+            with self.assertRaises(CorruptStoreError):
+                TaskManager(storage_path=str(storage))
+            quarantined = list(Path(td).glob("tasks.json.corrupt-*"))
+            self.assertEqual(len(quarantined), 1)
+            self.assertFalse(storage.exists())
+
+    def test_allow_corrupt_opt_in_still_recovers_safely(self):
+        """Callers that genuinely need to continue (fresh install,
+        tooling that treats corrupt as empty) MUST explicitly opt in."""
+        with tempfile.TemporaryDirectory(prefix="g11-corrupt-ok-") as td:
+            storage = Path(td) / "tasks.json"
+            storage.write_text('{"t": {"task_id": "t", "state": "pending"')
+            tm = TaskManager(storage_path=str(storage), allow_corrupt=True)
+            self.assertEqual(tm._tasks, {})
+            quarantined = list(Path(td).glob("tasks.json.corrupt-*"))
+            self.assertEqual(len(quarantined), 1)
 
 
 class DecisionWaitPublicApiTest(unittest.TestCase):
@@ -159,3 +162,61 @@ class DecisionWaitPublicApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MetadataMergePolicyTest(unittest.TestCase):
+    """G11 reopen (first concern): transition() must not merge stale
+    in-memory metadata OVER a newer committed value. Only keys that are
+    new to the in-memory record may be added; existing keys stay with
+    the on-disk value."""
+
+    def test_stale_in_memory_metadata_does_not_overwrite_committed(self):
+        with tempfile.TemporaryDirectory(prefix="g11-merge-") as td:
+            storage = Path(td) / "tasks.json"
+            # Writer A creates the task with v=1 and holds a reference.
+            tm_a = TaskManager(storage_path=str(storage))
+            tm_a.create_task(task_id="t1", metadata={"owner": "A", "revision": 1})
+
+            # Writer B (new process on same storage) advances the task.
+            import subprocess
+
+            code_b = f"""
+import sys
+sys.path.insert(0, {str(_REPO / "tools")!r})
+from task_management import TaskManager
+tm = TaskManager(storage_path={str(storage)!r})
+tm.set_task_metadata('t1', {{'owner':'B','revision':2}}, if_revision=1)
+"""
+            proc = subprocess.run([sys.executable, "-c", code_b], capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            # Now writer A performs a transition. Baseline (before fix)
+            # would merge its stale metadata ({'owner':'A','revision':1})
+            # OVER the newer committed state. The new policy keeps the
+            # committed values and only adds brand-new keys.
+            tm_a.transition("t1", "running", detail="A transition after stale read")
+
+            # Open a fresh reader to see what was actually persisted.
+            tm_fresh = TaskManager(storage_path=str(storage))
+            rec = tm_fresh.get_task("t1")
+            self.assertEqual(rec.metadata["owner"], "B")
+            self.assertEqual(rec.metadata["revision"], 2)
+
+    def test_new_in_memory_metadata_keys_are_preserved_across_reload(self):
+        """The merge still ADDS keys that are new in the in-memory
+        record (controller's 'stage' write pattern)."""
+        with tempfile.TemporaryDirectory(prefix="g11-merge-new-") as td:
+            storage = Path(td) / "tasks.json"
+            tm = TaskManager(storage_path=str(storage))
+            tm.create_task(task_id="t1", metadata={"owner": "A"})
+            rec = tm.get_task("t1")
+            # Simulate the controller's "mutate task.metadata then call
+            # transition" pattern: add a new key in memory.
+            rec.metadata["stage"] = "plan"
+            tm.transition("t1", "running", detail="plan stage")
+
+            # The new key must still be present after the write.
+            tm_fresh = TaskManager(storage_path=str(storage))
+            self.assertEqual(tm_fresh.get_task("t1").metadata.get("stage"), "plan")
+            # And the pre-existing key is unchanged.
+            self.assertEqual(tm_fresh.get_task("t1").metadata.get("owner"), "A")

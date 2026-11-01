@@ -160,20 +160,33 @@ class TaskManager:
     snapshot and release it after atomically replacing the file.
     """
 
-    def __init__(self, storage_path: str | None = None):
+    def __init__(
+        self,
+        storage_path: str | None = None,
+        *,
+        allow_corrupt: bool = False,
+    ):
         self.storage_path = (
             Path(storage_path)
             if storage_path
             else Path(tempfile.gettempdir()) / "oneshot_tasks.json"
         )
         self._tasks: dict[str, TaskRecord] = {}
+        self._allow_corrupt = allow_corrupt
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
         self._load_safely()
 
     # ----- load / save ------------------------------------------------------
 
     def _load_safely(self) -> None:
-        """Load the on-disk snapshot; recover from a corrupt file."""
+        """Load the on-disk snapshot.
+
+        G11 contract: a corrupt file is QUARANTINED and raises
+        CorruptStoreError by default. Callers that genuinely need to
+        continue with an empty store MUST pass `allow_corrupt=True` to
+        the constructor; the previously-silent recovery is no longer the
+        default because it was equivalent to silent task-history loss.
+        """
         if not self.storage_path.exists():
             return
         try:
@@ -182,15 +195,18 @@ class TaskManager:
             for tid, rec in data.items():
                 self._tasks[tid] = TaskRecord(**rec)
         except (json.JSONDecodeError, TypeError, KeyError) as exc:
-            # Move the broken file aside so a human can inspect it. Start
-            # with an empty store rather than crashing the controller.
+            # Quarantine the broken snapshot so a human can inspect it.
             corrupt = self.storage_path.with_suffix(f".json.corrupt-{int(time.time())}")
             with suppress(OSError):
                 shutil.move(str(self.storage_path), str(corrupt))
-            # Leave _tasks empty; log via a sentinel file so future
-            # readers can tell. Do NOT raise — the public __init__
-            # contract must stay resilient.
-            _ = exc  # explicit no-op to document the swallow
+            if not getattr(self, "_allow_corrupt", False):
+                raise CorruptStoreError(
+                    f"on-disk snapshot {self.storage_path} is corrupt and was "
+                    f"quarantined to {corrupt} ({type(exc).__name__}: {exc}). "
+                    "Pass allow_corrupt=True to continue with an empty store."
+                ) from exc
+            # Opt-in fail-safe path: continue with an empty store.
+            self._tasks = {}
 
     def _save(self) -> None:
         """Atomically persist the in-memory store under an exclusive lock."""
@@ -299,8 +315,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             if preserved_checkpoint:
                 rec.checkpoint = preserved_checkpoint
@@ -334,8 +357,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             rec.checkpoint = checkpoint
             rec.updated_at = time.time()
@@ -354,8 +384,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             rec.results = results
             rec.updated_at = time.time()
@@ -406,8 +443,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             rec.checkpoint = checkpoint
             rec.updated_at = time.time()
@@ -434,8 +478,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             from_state = rec.state
             rec.results = results
@@ -462,8 +513,15 @@ class TaskManager:
             if rec is None:
                 raise KeyError(f"Task {task_id} not found")
             if preserved_metadata is not None:
+                # G11 — only ADD keys that are new to the in-memory
+                # record; keep every value that is already committed
+                # on disk. Explicit updates to an existing key must go
+                # through set_task_metadata(if_revision=...) so stale
+                # writers cannot silently overwrite committed state.
                 merged = dict(rec.metadata)
-                merged.update(preserved_metadata)
+                for _k, _v in preserved_metadata.items():
+                    if _k not in merged:
+                        merged[_k] = _v
                 rec.metadata = merged
             from_state = rec.state
             rec.state = TaskState.FAILED.value

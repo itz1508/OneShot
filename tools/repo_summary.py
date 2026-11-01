@@ -238,10 +238,8 @@ class RepoSummaryTool:
         lines.append(f"{'-' * 45} {'-' * 20} {'-' * 10} {'-' * 6}")
         for entry in summary.gap_matrix:
             lines.append(
-
-                    f"{entry['area']:<45} {entry['current_state']:<20} "
-                    f"{entry['action']:<10} {entry['color_eval']}"
-
+                f"{entry['area']:<45} {entry['current_state']:<20} "
+                f"{entry['action']:<10} {entry['color_eval']}"
             )
 
         lines.extend(["", f"Available Tools ({len(summary.available_tools)}):"])

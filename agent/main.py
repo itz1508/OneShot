@@ -302,12 +302,22 @@ class OneShotController:
         return str(task.task_id)
 
     def transition_stage(self, task_id: str, to_stage: WorkflowStage, detail: str = "") -> None:
-        """Transition task to a new workflow stage."""
+        """Transition task to a new workflow stage.
+
+        Uses the TaskManager's public `set_task_metadata` API so the
+        stage update is an EXPLICIT revision-safe write rather than an
+        in-memory mutation that relies on save_checkpoint merging it.
+        G11 reopen: the merge path now only adds brand-new metadata
+        keys, so intentional updates to existing keys must go through
+        this public API.
+        """
         task = self.tm.get_task(task_id)
         if not task:
             raise KeyError(f"Task {task_id} not found")
-        task.metadata["stage"] = to_stage.value
-        task.metadata["stage_entered_at"] = time.time()
+        updated_metadata = dict(task.metadata or {})
+        updated_metadata["stage"] = to_stage.value
+        updated_metadata["stage_entered_at"] = time.time()
+        self.tm.set_task_metadata(task_id, updated_metadata)
         self.tm.save_checkpoint(task_id, {"stage": to_stage.value, "detail": detail})
         self.tm.transition(
             task_id, TaskState.RUNNING, detail=f"Stage -> {to_stage.value}: {detail}"
@@ -1184,10 +1194,13 @@ class OneShotController:
 
         unresolved = [f for f in gap_findings if f["type"] == "missing"]
         # G05: run the eight-category capability preflight BEFORE
-        # constructing plan.gap_analysis. Receipt is appended to
-        # scanner_calls and the result influences the status/findings
-        # the actual gap_analysis emits.
+        # constructing plan.gap_analysis. The result is folded into
+        # scanner_calls as a receipt AND into findings as critical gap
+        # findings per invalid / not-validated category so the Plan
+        # cannot reach 'resolved' with a failing preflight.
         preflight_receipt = None
+        preflight_findings: list[dict] = []
+        preflight_blocks_plan = False
         try:
             from gap_analysis import CapabilityPreflight
 
@@ -1212,6 +1225,36 @@ class OneShotController:
                 "findings_ref": "AGENTS.md",
                 "outcome": "passed" if _pf_result.can_proceed else "partial",
             }
+            if not _pf_result.can_proceed:
+                preflight_blocks_plan = True
+                for cat in _pf_result.invalid_categories:
+                    preflight_findings.append(
+                        {
+                            "id": f"preflight-invalid-{cat.category}",
+                            "type": "missing",
+                            "path": "agent/gap_analysis.py",
+                            "finding": f"preflight category {cat.category!r} is INVALID",
+                            "status": "open",
+                            "severity": "critical",
+                            "evidence_ref": "AGENTS.md",
+                            "fix_receipt_ref": None,
+                            "recheck_ref": None,
+                        }
+                    )
+                for cat in _pf_result.not_validated_categories:
+                    preflight_findings.append(
+                        {
+                            "id": f"preflight-not-validated-{cat.category}",
+                            "type": "missing",
+                            "path": "agent/gap_analysis.py",
+                            "finding": (f"preflight category {cat.category!r} is NOT_VALIDATED"),
+                            "status": "open",
+                            "severity": "critical",
+                            "evidence_ref": "AGENTS.md",
+                            "fix_receipt_ref": None,
+                            "recheck_ref": None,
+                        }
+                    )
         except Exception as _preflight_exc:  # noqa: BLE001 — recorded, not swallowed
             preflight_receipt = {
                 "at": now,
@@ -1232,16 +1275,35 @@ class OneShotController:
                 "findings_ref": "AGENTS.md",
                 "outcome": "partial",
             }
+            preflight_blocks_plan = True
+            preflight_findings.append(
+                {
+                    "id": "preflight-exception",
+                    "type": "missing",
+                    "path": "agent/gap_analysis.py",
+                    "finding": (
+                        f"preflight raised {type(_preflight_exc).__name__}: {_preflight_exc}"
+                    ),
+                    "status": "open",
+                    "severity": "critical",
+                    "evidence_ref": "AGENTS.md",
+                    "fix_receipt_ref": None,
+                    "recheck_ref": None,
+                }
+            )
 
+        _plan_blocked = bool(unresolved) or preflight_blocks_plan
         plan["gap_analysis"] = {
-            "status": "resolved" if not unresolved else "findings_open",
+            "status": "findings_open" if _plan_blocked else "resolved",
             "scanner_calls": (
                 [preflight_receipt, scanner_receipt, comparison_receipt]
                 if preflight_receipt is not None
                 else [scanner_receipt, comparison_receipt]
             ),
-            "findings": gap_findings,
-            "unresolved_critical_ids": [f["id"] for f in unresolved],
+            "findings": gap_findings + preflight_findings,
+            "unresolved_critical_ids": (
+                [f["id"] for f in unresolved] + [f["id"] for f in preflight_findings]
+            ),
             "last_recheck_ref": "AGENTS.md",
         }
         # M5: Pre-Build fixture validation using FixtureRegistry
