@@ -55,7 +55,7 @@ def _tracked(root: Path, *, include_untracked: bool = False) -> list[str]:
     result = subprocess.run(command, capture_output=True, check=False, timeout=30)
     if result.returncode:
         raise ScanError("git ls-files failed: " + result.stderr.decode("utf-8", "replace"))
-    return sorted(set(v.decode("utf-8") for v in result.stdout.split(b"\0") if v))
+    return sorted({v.decode("utf-8") for v in result.stdout.split(b"\0") if v})
 
 
 def _digest(data: bytes) -> str:
@@ -65,7 +65,7 @@ def _digest(data: bytes) -> str:
 def scan_filesystems(repo_root: str | Path, *, include_untracked: bool = False) -> dict[str, Any]:
     """Inventory Git-visible files without reading through symlinks or writing."""
     root = _root(repo_root)
-    files = []
+    files: list[dict[str, Any]] = []
     for relative in _tracked(root, include_untracked=include_untracked):
         try:
             path = _path(root, relative)
@@ -85,8 +85,12 @@ def _rules(rules: list[dict[str, Any]]) -> list[tuple[str, re.Pattern[str], str]
         name = rule.get("name")
         expression = rule.get("pattern")
         replacement = rule.get("replacement")
-        if not all(isinstance(x, str) and x for x in (name, expression)) or not isinstance(
-            replacement, str
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(expression, str)
+            or not expression
+            or not isinstance(replacement, str)
         ):
             raise ScanError("each rule needs nonempty name/pattern and string replacement")
         try:
@@ -112,7 +116,7 @@ def _selected(root: Path, paths: list[str] | None, include_untracked: bool) -> l
 
 
 def _matches(text: str, rules: list[tuple[str, re.Pattern[str], str]]) -> list[dict[str, Any]]:
-    hits = []
+    hits: list[dict[str, Any]] = []
     for name, pattern, replacement in rules:
         for match in pattern.finditer(text):
             start, end = match.span()
@@ -124,7 +128,7 @@ def _matches(text: str, rules: list[tuple[str, re.Pattern[str], str]]) -> list[d
                 "column": start - (text.rfind("\n", 0, start) + 1) + 1,
             })
     hits.sort(key=lambda h: (h["start"], h["end"], h["name"]))
-    for previous, current in zip(hits, hits[1:]):
+    for previous, current in zip(hits, hits[1:], strict=False):
         if current["start"] < previous["end"]:
             raise ScanError(f"overlapping replacements: {previous['name']} / {current['name']}")
     return hits
