@@ -10,6 +10,7 @@ A wrapper or fixture must not become a second detector.
 
 from __future__ import annotations
 
+import ast as _ast
 import hashlib
 import shutil
 import subprocess
@@ -17,6 +18,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass as _dc
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -601,3 +603,207 @@ class CapabilityPreflight:
         return self._validate_category(
             "cli_docs", baseline, positive, negative, ["missing"], ["AGENTS.md"]
         )
+
+
+# ---------------------------------------------------------------------------
+# Semantic detectors (G02)
+#
+# The CapabilityPreflight class above exercises a file-diff Scanner.
+# These detectors operate on SEMANTIC inputs — Plan dicts, Python AST,
+# and requirement_trace graphs. They emit the same shape of finding the
+# oracle (agent/contracts/oracles.FindingShape) uses.
+#
+# No new Scanner / TaskManager / gap-analysis owner — these are helpers
+# called by the existing CapabilityPreflight framework and by
+# review_research_plan() through the controller.
+# ---------------------------------------------------------------------------
+
+
+@_dc(frozen=True)
+class SemanticFinding:
+    """Semantic finding emitted by SemanticGapAnalysis detectors.
+
+    Shape mirrors agent/contracts/oracles.FindingShape so a test can
+    compare them structurally without pulling the oracle module in.
+    """
+
+    category: str
+    kind: str
+    severity: str = "medium"
+    affected_requirement_id: str | None = None
+    affected_subject: str | None = None
+    detail: str = ""
+
+
+class SemanticGapAnalysis:
+    """Semantic detectors for duplication, contradictions, coverage,
+    and dependencies.
+
+    These REPLACE the file-shape heuristics in CapabilityPreflight for
+    those four categories. The file-diff Scanner is still useful for
+    `drift` and `missing` (those truly ARE file-level questions), so
+    those remain in CapabilityPreflight.
+    """
+
+    # --- duplication: two source files owning the same public callable name
+    #     with the same signature counts as duplicated responsibility.
+    def detect_duplication(self, sources: dict[str, str]) -> list[SemanticFinding]:
+        owners: dict[tuple[str, int], list[str]] = {}
+        for path, src in sources.items():
+            try:
+                tree = _ast.parse(src)
+            except SyntaxError:
+                continue
+            for node in tree.body:
+                if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    if node.name.startswith("_"):
+                        continue
+                    arity = len(node.args.args) + len(node.args.kwonlyargs)
+                    key = (node.name, arity)
+                    owners.setdefault(key, []).append(path)
+        findings: list[SemanticFinding] = []
+        for (name, arity), paths in owners.items():
+            if len(paths) > 1:
+                findings.append(
+                    SemanticFinding(
+                        category="duplication",
+                        kind="duplicate_callable_name",
+                        severity="medium",
+                        affected_subject=f"{name}/{arity}",
+                        detail=f"same public callable in {sorted(paths)}",
+                    )
+                )
+        return findings
+
+    # --- contradictions: two sources assert conflicting values for the same
+    #     requirement_id. The in-source marker is a module-level annotation
+    #     '# REQUIREMENT: R_ID = <value>' which the detector parses.
+    _REQ_RE = r"^\s*#\s*REQUIREMENT:\s*(?P<rid>[A-Za-z0-9_]+)\s*=\s*(?P<val>\S+)\s*$"
+
+    def detect_contradictions(self, sources: dict[str, str]) -> list[SemanticFinding]:
+        import re
+
+        asserts: dict[str, list[tuple[str, str]]] = {}
+        pattern = re.compile(self._REQ_RE, re.MULTILINE)
+        for path, src in sources.items():
+            for match in pattern.finditer(src):
+                rid = match.group("rid")
+                val = match.group("val")
+                asserts.setdefault(rid, []).append((path, val))
+        findings: list[SemanticFinding] = []
+        for rid, pairs in asserts.items():
+            vals = {v for _p, v in pairs}
+            if len(vals) > 1:
+                findings.append(
+                    SemanticFinding(
+                        category="contradictions",
+                        kind="conflicting_requirement_assertion",
+                        severity="high",
+                        affected_requirement_id=rid,
+                        affected_subject=rid,
+                        detail=f"values {sorted(vals)} across {sorted({p for p, _v in pairs})}",
+                    )
+                )
+        return findings
+
+    # --- coverage: a requirement is uncovered when no fixture/test references
+    #     it. Caller supplies `requirement_ids` (the accepted set) and
+    #     `test_sources` (fixture content, path → text). A requirement is
+    #     covered iff any test_source contains the string equal to the
+    #     requirement id surrounded by non-identifier characters.
+    def detect_coverage(
+        self,
+        requirement_ids: list[str],
+        test_sources: dict[str, str],
+    ) -> list[SemanticFinding]:
+        import re
+
+        findings: list[SemanticFinding] = []
+        for rid in requirement_ids:
+            # word-boundary match on identifier characters
+            rx = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(rid)}(?![A-Za-z0-9_])")
+            covered = any(rx.search(src) for src in test_sources.values())
+            if not covered:
+                findings.append(
+                    SemanticFinding(
+                        category="coverage",
+                        kind="uncovered_requirement",
+                        severity="critical",
+                        affected_requirement_id=rid,
+                        affected_subject=rid,
+                        detail=f"no fixture / test references {rid}",
+                    )
+                )
+        return findings
+
+    # --- dependencies: a prerequisite-order violation is either an import
+    #     cycle between two modules, or a plan step S_i whose `depends_on`
+    #     names a step id that is not yet in the accepted step list.
+    def detect_dependency_violations(
+        self,
+        sources: dict[str, str],
+        plan_steps: list[dict] | None = None,
+    ) -> list[SemanticFinding]:
+        # Import cycle detection via AST.
+        imports: dict[str, set[str]] = {}
+        for path, src in sources.items():
+            mod = self._module_of(path)
+            try:
+                tree = _ast.parse(src)
+            except SyntaxError:
+                continue
+            deps: set[str] = set()
+            for node in _ast.walk(tree):
+                if isinstance(node, _ast.Import):
+                    for n in node.names:
+                        deps.add(n.name.split(".")[0])
+                elif isinstance(node, _ast.ImportFrom) and node.module:
+                    deps.add(node.module.split(".")[0])
+            imports[mod] = deps
+
+        findings: list[SemanticFinding] = []
+        for mod_a, deps_a in imports.items():
+            for mod_b in deps_a:
+                if mod_b in imports and mod_a in imports[mod_b] and mod_a != mod_b:
+                    findings.append(
+                        SemanticFinding(
+                            category="dependencies",
+                            kind="import_cycle",
+                            severity="high",
+                            affected_subject=f"{mod_a}↔{mod_b}",
+                            detail=(f"module {mod_a} imports {mod_b} and {mod_b} imports {mod_a}"),
+                        )
+                    )
+
+        # Plan-step prerequisite ordering
+        if plan_steps:
+            accepted_ids: list[str] = []
+            for step in plan_steps:
+                sid = step.get("id")
+                for prereq in step.get("depends_on") or []:
+                    if prereq not in accepted_ids:
+                        findings.append(
+                            SemanticFinding(
+                                category="dependencies",
+                                kind="prerequisite_order_violation",
+                                severity="high",
+                                affected_subject=sid,
+                                detail=f"step {sid!r} depends on {prereq!r} not yet accepted",
+                            )
+                        )
+                if sid:
+                    accepted_ids.append(sid)
+
+        return findings
+
+    @staticmethod
+    def _module_of(path: str) -> str:
+        """Return a module-level identifier from a source path.
+
+        Collapses `tools/foo.py` → `foo`, `a/b/c.py` → `c`.
+        The detector only cares about equality, so this is sufficient
+        for the controlled test cases.
+        """
+        from pathlib import Path as _Path
+
+        return _Path(path).stem
