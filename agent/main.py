@@ -1824,10 +1824,23 @@ class OneShotController:
             "all_pass": all_pass,
         }
 
-    def run_workflow(self, objective, repo_root, storage_path=None, input_bundle=None):
+    def run_workflow(
+        self,
+        objective,
+        repo_root,
+        storage_path=None,
+        input_bundle=None,
+        existing_task_id=None,
+    ):
         """Execute full Research -> Plan -> Build with SHA-256 evidence resolver."""
         ctrl = OneShotController(storage_path=storage_path or "/tmp/oneshot_workflow.json")
-        tid = ctrl.start_task(objective)
+        if existing_task_id:
+            if ctrl.tm.get_task(existing_task_id) is None:
+                raise KeyError(f"existing_task_id={existing_task_id!r} not found in storage")
+            tid = existing_task_id
+            ctrl.tm.transition(tid, "running", detail=f"continue: {objective}")
+        else:
+            tid = ctrl.start_task(objective)
 
         r_result = ctrl.research_plan(tid, objective, repo_root, input_bundle=input_bundle)
         if r_result["errors"]:
@@ -1949,6 +1962,19 @@ def main() -> int:
         ),
     )
 
+    cn = sub.add_parser(
+        "continue",
+        help=(
+            "Re-run the full workflow against an EXISTING task_id "
+            "(G09 — same-task BAD → correction → GOOD)."
+        ),
+    )
+    cn.add_argument("--task-id", required=True, help="Existing task_id to continue.")
+    cn.add_argument("--request-file", required=True, type=Path)
+    cn.add_argument("--storage", type=Path, default=Path("/tmp/oneshot_tasks.json"))
+    cn.add_argument("--repo-root", type=Path, default=Path.cwd())
+    cn.add_argument("--bundle", type=Path, default=None)
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
@@ -2000,6 +2026,30 @@ def main() -> int:
         # Serialise only the top-level status fields by default; dump the
         # full generated records when they fit. Records live in result for
         # callers that imported run_workflow directly.
+        summary = {
+            "task_id": result.get("task_id"),
+            "classification": result.get("classification"),
+            "stage": result.get("stage"),
+            "errors": result.get("errors") or [],
+            "cross_record_errors": result.get("cross_record_errors") or [],
+            "all_pass": result.get("all_pass"),
+            "color": result.get("color"),
+        }
+        print(json.dumps(summary, indent=2, default=str))
+        return 0 if result.get("classification") == "VERIFIED" else 1
+
+    if args.command == "continue":
+        request_text = args.request_file.read_text(encoding="utf-8").strip()
+        bundle = None
+        if args.bundle is not None:
+            bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+        result = ctrl.run_workflow(
+            request_text,
+            str(args.repo_root),
+            storage_path=str(args.storage),
+            input_bundle=bundle,
+            existing_task_id=args.task_id,
+        )
         summary = {
             "task_id": result.get("task_id"),
             "classification": result.get("classification"),
