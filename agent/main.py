@@ -296,14 +296,8 @@ class OneShotController:
                 continue
 
     def _persist_decision_wait(self, wait: UserDecisionWait) -> None:
-        """Persist a single UserDecisionWait to TaskManager metadata."""
-        task = self.tm.get_task(wait.task_id)
-        if not task:
-            return
-        waits = (task.metadata or {}).get("decision_waits") or {}
-        if not isinstance(waits, dict):
-            waits = {}
-        waits[wait.input_request_id] = {
+        """Persist a single UserDecisionWait via TaskManager's public API."""
+        payload = {
             "task_id": wait.task_id,
             "input_request_id": wait.input_request_id,
             "stage": wait.stage,
@@ -315,9 +309,12 @@ class OneShotController:
             "answer": wait.answer,
             "created_at": wait.created_at,
         }
-        task.metadata["decision_waits"] = waits
-        # Reuse TaskManager's atomic save path.
-        self.tm._save()  # noqa: SLF001 — same owner, intentional reach-in
+        try:
+            self.tm.set_decision_wait(wait.task_id, wait.input_request_id, payload)
+        except KeyError:
+            # Task vanished — swallow quietly; caller already handled
+            # the parent task's absence upstream.
+            return
 
     def request_user_decision(
         self, task_id: str, question: str, permissible_answers: list[str] | None = None
