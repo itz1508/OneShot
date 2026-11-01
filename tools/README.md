@@ -23,3 +23,4 @@ Reusable, pure-Python primitives used by `agent/main.py::OneShotController`. Eac
 ## Related
 
 - Provider abstraction lives in [`agent/providers/`](../agent/providers/) — unified request/response/capabilities, registry factory, and the deterministic `EchoAdapter` reference. See the [AGENTS.md Provider abstraction section](../AGENTS.md#provider-abstraction--one-unified-client-many-adapters) for the ownership rule and `UnsupportedCapabilityError` contract.
+- Prompt Authoring lives in [`agent/prompt_authoring/`](../agent/prompt_authoring/) — generates / evaluates / versions reusable prompts for the Research / Plan / Build roles. See the [AGENTS.md Prompt Authoring section](../AGENTS.md#prompt-authoring--development-capability-not-a-workflow-stage) for the status machine and ownership boundaries.

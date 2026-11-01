@@ -65,6 +65,16 @@ The eleven G01–G11 gap closures sit on top of the M-milestones. The acceptance
 - **G10** — VERIFIED requires `all_pass AND cross_record_errors == []`.
 - **G11** — durable, revision-safe `TaskManager`: portable file lock, atomic replace, fail-closed `CorruptStoreError` on every reload (initial AND mid-run), and public `set_decision_wait` / `set_task_metadata(if_revision=…)` CAS API.
 
+## Prompt Authoring
+
+Development capability (NOT a workflow stage) for generating, evaluating, revising, and versioning reusable prompts across the Research / Plan / Build roles. The pipeline is:
+
+```
+PromptSpec → PromptAuthor → PromptEvaluator (9 axes × fixtures) → PromptStore.activate
+```
+
+Prompts reuse the same `ProviderCapabilities` matrix as the provider abstraction, so a prompt cannot declare a capability the registry does not know how to express. See [`agent/prompt_authoring/`](agent/prompt_authoring/) and the ["Prompt Authoring" section in AGENTS.md](AGENTS.md#prompt-authoring--development-capability-not-a-workflow-stage) for the status machine, invariants, and ownership boundaries.
+
 ## Provider abstraction
 
 OneShot never hard-codes a vendor. Every model call routes through:

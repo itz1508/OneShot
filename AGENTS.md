@@ -271,6 +271,72 @@ response = ctrl.model_call(request)   # routes through self.client
 
 The default `OneShotController()` still works — `self.client` is `None` until a `provider_config` is supplied; `model_call(...)` raises `RuntimeError` instead of silently calling a default provider.
 
+## Prompt Authoring — development capability, not a workflow stage
+
+Prompt Authoring generates, evaluates, refines, and versions reusable prompt definitions for existing OneShot responsibilities. Nothing in the capability mutates runtime state. See [`agent/prompt_authoring/`](agent/prompt_authoring/) for the full module (`PromptAuthor`, `PromptEvaluator`, `PromptStore`, `PromptFixtureRegistry`) and its [README](agent/prompt_authoring/README.md) for usage and the ownership-boundary table.
+
+### Status machine
+
+```
+UNEVALUATED  → EVALUATED | BLOCKED
+BLOCKED      → EVALUATED
+EVALUATED    → ACTIVE | SUPERSEDED | ARCHIVED
+ACTIVE       → SUPERSEDED | ARCHIVED
+SUPERSEDED   → (terminal)
+ARCHIVED     → (terminal)
+```
+
+A revision NEVER jumps directly from `UNEVALUATED` to `ACTIVE`. Activation is `PromptStore.activate(prompt_id, revision, actor)`; it supersedes the current `ACTIVE` revision and appends an `AuditEntry`. History is never rewritten.
+
+### Required fields on every `PromptDefinition`
+
+`prompt_id`, `revision`, `content_digest`, `stage`, `owner`, `runtime_inputs`, `stable_instructions`, `required_capabilities`, `output_contract`, `evaluation_rules`, `recovery_behavior`, `fixture_refs`, `evaluation_receipt_ref`, `supersedes`, `status`.
+
+`content_digest` is sha-256 over the canonical serialisation of the STABLE fields only; fixture refs and evaluation receipts are not part of the digest, so reusing the same prompt against a new fixture set keeps the digest stable.
+
+`required_capabilities` is an `agent.providers.types.ProviderCapabilities` instance — the capability vocabulary is shared with the provider abstraction so a prompt cannot ask for something the registry does not know how to express.
+
+### Evaluation — nine axes, no silent downgrades
+
+`PromptEvaluator` runs every axis against every fixture:
+
+1. Instruction compliance
+2. Input / output contract compliance
+3. Evidence fidelity and traceability
+4. Unknown and uncertainty preservation
+5. Responsibility-boundary compliance
+6. Tool-selection accuracy (vendor-leak check — any mention of `openai`, `anthropic`, `claude`, `gpt-`, or a vendor endpoint in `stable_instructions` fails this axis)
+7. Recovery and failure behaviour
+8. Downstream artifact usability
+9. Regression against the accepted prompt
+
+**Any single FAIL on any axis collapses the whole receipt to `BLOCKED`.** The evaluator never infers success from schema compliance alone — the receipt lists each axis explicitly, and the `failures_by_axis` field names which axis failed and how many fixtures tripped it.
+
+### Ownership boundaries
+
+| Owner | Owns |
+| --- | --- |
+| **Prompt Authoring** | generation, template refinement, examples, prompt fixtures, evaluation definitions, candidate revisions |
+| **Main Agent / Handoff Evaluator** | stage assignment, prompt revision selection, workflow state, handoff validation, routing |
+| **Builder Discovery** | read-only repository inspection, request-flow tracing, implementation pattern discovery, code-quality findings, population of the accepted Discovery artifact |
+| **Provider Adapter** | model selection, API translation, capability negotiation, structured-output implementation, streaming, caching, batching, provider-specific errors |
+| **Planner** | architecture, implementation strategy, file actions, dependencies, implementation Plan |
+
+### Invariants
+
+1. No new mandatory workflow stages.
+2. No per-task regeneration of accepted role prompts.
+3. No provider-specific implementation inside reusable prompt definitions.
+4. No caching or runtime handoff execution inside Prompt Authoring.
+5. No duplicate schema or persistence system without inspecting existing ownership — reuse `ProviderCapabilities` and the G03 `expected_rejection` pattern.
+6. No generated prompt becomes authoritative without validation and authorized activation.
+7. No fabricated tests, receipts, approvals, or execution outcomes.
+8. No hidden reasoning or scratchpad persistence.
+
+### Return value
+
+The capability returns a versioned `PromptDefinition`, an `EvaluationReceipt` where available, and explicit blocking findings in `failures_by_axis`. When required evaluations have not been executed, the receipt reports `UNEVALUATED`. When any evaluation fails, the receipt reports `BLOCKED`. Only `PromptStore.activate(...)` may flip an EVALUATED revision to `ACTIVE`.
+
 ## Validation and completion
 
 - Run focused tests and then applicable project-defined lint, type-check, test, and build commands. Validate user-visible results against **independently established expectations**, including negative or recovery cases when relevant.

@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING  # noqa: E402
 from task_management import TaskManager, TaskState  # noqa: E402 - standalone-script path setup
 
 if TYPE_CHECKING:
+    from agent.prompt_authoring import PromptStore
     from agent.providers import (
         ProviderConfig,
         UnifiedRequest,
@@ -320,6 +321,21 @@ class OneShotController:
                 "call ProviderRegistry.create(...) directly."
             )
         return self.client.generate(request)
+
+    @property
+    def prompt_store(self) -> PromptStore:
+        """Lazy-constructed PromptStore (append-only revision registry).
+
+        Prompt Authoring is a development capability, not a workflow
+        stage; the store is here so Research / Plan / Build code can
+        look up an ACTIVE prompt revision in future callers WITHOUT
+        inventing a second seam. Zero workflow stages touch it today.
+        """
+        if getattr(self, "_prompt_store", None) is None:
+            from agent.prompt_authoring import PromptStore as _PromptStore
+
+            self._prompt_store = _PromptStore()
+        return self._prompt_store
 
     def _register_default_capabilities(self) -> None:
         """Register known capabilities. Actual availability verified at runtime."""
