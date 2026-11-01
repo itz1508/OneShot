@@ -20,11 +20,84 @@ from agent.prompt_authoring.author import (
     _with_status,
     check_transition_allowed,
 )
+from agent.prompt_authoring.evaluator import EvaluationReceipt
 from agent.prompt_authoring.types import (
     PromptDefinition,
     PromptStatus,
     Stage,
 )
+
+# ---------------------------------------------------------------------------
+# Authorization provenance (M1 corrective — reviewer directive)
+# ---------------------------------------------------------------------------
+#
+# The pre-M1 contract let callers supply any string as the "actor". Even with
+# `authorized_actors={"release-owner"}`, a caller could just type
+# `store.activate(..., actor="release-owner")` and bypass the check. The
+# reviewer required the actor identity to come from a trusted authentication
+# context, not from the caller.
+#
+# In-process we implement that via a Principal / IdentityProvider pair:
+#   * IdentityProvider.authenticate(name, secret) -> Principal(verified=True)
+#       Only an IdentityProvider that already knows the (name, secret) pair
+#       returns a verified Principal.
+#   * Principal.unverified(name) -> Principal(verified=False)
+#       A caller can mint one of these at will. PromptStore refuses them when
+#       the store is configured with authorized_actors.
+#   * `_issuer_sentinel` is a module-private object(). A Principal is verified
+#       only when its `_issuer_sentinel is _ISSUER_SENTINEL` — an attacker who
+#       spoofs `Principal(name="...", _issuer_sentinel=object())` fails the
+#       identity check.
+
+_ISSUER_SENTINEL = object()
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Identity carrier passed to PromptStore.activate / rollback.
+
+    Construct an UNVERIFIED Principal with `Principal.unverified(name)`. The
+    store accepts it only when `authorized_actors` is None (backward-compat).
+    To obtain a verified Principal, go through an IdentityProvider configured
+    with the (name, secret) pair.
+    """
+
+    name: str
+    _issuer_sentinel: object = field(default=None, repr=False, compare=False)
+
+    @classmethod
+    def unverified(cls, name: str) -> Principal:
+        return cls(name=name, _issuer_sentinel=None)
+
+    @property
+    def verified(self) -> bool:
+        return self._issuer_sentinel is _ISSUER_SENTINEL
+
+
+class IdentityProvider:
+    """Issues verified Principals in exchange for the (name, secret) pair.
+
+    This is the in-process substitute for a signed-token flow. In production
+    the IdentityProvider would validate a JWT, mutual TLS cert, or OIDC
+    assertion; here we validate a secret the host supplies out of band at
+    construction. The store trusts the Principal because it carries the
+    private `_ISSUER_SENTINEL`, which an attacker cannot reproduce.
+    """
+
+    def __init__(self, *, credentials: dict[str, str]) -> None:
+        # Store a defensive copy; mutating the input dict after construction
+        # does not change the configured credentials.
+        self._credentials: dict[str, str] = dict(credentials)
+
+    def authenticate(self, name: str, secret: str) -> Principal:
+        """Return a verified Principal if (name, secret) matches, else raise."""
+        import hmac
+        expected = self._credentials.get(name)
+        if expected is None or not hmac.compare_digest(expected, secret):
+            raise PromptStoreError(
+                f"IdentityProvider.authenticate({name!r}): credential mismatch"
+            )
+        return Principal(name=name, _issuer_sentinel=_ISSUER_SENTINEL)
 
 
 class PromptStoreError(RuntimeError):
@@ -138,22 +211,40 @@ class PromptStore:
     # Receipt store (M1 — independent receipt verification at activate)
     # ------------------------------------------------------------------
 
-    def register_receipt(self, receipt: Any) -> None:
+    def register_receipt(self, receipt: EvaluationReceipt) -> None:
         """Register an EvaluationReceipt so activate() can independently verify it.
 
         Callers MUST call this after `PromptAuthor.apply_receipt(prompt, receipt)`
         and BEFORE `activate(...)`. The store refuses to activate a prompt whose
         `evaluation_receipt_ref` was never registered here.
 
-        The method accepts `Any` to avoid a hard import of EvaluationReceipt in
-        this module (circular). The runtime check requires the object to carry a
-        `receipt_digest`, `prompt_id`, `revision`, and `content_digest`.
+        M1 corrective (reviewer directive): the receipt is now strictly typed
+        (`EvaluationReceipt`, not `Any`); its `receipt_digest` is RECOMPUTED
+        from canonical fields and compared with the supplied one; and the
+        receipt status MUST be EVALUATED. A forged receipt whose identity
+        fields happen to match a real prompt is now rejected.
         """
-        rd = getattr(receipt, "receipt_digest", None)
-        if not isinstance(rd, str) or not rd:
+        if not isinstance(receipt, EvaluationReceipt):
             raise PromptStoreError(
-                "register_receipt: receipt must carry a non-empty receipt_digest"
+                f"register_receipt: expected EvaluationReceipt, got "
+                f"{type(receipt).__name__}. Build the receipt with "
+                "PromptEvaluator.evaluate(...)."
             )
+        if receipt.status != PromptStatus.EVALUATED:
+            raise PromptStoreError(
+                f"register_receipt: receipt.status is {receipt.status.value!r}, "
+                "not 'evaluated' — only passing receipts may authorise activation."
+            )
+        from agent.prompt_authoring.evaluator import canonical_receipt_digest
+        recomputed = canonical_receipt_digest(receipt)
+        if recomputed != receipt.receipt_digest:
+            raise PromptStoreError(
+                "register_receipt: receipt.receipt_digest does not match the "
+                "digest recomputed from the receipt\'s canonical fields — the "
+                "receipt was tampered with or was produced by a non-canonical "
+                "evaluator."
+            )
+        rd = receipt.receipt_digest
         existing = self._receipts.get(rd)
         if (
             existing is not None
@@ -181,8 +272,46 @@ class PromptStore:
             )
         )
 
-    def _authorize(self, actor: str, action: str) -> None:
-        """Reject unknown actors when a closed allowlist is configured."""
+    def _resolve_actor_identity(
+        self,
+        principal: Principal | None,
+        actor: str | None,
+        action: str,
+    ) -> str:
+        """Resolve the effective actor identity.
+
+        Precedence: `principal` wins; `actor` is accepted only when the store
+        has no `authorized_actors` allowlist (backward-compat with pre-M1
+        callers). An untrusted caller cannot bypass authorization by supplying
+        a free-form string once the store is configured.
+        """
+        if principal is None and actor is None:
+            raise PromptStoreError(
+                f"{action}: pass a Principal (preferred) or actor= (bc only)"
+            )
+        if principal is not None:
+            if self._authorized_actors is not None:
+                if not principal.verified:
+                    raise PromptStoreError(
+                        f"{action}: principal {principal.name!r} is unverified "
+                        "— obtain a verified Principal via an IdentityProvider."
+                    )
+                if principal.name not in self._authorized_actors:
+                    raise PromptStoreError(
+                        f"{action}: principal {principal.name!r} is not in the "
+                        f"authorized_actors set configured on this store."
+                    )
+            return principal.name
+        # actor-string path. Allowed only when no allowlist is set.
+        if self._authorized_actors is not None:
+            raise PromptStoreError(
+                f"{action}: this store requires a verified Principal; "
+                "`actor=` strings are refused once authorized_actors is set."
+            )
+        return actor  # type: ignore[return-value]
+
+    def _authorize(self, actor: str, action: str) -> None:  # retained for bc
+        """Legacy entry point. New code should use _resolve_actor_identity."""
         if self._authorized_actors is None:
             return
         if actor not in self._authorized_actors:
@@ -234,7 +363,12 @@ class PromptStore:
     # ------------------------------------------------------------------
 
     def activate(
-        self, prompt_id: str, revision: int, *, actor: str
+        self,
+        prompt_id: str,
+        revision: int,
+        *,
+        principal: Principal | None = None,
+        actor: str | None = None,
     ) -> PromptDefinition:
         """Mark an EVALUATED revision ACTIVE.
 
@@ -247,7 +381,9 @@ class PromptStore:
                 f"activate({prompt_id}@{revision}): source status must be "
                 f"EVALUATED, got {prompt.status.value}."
             )
-        self._authorize(actor, f"activate({prompt_id}@{revision})")
+        actor_name = self._resolve_actor_identity(
+            principal, actor, f"activate({prompt_id}@{revision})"
+        )
         self._require_registered_receipt(prompt)
         # Supersede any current ACTIVE revision.
         for other in self.list_revisions(prompt_id):
@@ -258,7 +394,7 @@ class PromptStore:
                 self._audit.append(
                     AuditEntry(
                         at=time.time(),
-                        actor=actor,
+                        actor=actor_name,
                         action="supersede",
                         prompt_id=other.prompt_id,
                         revision=other.revision,
@@ -270,7 +406,7 @@ class PromptStore:
         self._audit.append(
             AuditEntry(
                 at=time.time(),
-                actor=actor,
+                actor=actor_name,
                 action="activate",
                 prompt_id=prompt_id,
                 revision=revision,
@@ -279,7 +415,12 @@ class PromptStore:
         return activated
 
     def rollback(
-        self, prompt_id: str, revision: int, *, actor: str
+        self,
+        prompt_id: str,
+        revision: int,
+        *,
+        principal: Principal | None = None,
+        actor: str | None = None,
     ) -> PromptDefinition:
         """Re-activate an older revision after it was superseded.
 
@@ -297,7 +438,9 @@ class PromptStore:
                 f"rollback({prompt_id}@{revision}): target status must be "
                 f"SUPERSEDED or EVALUATED, got {target.status.value}."
             )
-        self._authorize(actor, f"rollback({prompt_id}@{revision})")
+        actor_name = self._resolve_actor_identity(
+            principal, actor, f"rollback({prompt_id}@{revision})"
+        )
         self._require_registered_receipt(target)
 
         # Transition target: SUPERSEDED is terminal in the forward
@@ -322,7 +465,7 @@ class PromptStore:
                 self._audit.append(
                     AuditEntry(
                         at=time.time(),
-                        actor=actor,
+                        actor=actor_name,
                         action="supersede",
                         prompt_id=other.prompt_id,
                         revision=other.revision,
@@ -337,7 +480,7 @@ class PromptStore:
         self._audit.append(
             AuditEntry(
                 at=time.time(),
-                actor=actor,
+                actor=actor_name,
                 action="rollback",
                 prompt_id=prompt_id,
                 revision=revision,

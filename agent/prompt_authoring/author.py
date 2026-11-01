@@ -144,9 +144,14 @@ class PromptAuthor:
                 f"({prompt.prompt_id}@{prompt.revision}, status={prompt.status.value}). "
                 "Use PromptAuthor.supersede(...) to produce a new revision."
             )
+        # M1 corrective: revise()-line revisions must carry a back-reference
+        # so the accepted_regression axis does not reject them. The DIFFERENCE
+        # between revise and supersede is a STATUS-GATE distinction (revise
+        # refuses ACTIVE; supersede requires EVALUATED/ACTIVE), not a lineage
+        # distinction. ALL revisions >= 2 carry the back-reference, uniformly.
         return self._next_revision(
             prompt,
-            supersedes=None,
+            supersedes=f"{prompt.prompt_id}@{prompt.revision}",
             stable_instructions=stable_instructions,
             output_contract=output_contract,
             evaluation_rules=evaluation_rules,

@@ -158,28 +158,22 @@ class PromptEvaluator:
                 failures_by_axis[c.axis] = failures_by_axis.get(c.axis, 0) + 1
 
         status = _aggregate_status(checks, self._order)
-        canonical = json.dumps(
-            {
-                "prompt_id": prompt.prompt_id,
-                "revision": prompt.revision,
-                "content_digest": prompt.content_digest,
-                "checks": [c.model_dump() for c in checks],
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        receipt_digest = hashlib.sha256(canonical).hexdigest()
-
-        return EvaluationReceipt(
+        # Build the receipt first with a placeholder digest, then compute the
+        # canonical digest from the receipt's canonical fields and swap it in.
+        # Using canonical_receipt_digest here keeps the digest definition
+        # single-sourced so PromptStore.register_receipt can recompute it.
+        tentative = EvaluationReceipt(
             prompt_id=prompt.prompt_id,
             revision=prompt.revision,
             content_digest=prompt.content_digest,
             fixtures_executed=[f.name for f in fixtures],
             checks=checks,
             status=status,
-            receipt_digest=receipt_digest,
+            receipt_digest="0" * 64,  # placeholder; overwritten below
             failures_by_axis=failures_by_axis,
         )
+        receipt_digest = canonical_receipt_digest(tentative)
+        return tentative.model_copy(update={"receipt_digest": receipt_digest})
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +212,28 @@ def _aggregate_status(
 # dependencies.
 
 
+
+
+def canonical_receipt_digest(receipt: EvaluationReceipt) -> str:
+    """Compute the canonical sha-256 digest for an EvaluationReceipt.
+
+    Exposed so PromptStore.register_receipt can RECOMPUTE the digest from the
+    receipt\'s canonical fields and reject tampered receipts whose stored
+    `receipt_digest` does not match. The canonical form is the JSON-sorted
+    serialisation of (prompt_id, revision, content_digest, status, checks).
+    """
+    canonical = json.dumps(
+        {
+            "prompt_id": receipt.prompt_id,
+            "revision": receipt.revision,
+            "content_digest": receipt.content_digest,
+            "status": receipt.status.value if hasattr(receipt.status, "value") else receipt.status,
+            "checks": [c.model_dump() for c in receipt.checks],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 def _default_axes() -> dict[str, AxisFn]:
     return {
         "instruction_compliance": _instruction_compliance,
@@ -294,8 +310,12 @@ def _unknown_preservation(
     # The prompt must say something about unknowns in either stable
     # instructions, evaluation rules, or recovery behaviour. A silent
     # prompt is an unknown-preservation failure.
-    joined = " ".join(prompt.stable_instructions + prompt.evaluation_rules
-                      + [prompt.recovery_behavior]).lower()
+    parts = (
+        list(prompt.stable_instructions)
+        + list(prompt.evaluation_rules)
+        + [prompt.recovery_behavior]
+    )
+    joined = " ".join(parts).lower()
     keywords = ("unknown", "uncertain", "not_checked", "unsupported", "blocked")
     status = (
         CheckOutcome.PASS
