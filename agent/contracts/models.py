@@ -725,6 +725,41 @@ class ManifestBinding(BaseModel):
     def not_placeholder(cls, v):
         if not _is_filled(v):
             raise ValueError("manifest field must not be empty or a placeholder")
+        # G07 reopen (reviewer finding on 9d2ce25): reject the specific
+        # placeholder literals the previous build_plan fallback emitted,
+        # so a stored manifest cannot carry them even if a legacy caller
+        # tries to resurrect them.
+        if v in {"unknown", "no_oracle_module"}:
+            raise ValueError(
+                f"manifest placeholder literal {v!r} is not an acceptable "
+                "identity. Compute the real sha-256 before binding."
+            )
+        return v
+
+    @field_validator("detector_identities")
+    @classmethod
+    def detector_identities_no_empty(cls, v):
+        # G07 reopen (reviewer finding): detector_identities would
+        # previously accept an empty string per detector (satisfying the
+        # non-empty-field check at the dict level while leaving the
+        # entry itself unbound). Every value must be a non-empty, non-
+        # placeholder sha so each detector is pinned.
+        if not isinstance(v, dict):
+            raise ValueError("detector_identities must be a dict")
+        if not v:
+            raise ValueError(
+                "detector_identities must bind at least one detector"
+            )
+        for tool_ref, ident in v.items():
+            if not _is_filled(ident):
+                raise ValueError(
+                    f"detector_identities[{tool_ref!r}] must be a non-empty sha"
+                )
+            if ident in {"unknown", "no_oracle_module"}:
+                raise ValueError(
+                    f"detector_identities[{tool_ref!r}] placeholder literal "
+                    f"{ident!r} is not an acceptable identity"
+                )
         return v
 
 

@@ -226,3 +226,91 @@ class ManifestBindingPopulatedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManifestPlaceholderRejectedTest(unittest.TestCase):
+    """G07 reopen (reviewer finding on 9d2ce25):
+
+    manifest INTEGRITY must refuse the specific placeholder literals the
+    previous build_plan fallback emitted ('unknown' / 'no_oracle_module')
+    and refuse detector_identities with empty values. These three red
+    tests pin that policy.
+    """
+
+    def test_placeholder_scanner_identity_rejected(self):
+        from models import ManifestBinding
+        from pydantic import ValidationError
+
+        base = {
+            "task_id": "t1",
+            "research_revision": 1,
+            "plan_revision": 1,
+            "scanner_identity": "unknown",
+            "detector_identities": {"stub": "a" * 64},
+            "fixture_oracle_sha": "a" * 64,
+            "oracle_revision": 1,
+            "build_receipt_sha": "a" * 64,
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            ManifestBinding.model_validate(base)
+        self.assertIn("placeholder literal 'unknown'", str(ctx.exception))
+
+    def test_placeholder_fixture_oracle_sha_rejected(self):
+        from models import ManifestBinding
+        from pydantic import ValidationError
+
+        base = {
+            "task_id": "t1",
+            "research_revision": 1,
+            "plan_revision": 1,
+            "scanner_identity": "a" * 64,
+            "detector_identities": {"stub": "a" * 64},
+            "fixture_oracle_sha": "no_oracle_module",
+            "oracle_revision": 1,
+            "build_receipt_sha": "a" * 64,
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            ManifestBinding.model_validate(base)
+        self.assertIn("placeholder literal 'no_oracle_module'", str(ctx.exception))
+
+    def test_empty_detector_identity_rejected(self):
+        from models import ManifestBinding
+        from pydantic import ValidationError
+
+        base = {
+            "task_id": "t1",
+            "research_revision": 1,
+            "plan_revision": 1,
+            "scanner_identity": "a" * 64,
+            "detector_identities": {
+                "ok": "a" * 64,
+                "agent/adapters/source_comparison.py": "",
+            },
+            "fixture_oracle_sha": "a" * 64,
+            "oracle_revision": 1,
+            "build_receipt_sha": "a" * 64,
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            ManifestBinding.model_validate(base)
+        self.assertIn("must be a non-empty sha", str(ctx.exception))
+
+    def test_empty_detector_identities_dict_rejected(self):
+        from models import ManifestBinding
+        from pydantic import ValidationError
+
+        base = {
+            "task_id": "t1",
+            "research_revision": 1,
+            "plan_revision": 1,
+            "scanner_identity": "a" * 64,
+            "detector_identities": {},
+            "fixture_oracle_sha": "a" * 64,
+            "oracle_revision": 1,
+            "build_receipt_sha": "a" * 64,
+        }
+        with self.assertRaises(ValidationError) as ctx:
+            ManifestBinding.model_validate(base)
+        self.assertIn(
+            "detector_identities must bind at least one detector",
+            str(ctx.exception),
+        )

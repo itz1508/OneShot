@@ -1035,11 +1035,27 @@ class OneShotController:
 
         scanner_adapter = SourceInspection(_host_inspector)
         scanner_inventory = scanner_adapter.inspect(root)
+        # G07 reopen (reviewer finding): every scanner_call that will
+        # populate manifest_binding.detector_identities MUST carry a
+        # non-empty, content-derived scanner_identity. Hash the adapter
+        # source file so the identity rotates on code change and is
+        # auditable at receipt time, exactly like
+        # gap_analysis.CapabilityPreflight._compute_scanner_identity.
+        import hashlib as _hashlib_rsi
+        _repo_inv_path = root / "agent" / "adapters" / "repository_inventory.py"
+        if not _repo_inv_path.is_file():
+            raise RuntimeError(
+                "G07 manifest integrity: adapter source "
+                f"{_repo_inv_path} is missing; cannot derive "
+                "scanner_identity for repository_inventory receipt."
+            )
+        _repo_inv_identity = _hashlib_rsi.sha256(_repo_inv_path.read_bytes()).hexdigest()
         scanner_receipt = {
             "at": now,
             "tool_ref": "agent/adapters/repository_inventory.py",
             "host_scanner": "git-ls-files+sha256",
             "scope_ref": "AGENTS.md",
+            "scanner_identity": _repo_inv_identity,
             "files_scanned": len(scanner_inventory.files),
             "files_excluded": len(scanner_inventory.excluded_paths),
             "limitations": list(scanner_inventory.limitations),
@@ -1184,12 +1200,21 @@ class OneShotController:
                     "recheck_ref": None,
                 }
             )
+        _src_cmp_path = root / "agent" / "adapters" / "source_comparison.py"
+        if not _src_cmp_path.is_file():
+            raise RuntimeError(
+                "G07 manifest integrity: adapter source "
+                f"{_src_cmp_path} is missing; cannot derive "
+                "scanner_identity for source_comparison receipt."
+            )
+        _src_cmp_identity = _hashlib_rsi.sha256(_src_cmp_path.read_bytes()).hexdigest()
         comparison_receipt = {
             "at": now,
             "tool_ref": "agent/adapters/source_comparison.py",
             "host_scanner": "git-ls-tree-diff",
             "method": comparison_result.method,
             "scope_ref": "AGENTS.md",
+            "scanner_identity": _src_cmp_identity,
             "differences": len(comparison_result.differences),
             "comparison_complete": comparison_result.comparison_complete,
             "content_complete": comparison_result.content_complete,
@@ -1749,6 +1774,13 @@ class OneShotController:
         # the independent oracle file), oracle revision (ORACLE_CATALOG_REVISION
         # from agent/contracts/oracles.py), and a derived build_receipt_sha
         # (sha-256 of the serialised execution.command_receipts list).
+        #
+        # G07 reopen (reviewer finding on 9d2ce25): manifest INTEGRITY is a
+        # hard requirement — fallbacks like 'unknown' / 'no_oracle_module'
+        # or empty detector identities would satisfy a non-empty check
+        # while leaving the manifest effectively unbound. We refuse the
+        # Build with a RuntimeError when these values cannot be computed,
+        # rather than emitting a placeholder.
         import hashlib as _hashlib_g07
         import json as _json_g07
 
@@ -1758,23 +1790,52 @@ class OneShotController:
             if _call.get("method") == "capability_preflight":
                 _scanner_identity = _call.get("scanner_identity", "") or ""
                 break
-        _detector_identities = {
-            call.get("tool_ref", "unknown"): str(call.get("scanner_identity", "") or "")
-            for call in _plan_scanner_calls
-            if call.get("tool_ref")
-        }
+        if not _scanner_identity:
+            raise RuntimeError(
+                "G07 manifest integrity: scanner_identity missing from "
+                "plan.gap_analysis.scanner_calls (no capability_preflight "
+                "receipt carries scanner_identity). Refusing to emit a "
+                "placeholder manifest."
+            )
+
+        _detector_identities = {}
+        for _call in _plan_scanner_calls:
+            _tool_ref = _call.get("tool_ref")
+            if not _tool_ref:
+                continue
+            _ident = str(_call.get("scanner_identity", "") or "").strip()
+            if not _ident:
+                raise RuntimeError(
+                    f"G07 manifest integrity: empty scanner_identity on "
+                    f"scanner_call tool_ref={_tool_ref!r}. Every scanner "
+                    "call that reaches build_plan must carry a non-empty "
+                    "identity so detector_identities is auditable."
+                )
+            _detector_identities[_tool_ref] = _ident
+        if not _detector_identities:
+            raise RuntimeError(
+                "G07 manifest integrity: no detector_identities derivable "
+                "from plan.gap_analysis.scanner_calls — the manifest would "
+                "not pin any detector. Refusing to proceed."
+            )
+
+        _oracle_module = root / "agent" / "contracts" / "oracles.py"
+        if not _oracle_module.is_file():
+            raise RuntimeError(
+                f"G07 manifest integrity: oracle module {_oracle_module} "
+                "not found. fixture_oracle_sha cannot be computed; refusing "
+                "to emit a placeholder manifest."
+            )
         try:
             from oracles import ORACLE_CATALOG_REVISION as _ORACLE_REV  # noqa: N811
+        except ImportError as _exc:
+            raise RuntimeError(
+                "G07 manifest integrity: cannot import ORACLE_CATALOG_REVISION "
+                f"from oracles module ({_exc}). oracle_revision is unbound; "
+                "refusing to emit a placeholder manifest."
+            ) from _exc
+        _fixture_sha = _hashlib_g07.sha256(_oracle_module.read_bytes()).hexdigest()
 
-            _oracle_module = root / "agent" / "contracts" / "oracles.py"
-            _fixture_sha = (
-                _hashlib_g07.sha256(_oracle_module.read_bytes()).hexdigest()
-                if _oracle_module.is_file()
-                else ""
-            )
-        except Exception:
-            _ORACLE_REV = 1  # noqa: N806 — matches import alias name
-            _fixture_sha = ""
         _receipts_payload = _json_g07.dumps(
             build["execution"].get("command_receipts") or [], sort_keys=True
         ).encode("utf-8")
@@ -1784,9 +1845,9 @@ class OneShotController:
             "task_id": task_id,
             "research_revision": int(plan["research_input"]["record_revision"]),
             "plan_revision": int(plan["revision"]),
-            "scanner_identity": _scanner_identity or "unknown",
+            "scanner_identity": _scanner_identity,
             "detector_identities": _detector_identities,
-            "fixture_oracle_sha": _fixture_sha or "no_oracle_module",
+            "fixture_oracle_sha": _fixture_sha,
             "oracle_revision": int(_ORACLE_REV),
             "build_receipt_sha": _build_receipt_sha,
         }
