@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from agent.prompt_authoring.evaluator import EvaluationReceipt
 from agent.prompt_authoring.types import (
+    OwnerRef,
     PromptDefinition,
     PromptSpec,
     PromptStatus,
@@ -71,6 +72,18 @@ _ALLOWED: dict[PromptStatus, frozenset[PromptStatus]] = {
 # PromptAuthor
 # ---------------------------------------------------------------------------
 
+def _canonical_new_owner(owner: OwnerRef) -> OwnerRef:
+    """Normalize the renamed capability for new prompt revisions only.
+
+    Immutable historical PromptDefinition digests and receipts are preserved;
+    compatibility removal requires a separately accepted owner decision.
+    """
+    if owner.kind == "builder_discovery":
+        return owner.model_copy(update={"kind": "audit_discovery"})
+    return owner
+
+
+
 
 class PromptAuthor:
     """Pure authoring surface.
@@ -88,11 +101,12 @@ class PromptAuthor:
 
     def author_candidate(self, spec: PromptSpec) -> PromptDefinition:
         """Spec → initial (revision=1, status=UNEVALUATED) candidate."""
+        owner = _canonical_new_owner(spec.owner)
         payload = {
             "prompt_id": spec.prompt_id,
             "revision": 1,
             "stage": spec.stage,
-            "owner": spec.owner,
+            "owner": owner,
             "runtime_inputs": [ri.model_dump() for ri in spec.runtime_inputs],
             "stable_instructions": list(spec.stable_instructions),
             "required_capabilities": spec.required_capabilities.model_dump(),
@@ -107,7 +121,7 @@ class PromptAuthor:
             revision=1,
             content_digest=digest,
             stage=spec.stage,
-            owner=spec.owner,
+            owner=owner,
             runtime_inputs=list(spec.runtime_inputs),
             stable_instructions=list(spec.stable_instructions),
             required_capabilities=spec.required_capabilities,
@@ -242,6 +256,7 @@ class PromptAuthor:
         initial_status: PromptStatus,
     ) -> PromptDefinition:
         new_rev = prompt.revision + 1
+        owner = _canonical_new_owner(prompt.owner)
         new_instr = (
             list(stable_instructions)
             if stable_instructions is not None
@@ -267,7 +282,7 @@ class PromptAuthor:
             "prompt_id": prompt.prompt_id,
             "revision": new_rev,
             "stage": prompt.stage,
-            "owner": prompt.owner,
+            "owner": owner,
             "runtime_inputs": [ri.model_dump() for ri in prompt.runtime_inputs],
             "stable_instructions": new_instr,
             "required_capabilities": prompt.required_capabilities.model_dump(),
@@ -282,7 +297,7 @@ class PromptAuthor:
             revision=new_rev,
             content_digest=digest,
             stage=prompt.stage,
-            owner=prompt.owner,
+            owner=owner,
             runtime_inputs=list(prompt.runtime_inputs),
             stable_instructions=new_instr,
             required_capabilities=prompt.required_capabilities,

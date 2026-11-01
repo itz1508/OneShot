@@ -276,6 +276,69 @@ class TestPromptEvaluator:
         assert "accepted_regression" in receipt.failures_by_axis
 
 
+
+class TestAuditDiscoveryOwnerCompatibility:
+    def test_new_discovery_prompt_uses_canonical_owner(self):
+        prompt = PromptAuthor().author_candidate(
+            _spec(stage=Stage.DISCOVERY, owner=_owner(kind="audit_discovery"))
+        )
+        assert prompt.owner.kind == "audit_discovery"
+        assert PromptDefinition.model_validate(prompt.model_dump()) == prompt
+        receipt = PromptEvaluator().evaluate(prompt, PromptFixtureRegistry.default().all())
+        boundary = [c for c in receipt.checks if c.axis == "responsibility_boundary"]
+        assert boundary and all(c.status == CheckOutcome.PASS for c in boundary)
+
+    def test_legacy_authoring_input_normalized_for_new_output(self):
+        prompt = PromptAuthor().author_candidate(
+            _spec(stage=Stage.DISCOVERY, owner=_owner(kind="builder_discovery"))
+        )
+        assert prompt.owner.kind == "audit_discovery"
+        assert canonical_content_digest(prompt) == prompt.content_digest
+        assert "builder_discovery" not in prompt.model_dump_json()
+
+    def test_historical_prompt_read_keeps_original_digest(self):
+        prompt = PromptAuthor().author_candidate(
+            _spec(stage=Stage.DISCOVERY, owner=_owner(kind="audit_discovery"))
+        )
+        data = prompt.model_dump(mode="json")
+        data["owner"]["kind"] = "builder_discovery"
+        data["content_digest"] = canonical_content_digest(data)
+        historical = PromptDefinition.model_validate(data)
+        store = PromptStore()
+        store.register(historical)
+        assert store.get(historical.prompt_id, historical.revision) == historical
+        assert historical.owner.kind == "builder_discovery"
+        assert historical.content_digest == data["content_digest"]
+        receipt = PromptEvaluator().evaluate(historical, PromptFixtureRegistry.default().all())
+        boundary = [c for c in receipt.checks if c.axis == "responsibility_boundary"]
+        assert boundary and all(c.status == CheckOutcome.PASS for c in boundary)
+        assert all("builder_discovery" not in c.evidence for c in boundary)
+
+    def test_successor_revision_normalizes_without_mutating_history(self):
+        prompt = PromptAuthor().author_candidate(
+            _spec(stage=Stage.DISCOVERY, owner=_owner(kind="audit_discovery"))
+        )
+        data = prompt.model_dump(mode="json")
+        data["owner"]["kind"] = "builder_discovery"
+        data["content_digest"] = canonical_content_digest(data)
+        historical = PromptDefinition.model_validate(data)
+        revised = PromptAuthor().revise(
+            historical,
+            stable_instructions=["Inspect repository evidence; preserve unknown findings."],
+        )
+        assert revised.owner.kind == "audit_discovery"
+        assert revised.revision == historical.revision + 1
+        assert revised.content_digest == canonical_content_digest(revised)
+        assert historical.owner.kind == "builder_discovery"
+        assert historical.content_digest == data["content_digest"]
+
+    def test_non_discovery_stage_legacy_role_is_normalized_on_new_write(self):
+        prompt = PromptAuthor().author_candidate(
+            _spec(stage=Stage.BUILD, owner=_owner(kind="builder_discovery"))
+        )
+        assert prompt.owner.kind == "audit_discovery"
+
+
 # ---------------------------------------------------------------------------
 # PromptFixtureRegistry
 # ---------------------------------------------------------------------------

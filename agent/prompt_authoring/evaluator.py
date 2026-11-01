@@ -319,17 +319,24 @@ def _responsibility_boundary(
         "research": "prompt_authoring",
         "plan": "prompt_authoring",
         "build": "prompt_authoring",
-        "discovery": "builder_discovery",
+        "discovery": "audit_discovery",
         "handoff": "main_agent",
         "provider_adapter": "provider_adapter",
     }
     want = expected_owner_kind.get(prompt.stage.value)
-    ok = want is None or prompt.owner.kind == want
+    # An immutable historical prompt may contain the former role identifier.
+    # Normalize at evaluation only, preserving its original signed digest.
+    actual_kind = (
+        "audit_discovery"
+        if prompt.owner.kind == "builder_discovery"
+        else prompt.owner.kind
+    )
+    ok = want is None or actual_kind == want
     return CheckResult(
         axis="responsibility_boundary",
         fixture=fixture.name,
         status=CheckOutcome.PASS if ok else CheckOutcome.FAIL,
-        evidence=f"stage={prompt.stage.value} owner_kind={prompt.owner.kind}",
+        evidence=f"stage={prompt.stage.value} owner_kind={actual_kind}",
     )
 
 

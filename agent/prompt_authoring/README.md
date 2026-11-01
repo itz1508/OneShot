@@ -61,7 +61,7 @@ Every `PromptDefinition` carries the exact fields the spec lists:
 | --- | --- |
 | **Prompt Authoring** | generation, template refinement, examples, prompt fixtures, evaluation definitions, candidate revisions |
 | **Main Agent / Handoff Evaluator** | stage assignment, prompt revision selection, workflow state, handoff validation, routing |
-| **Builder Discovery** | read-only repository inspection, request-flow tracing, implementation pattern discovery, code-quality findings, population of the accepted Discovery artifact |
+| **Audit Discovery** | targeted read-only repository inspection, verification of accepted Research against source, implementation-flow tracing, code-quality findings, and evidence-only Planner handoff; Planner retains architecture, strategy, file actions, fixtures, and Build authorization |
 | **Provider Adapter** | model selection, API translation, capability negotiation, structured-output implementation, streaming, caching, batching, provider-specific errors |
 | **Planner** | architecture, implementation strategy, file actions, dependencies, implementation Plan |
 
