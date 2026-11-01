@@ -1032,7 +1032,7 @@ class OneShotController:
 
         unresolved = [f for f in gap_findings if f["type"] == "missing"]
         plan["gap_analysis"] = {
-            "status": "resolved" if not unresolved else "partial",
+            "status": "resolved" if not unresolved else "findings_open",
             "scanner_calls": [scanner_receipt, comparison_receipt],
             "findings": gap_findings,
             "unresolved_critical_ids": [f["id"] for f in unresolved],
@@ -1178,7 +1178,9 @@ class OneShotController:
                     if f.get("status") == "open" and f.get("severity") == "critical"
                 ]
                 has_unresolved = bool(plan["gap_analysis"]["unresolved_critical_ids"])
-                plan["gap_analysis"]["status"] = "resolved" if not has_unresolved else "partial"
+                plan["gap_analysis"]["status"] = (
+                    "resolved" if not has_unresolved else "findings_open"
+                )
             b_gap_resolution = input_bundle.get("gap_findings_mark_resolved")
             if b_gap_resolution:
                 # The scenario accepts scanner-reported drift as benign:
