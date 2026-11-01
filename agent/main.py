@@ -515,11 +515,7 @@ class OneShotController:
             # a stall and is refused with BLOCKED_RESUMABLE instead of
             # consuming another attempt budget.
             current_identity = receipt.get("scanner_identity", "")
-            if (
-                attempt_num > 1
-                and last_identity is not None
-                and current_identity == last_identity
-            ):
+            if attempt_num > 1 and last_identity is not None and current_identity == last_identity:
                 self.tm.interrupt(
                     task_id,
                     {
@@ -534,12 +530,10 @@ class OneShotController:
                 receipt["attempts"] = attempts
                 receipt["blocked_resumable"] = True
                 receipt["blocker"] = (
-                    "no_material_correction: scanner_identity unchanged "
-                    "since previous attempt"
+                    "no_material_correction: scanner_identity unchanged since previous attempt"
                 )
                 receipt["next_action"] = (
-                    "Apply a material correction to the detector / source "
-                    "before retrying"
+                    "Apply a material correction to the detector / source before retrying"
                 )
                 return dict(receipt)
             last_identity = current_identity
@@ -1764,12 +1758,21 @@ class OneShotController:
         resolver = make_hybrid_resolver(ev_idx, Path(repo_root))
         all_errors = _validate_pipeline_pyd(research, plan, build, resolve=resolver)
 
-        if not all_errors:
+        # G10 — VERIFIED requires BOTH clean cross-record validation AND
+        # the Build's own all_pass flag. A failed Build cannot carry a
+        # VERIFIED classification just because its records happened to be
+        # schema-clean.
+        verified = bool(not all_errors and b_result.get("all_pass"))
+
+        if verified:
             ctrl.complete_task(
                 tid, {"e2e": "passed", "color": b_result["color"], "validation": "passed"}
             )
         else:
-            ctrl.fail_task(tid, f"Cross-record: {len(all_errors)} errors")
+            reason = (
+                f"Cross-record: {len(all_errors)} errors" if all_errors else "Build all_pass=False"
+            )
+            ctrl.fail_task(tid, reason)
 
         return {
             "task_id": tid,
@@ -1780,7 +1783,7 @@ class OneShotController:
             "color": b_result["color"],
             "all_pass": b_result["all_pass"],
             "cross_record_errors": all_errors,
-            "classification": "VERIFIED" if not all_errors else "PARTIAL",
+            "classification": "VERIFIED" if verified else "PARTIAL",
         }
 
 
