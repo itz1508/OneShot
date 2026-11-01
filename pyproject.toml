@@ -34,6 +34,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+# Provider adapter extras. OneShot core carries ZERO vendor SDKs; the
+# default `echo` adapter needs none. Install the extras below only if
+# you want to drive OneShot against the matching provider.
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.25"]
 
 [project.scripts]
 oneshot = "agent.main:main"

@@ -208,6 +208,69 @@ This OneShot checkout is a Python workflow harness; the Research/Plan/Build harn
 
 - **Agent action.** Treat a read against any of those globs as refused. If a legitimate task requires looking at a generated artifact, re-run the generator from source and reason about the source instead; if a vendored dependency really needs inspection, treat it as a dependency version question and consult the lockfile / package manifest, not the vendored tree.
 
+## Provider abstraction — one unified client, many adapters
+
+OneShot MUST drive every model call through the provider abstraction. Do not hard-code `anthropic.Anthropic()`, `OpenAI()`, or any specific vendor across Research / Discovery / Planner / Build. The architecture is:
+
+```
+ProviderConfig → ProviderRegistry → ProviderAdapter → OneShotController → Research / Plan / Build
+```
+
+Three configuration axes stay separate (one model can run through several endpoints with different capabilities):
+
+- `provider` — adapter key (`openai`, `anthropic`, `openai_compatible`, `echo`, …)
+- `model`   — vendor model identifier
+- `endpoint` — optional base URL for `openai_compatible` / custom hosting
+- `credential_ref` — environment variable the adapter reads at `.generate()` time (never embedded in config)
+
+### Ownership rule
+
+OneShot owns the unified request / response / handoff / validation contract. Each adapter owns provider-specific API translation, authentication, caching, streaming, batch execution, and error normalisation.
+
+### Explicit capabilities — never silent downgrades
+
+Every adapter returns a `ProviderCapabilities` matrix: `structured_outputs`, `streaming`, `batch`, `prompt_caching`, `strict_tool_schemas`. A caller that requests a capability the matrix does not advertise MUST get `UnsupportedCapabilityError` — the workflow fails loudly rather than silently calling a different code path. An unknown provider key is `UnsupportedProviderError`.
+
+### Default and extras
+
+- `echo` adapter ships in-tree, is deterministic, requires no SDK, and is the default used by tests and CI. Request content maps to `sha256(canonical_request)` so two identical requests produce byte-identical responses.
+- `pip install 'oneshot[openai]'` or `pip install 'oneshot[anthropic]'` installs the vendor SDK; the matching adapter stub registers itself at import time.
+- Meta Llama runs through the `openai_compatible` adapter (vLLM, Together, Fireworks, Groq, Ollama's OpenAI shim, …): pick the endpoint; the capabilities are the least-common-denominator stub, and a concrete subclass may override them.
+
+### Python usage
+
+```python
+from agent.providers import ProviderConfig, ProviderRegistry, UnifiedRequest
+from agent.providers.types import Message
+
+cfg = ProviderConfig(
+    provider="openai_compatible",
+    model="meta-llama/Meta-Llama-3-70B-Instruct",
+    endpoint="https://api.together.xyz/v1",
+    credential_ref="TOGETHER_API_KEY",
+)
+client = ProviderRegistry.create(cfg)
+
+response = client.generate(
+    UnifiedRequest(messages=[Message(role="user", content="hello")])
+)
+```
+
+Or on the controller:
+
+```python
+from main import OneShotController
+from agent.providers import ProviderConfig
+
+ctrl = OneShotController(
+    storage_path="/tmp/tasks.json",
+    provider_config=ProviderConfig(provider="echo", model="echo-1"),
+)
+response = ctrl.model_call(request)   # routes through self.client
+```
+
+The default `OneShotController()` still works — `self.client` is `None` until a `provider_config` is supplied; `model_call(...)` raises `RuntimeError` instead of silently calling a default provider.
+
 ## Validation and completion
 
 - Run focused tests and then applicable project-defined lint, type-check, test, and build commands. Validate user-visible results against **independently established expectations**, including negative or recovery cases when relevant.

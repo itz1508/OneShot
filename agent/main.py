@@ -31,8 +31,17 @@ if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
 import contextlib  # noqa: E402 - must follow sys.path manipulation above
+from typing import TYPE_CHECKING  # noqa: E402
 
 from task_management import TaskManager, TaskState  # noqa: E402 - standalone-script path setup
+
+if TYPE_CHECKING:
+    from agent.providers import (
+        ProviderConfig,
+        UnifiedRequest,
+        UnifiedResponse,
+    )
+
 
 # Gap Analysis specialist integration
 _AGENT_DIR = Path(__file__).resolve().parent
@@ -262,15 +271,55 @@ def make_hybrid_resolver(file_index: dict, root):
 
 
 class OneShotController:
-    """Single workflow controller — routing, transitions, continuation."""
+    """Single workflow controller — routing, transitions, continuation.
 
-    def __init__(self, storage_path: str | None = None):
+    Opt-in provider abstraction: pass `provider_config` to install a
+    unified model client on `self.client`. When unset, `self.client`
+    stays `None`; the existing deterministic research / plan / build
+    code paths do not call out, so they do not need a client. See
+    `agent/providers/` for the ProviderRegistry → Adapter → Unified
+    Client stack and the ownership rules.
+    """
+
+    def __init__(
+        self,
+        storage_path: str | None = None,
+        *,
+        provider_config: ProviderConfig | None = None,
+    ):
         self._last_dropped_bundle_fields: list[str] = []
         self.tm = TaskManager(storage_path=storage_path or "/tmp/oneshot_tasks.json")
         self.registry = CapabilityRegistry()
         self._decision_waits: dict[str, UserDecisionWait] = {}
         self._stage_handlers: dict[str, Callable] = {}
         self._register_default_capabilities()
+        # Provider stack is OPT-IN. Importing agent.providers is cheap
+        # (no vendor SDK) but we still defer it to the constructor so
+        # callers that never touch the model path do not even load the
+        # module.
+        self.provider_config = provider_config
+        self.client = None
+        if provider_config is not None:
+            from agent.providers import ProviderRegistry
+
+            self.client = ProviderRegistry.create(provider_config)
+
+    def model_call(self, request: UnifiedRequest) -> UnifiedResponse:
+        """Route a unified request through the configured provider.
+
+        OneShot owns the request / response shape; the adapter owns
+        the vendor translation. If no `provider_config` was supplied
+        at construction, raises `RuntimeError` — this is the explicit
+        contract that avoids silently calling out to an unconfigured
+        provider.
+        """
+        if self.client is None:
+            raise RuntimeError(
+                "OneShotController.model_call: no provider_config supplied; "
+                "pass provider_config=ProviderConfig(...) at construction, or "
+                "call ProviderRegistry.create(...) directly."
+            )
+        return self.client.generate(request)
 
     def _register_default_capabilities(self) -> None:
         """Register known capabilities. Actual availability verified at runtime."""

@@ -65,6 +65,20 @@ The eleven G01–G11 gap closures sit on top of the M-milestones. The acceptance
 - **G10** — VERIFIED requires `all_pass AND cross_record_errors == []`.
 - **G11** — durable, revision-safe `TaskManager`: portable file lock, atomic replace, fail-closed `CorruptStoreError` on every reload (initial AND mid-run), and public `set_decision_wait` / `set_task_metadata(if_revision=…)` CAS API.
 
+## Provider abstraction
+
+OneShot never hard-codes a vendor. Every model call routes through:
+
+```
+ProviderConfig → ProviderRegistry → ProviderAdapter → OneShotController
+```
+
+`provider` / `model` / `endpoint` are three independent configuration axes — e.g. Meta Llama can run through many endpoints, each with different capabilities declared by its adapter. Unsupported capabilities are reported explicitly as `UnsupportedCapabilityError`, never silently downgraded.
+
+- Default adapter: `echo` (deterministic, zero deps). Used by tests and CI.
+- Install `pip install 'oneshot[openai]'` or `pip install 'oneshot[anthropic]'` to add the matching vendor SDK; the registered adapter stub picks it up automatically.
+- See `agent/providers/` for the registry, the adapter Protocol, and the capability matrix. The full architecture rules live in [`AGENTS.md`](AGENTS.md#provider-abstraction--one-unified-client-many-adapters).
+
 ## Architecture
 
 The harness uses existing owners — no duplications:

@@ -19,3 +19,7 @@ Reusable, pure-Python primitives used by `agent/main.py::OneShotController`. Eac
 - Failures fail closed. No fabricated success receipts, no silent swallow of exceptions, no "any exception counts as pass" (see the G03 `expected_rejection` fix in `fixtures.py`).
 - Scanner / inventory primitives shell out to `git` so their view matches `git grep` and the agent-read deny list in `.agents/settings.json`.
 - Previously-tracked modules (`approval.py`, `memory_retrieve.py`, `plan_review.py`, `research_output.py`, `research_review.py`, `mcp_tools.py`, `repo_summary.py`) were consolidated into `agent/main.py` and `agent/adapters/` during the OneShotController migration. The RepoSummary / MCPToolRegistry stacks were the last remnants of the retired 00–11 numbered-prompt set and are no longer referenced by live code.
+
+## Related
+
+- Provider abstraction lives in [`agent/providers/`](../agent/providers/) — unified request/response/capabilities, registry factory, and the deterministic `EchoAdapter` reference. See the [AGENTS.md Provider abstraction section](../AGENTS.md#provider-abstraction--one-unified-client-many-adapters) for the ownership rule and `UnsupportedCapabilityError` contract.
