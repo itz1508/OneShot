@@ -13,12 +13,7 @@ This directory contains the active tool implementations used by the OneShot work
 | `text_metrics.py` | Text counting (characters, bytes, words) |
 | `build_executor.py` | Build execution with trace and artifact capture |
 | `mcp_tools.py` | MCP tool registry (no core logic, permission-gated) |
-| `memory_retrieve.py` | Task retrieval and checkpoint resume |
-| `plan_review.py` | Plan grounding and best-practice review |
 | `repo_summary.py` | Repository summary with gap matrix |
-| `research_output.py` | Research output builder with provenance |
-| `research_review.py` | Research review with color evaluation |
-| `approval.py` | Authorization gate (user + host enforcement) |
 
 ## Design principles
 

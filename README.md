@@ -22,7 +22,7 @@ The OneShot Workflow Harness executes a multi-phase plan (Research → Plan → 
 python -m pytest tests/ -v
 ```
 
-159 passed, 22 skipped. Path resolution is automatic via `conftest.py` and `[tool.pytest.ini_options]` in `pyproject.toml` — no manual `PYTHONPATH` required.
+281 passed, 55 skipped. Path resolution is automatic via `conftest.py` and `[tool.pytest.ini_options]` in `pyproject.toml` — no manual `PYTHONPATH` required.
 
 ## Key files
 
@@ -39,7 +39,7 @@ python -m pytest tests/ -v
 
 The harness uses existing owners — no duplications:
 - TaskManager owns task state, checkpoints, resume
-- ContractChecker owns record validation
+- Pydantic models (`agent/contracts/models.py`) own record validation
 - ColorEvaluator owns GREEN/RED assignment
 - Scanner is host-provided (git + hashlib), wrapped by adapters
 - FixtureRegistry owns fixture validation with independent oracles

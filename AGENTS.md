@@ -52,16 +52,18 @@ Practical repository instructions for coding agents. This file governs **how to 
 
 ### Implemented paths — verified in this checkout
 
-All M0–M8 milestones are implemented and verified. 159 tests pass, 22 skipped.
+All M0–M8 milestones are implemented and verified. 281 tests pass, 55 skipped.
 
 - `agent/main.py` — OneShotController with stage routing, Scanner invocation, fixture validation, checkpoint/resume.
 - `agent/adapters/` — Scanner adapters: `repository_inventory.py`, `source_comparison.py`, `content_integrity.py`, `evidence_locator.py`, `trace_projection.py`.
 - `agent/reference/` — Stage-specific guidance: `research_guidance.md`, `plan_guidance.md`, `build_guidance.md`.
-- `agent/templates/` — Reusable templates: `research_input.md`, `output_plan.md`, `output_fixture.md`, `output_success_criteria.md`, `output_validation.md`, `execplan.md`.
+- `agent/gap_analysis.py` — Gap analysis with source inspection and classification.
+- `agent/output_registry.py` — Output schema registry for stage artifacts.
+- `agent/schemas/` — JSON output schemas for research, gap analysis, repo summary, and built output.
 - `agent/contracts/` — Contract YAMLs, Pydantic validators (`models.py`), `README.md`.
-- `tools/` — 14 active tool implementations (see [tools/README.md](tools/README.md)).
-- `tests/` — 15 test files covering contracts, workflow, E2E, adapters, and tools.
-- `pyproject.toml`, `conftest.py`, `requirements.txt`, `requirements-dev.txt` — project configuration.
+- `tools/` — 8 active tool implementations (see [tools/README.md](tools/README.md)).
+- `tests/` — 19 test files covering contracts, workflow, E2E, adapters, and tools.
+- `pyproject.toml`, `conftest.py`, `requirements.txt` — project configuration.
 - `.github/workflows/ci.yml` — CI pipeline (ruff + pytest across Python 3.10/3.11/3.12).
 - `bin/context_counter.py` — demo build target for E2E.
 - No active `src/` directory; historical `src/` is preserved only in git history.
