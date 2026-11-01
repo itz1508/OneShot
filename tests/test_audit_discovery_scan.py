@@ -14,7 +14,6 @@ from tools.scanner import (
     scan_match_variable,
 )
 
-
 ROOT = Path(__file__).resolve().parents[1]
 OLD_ROLE = "Builder" + " Discovery"
 OLD_SYMBOL = "Builder" + "Discovery"
