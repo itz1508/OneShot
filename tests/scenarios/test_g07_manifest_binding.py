@@ -314,3 +314,131 @@ class ManifestPlaceholderRejectedTest(unittest.TestCase):
             "detector_identities must bind at least one detector",
             str(ctx.exception),
         )
+
+
+class ManifestDigestRecomputationTest(unittest.TestCase):
+    """G07 reopen (reviewer finding on 9d2ce25):
+
+    validate_pipeline must INDEPENDENTLY recompute fixture_oracle_sha
+    and build_receipt_sha and refuse the manifest when the stored
+    value doesn't match the recomputation. These red tests pin that
+    policy — before the fix, no cross-record error fires.
+    """
+
+    def setUp(self):
+        os.environ["ONESHOT_TRUSTED_TEST_INPUT"] = "1"
+
+    def tearDown(self):
+        os.environ.pop("ONESHOT_TRUSTED_TEST_INPUT", None)
+
+    def _one_shot(self):
+        """Run run_workflow once and return (research, plan, build)."""
+        with tempfile.TemporaryDirectory(prefix="g07-digest-") as td:
+            storage = Path(td) / "tasks.json"
+            ctrl = OneShotController(storage_path=str(storage))
+            result = ctrl.run_workflow(
+                "g07-digest-recompute",
+                str(_REPO),
+                storage_path=str(storage),
+                input_bundle={
+                    "requirements": [
+                        {
+                            "id": "R1",
+                            "statement": "Count characters",
+                            "scope": "in_scope",
+                            "authority_ref": "AGENTS.md",
+                        }
+                    ],
+                    "findings": [
+                        {
+                            "id": "F1",
+                            "claim": "bin/context_counter.py counts characters",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "assessment": "supported",
+                            "limitations": "",
+                        }
+                    ],
+                    "requirement_trace": [
+                        {
+                            "requirement_id": "R1",
+                            "finding_ids": ["F1"],
+                            "fixture_ids": ["bin/context_counter.py"],
+                            "criterion_ids": ["agent/contracts/build.yaml"],
+                            "disposition": "covered",
+                        }
+                    ],
+                    "accepted_requirement_ids": ["R1"],
+                    "plan_milestones": [
+                        {
+                            "id": "m1",
+                            "goal": "x",
+                            "files": [],
+                            "steps": ["x"],
+                            "commands": ["x"],
+                            "expected_observations": ["x"],
+                            "status": "pending",
+                        }
+                    ],
+                    "acceptance_criteria": [
+                        {
+                            "id": "c1",
+                            "requirement_id": "R1",
+                            "expected_result": "x",
+                            "oracle_ref": "AGENTS.md",
+                        }
+                    ],
+                    "claim_decisions": [
+                        {
+                            "id": "d1",
+                            "source_finding_id": "F1",
+                            "applicability": "USE",
+                            "reason": "x",
+                            "evidence_refs": ["bin/context_counter.py"],
+                            "affected_step_ids": ["m1"],
+                            "revision": 1,
+                            "recorded_at": "2026-11-01T00:00:00Z",
+                        }
+                    ],
+                    "gap_findings_mark_resolved": {
+                        "fix_receipt_ref": "AGENTS.md",
+                        "recheck_ref": "AGENTS.md",
+                    },
+                },
+            )
+            return (
+                copy.deepcopy(result["research"]),
+                copy.deepcopy(result["plan"]),
+                copy.deepcopy(result["build"]),
+            )
+
+    def test_tampered_fixture_oracle_sha_rejected(self):
+        """A manifest whose fixture_oracle_sha doesn't match the
+        independent sha of agent/contracts/oracles.py MUST surface a
+        cross-record error."""
+        research, plan, build = self._one_shot()
+        # Replace the real digest with a different valid sha value so
+        # the Pydantic placeholder rejection doesn't catch it first.
+        tampered_sha = "f" * 64
+        build["manifest_binding"]["fixture_oracle_sha"] = tampered_sha
+        errors = validate_pipeline(research, plan, build)
+        self.assertTrue(
+            any(
+                "fixture_oracle_sha mismatch" in e for e in errors
+            ),
+            f"expected fixture_oracle_sha mismatch; got: {errors}",
+        )
+
+    def test_tampered_build_receipt_sha_rejected(self):
+        """A manifest whose build_receipt_sha doesn't match the independent
+        sha-256 of execution.command_receipts MUST surface a cross-record
+        error."""
+        research, plan, build = self._one_shot()
+        tampered_sha = "d" * 64
+        build["manifest_binding"]["build_receipt_sha"] = tampered_sha
+        errors = validate_pipeline(research, plan, build)
+        self.assertTrue(
+            any(
+                "build_receipt_sha mismatch" in e for e in errors
+            ),
+            f"expected build_receipt_sha mismatch; got: {errors}",
+        )
