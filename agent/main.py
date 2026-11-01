@@ -1901,12 +1901,27 @@ class OneShotController:
         input_bundle=None,
         existing_task_id=None,
     ):
-        """Execute full Research -> Plan -> Build with SHA-256 evidence resolver."""
+        """Execute full Research -> Plan -> Build with SHA-256 evidence resolver.
+
+        G09 reopen (reviewer finding on 9d2ce25): when `existing_task_id`
+        is supplied we preserve the previous attempt's lineage on
+        `task.results["workflow_records"]` and bump `plan["revision"]`
+        (and `research["revision"]` when the Research actually changed)
+        past the last-committed revision, writing `plan["preceding_*"]`
+        back-references so the correction is traceable to its ancestor.
+        """
         ctrl = OneShotController(storage_path=storage_path or "/tmp/oneshot_workflow.json")
+
+        prior_records: list[dict] = []
+        prior_last: dict | None = None
         if existing_task_id:
-            if ctrl.tm.get_task(existing_task_id) is None:
+            prior_task = ctrl.tm.get_task(existing_task_id)
+            if prior_task is None:
                 raise KeyError(f"existing_task_id={existing_task_id!r} not found in storage")
             tid = existing_task_id
+            prior_records = list((prior_task.results or {}).get("workflow_records") or [])
+            if prior_records:
+                prior_last = prior_records[-1]
             ctrl.tm.transition(tid, "running", detail=f"continue: {objective}")
         else:
             tid = ctrl.start_task(objective)
@@ -1921,6 +1936,18 @@ class OneShotController:
             }
         research = r_result["record"]
         ev_idx = r_result["evidence_index"]
+
+        # G09 — bump Research revision past the previous attempt when
+        # continuing. If the previous Research record was identical we
+        # keep its revision; otherwise advance monotonically so the new
+        # attempt's revision strictly dominates the committed one.
+        if prior_last and prior_last.get("research"):
+            prev_research = prior_last["research"]
+            prev_r_rev = int(prev_research.get("revision") or 1)
+            research["revision"] = prev_r_rev + 1
+            research["preceding_record_id"] = prev_research.get("record_id")
+            research["preceding_revision"] = prev_r_rev
+
         ctrl.transition_stage(tid, WorkflowStage.PLAN, "research complete")
 
         p_result = ctrl.review_research_plan(
@@ -1934,6 +1961,28 @@ class OneShotController:
                 "classification": "BLOCKED",
             }
         plan = p_result["record"]
+
+        # G09 — bump Plan revision past the previous attempt and record
+        # back-references to the prior Plan on this task.
+        if prior_last and prior_last.get("plan"):
+            prev_plan = prior_last["plan"]
+            prev_p_rev = int(prev_plan.get("revision") or 1)
+            plan["revision"] = prev_p_rev + 1
+            plan["preceding_record_id"] = prev_plan.get("record_id")
+            plan["preceding_revision"] = prev_p_rev
+            # Research-input bookkeeping on the Plan tracks the new
+            # Research revision too.
+            plan.setdefault("research_input", {})
+            plan["research_input"]["record_revision"] = research["revision"]
+            # Rewrite scanner_call.input_revision on every receipt so
+            # the Plan-level "scanner stale after revision" invariant
+            # (validate_pipeline) still holds — the receipts belong to
+            # the newly-committed Plan revision, not the previous one.
+            gap = plan.get("gap_analysis") or {}
+            for _call in gap.get("scanner_calls") or []:
+                if isinstance(_call, dict):
+                    _call["input_revision"] = plan["revision"]
+
         ctrl.transition_stage(tid, WorkflowStage.BUILD, "plan approved")
 
         b_result = ctrl.build_plan(tid, plan, ev_idx, repo_root, input_bundle=input_bundle)
@@ -1957,11 +2006,38 @@ class OneShotController:
         # schema-clean.
         verified = bool(not all_errors and b_result.get("all_pass"))
 
+        # G09 — persist this attempt's records on task.results.workflow_records
+        # BEFORE completing / failing. complete() and fail() both merge
+        # metadata but overwrite results, so compose the new results dict
+        # by appending the attempt to the (possibly empty) prior list.
+        attempt_record = {
+            "attempt_index": len(prior_records) + 1,
+            "research": research,
+            "plan": plan,
+            "build": build,
+            "classification": "VERIFIED" if verified else "PARTIAL",
+            "cross_record_errors": list(all_errors),
+            "all_pass": bool(b_result.get("all_pass")),
+            "color": b_result["color"],
+            "recorded_at": time.time(),
+        }
+        updated_records = prior_records + [attempt_record]
+
         if verified:
             ctrl.complete_task(
-                tid, {"e2e": "passed", "color": b_result["color"], "validation": "passed"}
+                tid,
+                {
+                    "e2e": "passed",
+                    "color": b_result["color"],
+                    "validation": "passed",
+                    "workflow_records": updated_records,
+                },
             )
         else:
+            # fail_task records the fail state, but we also need the
+            # attempt records persisted. Write them explicitly via
+            # TaskManager.save_results, then flag the fail state.
+            ctrl.tm.save_results(tid, {"workflow_records": updated_records})
             reason = (
                 f"Cross-record: {len(all_errors)} errors" if all_errors else "Build all_pass=False"
             )
@@ -1977,6 +2053,7 @@ class OneShotController:
             "all_pass": b_result["all_pass"],
             "cross_record_errors": all_errors,
             "classification": "VERIFIED" if verified else "PARTIAL",
+            "workflow_records": updated_records,
         }
 
 
