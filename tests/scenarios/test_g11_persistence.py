@@ -291,3 +291,88 @@ class MidRunCorruptionPolicyTest(unittest.TestCase):
             tm_fresh = TaskManager(storage_path=str(storage))
             self.assertIsNotNone(tm_fresh.get_task("t2"))
             self.assertIsNone(tm_fresh.get_task("t1"))
+
+
+class TransitionStageCASTest(unittest.TestCase):
+    """G11 reopen (fourth concern — reviewer-flagged):
+
+    transition_stage() is an INTENTIONAL update to an existing metadata
+    key (``stage``). It must therefore be a CAS write that pins
+    if_revision to the current committed value and bumps the revision.
+    A stale caller must receive StaleRevisionError, not silently
+    overwrite newer committed state.
+    """
+
+    def test_transition_stage_bumps_revision(self):
+        """Each successful stage transition increments metadata.revision."""
+        import sys as _sys
+
+        from main import (
+            OneShotController,  # type: ignore[import-not-found]
+            WorkflowStage,  # type: ignore[import-not-found]
+        )
+
+        _ = _sys  # keep import grouped
+        with tempfile.TemporaryDirectory(prefix="g11-cas-bump-") as td:
+            storage = Path(td) / "tasks.json"
+            ctrl = OneShotController(storage_path=str(storage))
+            tid = ctrl.start_task("transition-cas-bump")
+            r0 = int(ctrl.tm.get_task(tid).metadata.get("revision", 1))
+            ctrl.transition_stage(tid, WorkflowStage.PLAN, "research complete")
+            r1 = int(ctrl.tm.get_task(tid).metadata.get("revision", 1))
+            self.assertEqual(r1, r0 + 1)
+            ctrl.transition_stage(tid, WorkflowStage.BUILD, "plan approved")
+            r2 = int(ctrl.tm.get_task(tid).metadata.get("revision", 1))
+            self.assertEqual(r2, r0 + 2)
+
+    def test_stale_transition_stage_raises_stale_revision_error(self):
+        """A fresh writer-B advances the task; writer-A then tries a
+        transition_stage against its stale in-memory view. CAS MUST
+        refuse the write with StaleRevisionError."""
+        import subprocess
+        import sys as _sys
+
+        from main import (
+            OneShotController,  # type: ignore[import-not-found]
+            WorkflowStage,  # type: ignore[import-not-found]
+        )
+        from task_management import StaleRevisionError
+
+        with tempfile.TemporaryDirectory(prefix="g11-cas-stale-") as td:
+            storage = Path(td) / "tasks.json"
+            ctrl_a = OneShotController(storage_path=str(storage))
+            tid = ctrl_a.start_task("transition-cas-stale")
+            # Writer A holds a stale metadata view (revision whatever
+            # start_task left it at). Writer B advances it by one in a
+            # fresh process (same storage).
+            current_rev = int(ctrl_a.tm.get_task(tid).metadata.get("revision", 1))
+            code_b = f"""
+import sys
+sys.path.insert(0, {str(_REPO / 'tools')!r})
+from task_management import TaskManager
+tm = TaskManager(storage_path={str(storage)!r})
+rec = tm.get_task({tid!r})
+md = dict(rec.metadata or {{}})
+md['revision'] = {current_rev} + 1
+md['owner'] = 'B-advance'
+tm.set_task_metadata({tid!r}, md, if_revision={current_rev})
+"""
+            proc = subprocess.run(
+                [_sys.executable, "-c", code_b], capture_output=True, text=True
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+
+            # Writer A still thinks revision = current_rev. transition_stage
+            # must raise StaleRevisionError.
+            with self.assertRaises(StaleRevisionError):
+                ctrl_a.transition_stage(tid, WorkflowStage.PLAN, "stale A")
+
+            # Committed state on disk must retain writer-B's owner.
+            tm_fresh = __import__("task_management").TaskManager(
+                storage_path=str(storage)
+            )
+            md = tm_fresh.get_task(tid).metadata
+            self.assertEqual(md.get("owner"), "B-advance")
+            # And the committed revision is EXACTLY writer-B's bump —
+            # writer-A's stale attempt did not advance it further.
+            self.assertEqual(int(md.get("revision", 0)), current_rev + 1)

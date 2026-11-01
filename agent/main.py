@@ -304,20 +304,28 @@ class OneShotController:
     def transition_stage(self, task_id: str, to_stage: WorkflowStage, detail: str = "") -> None:
         """Transition task to a new workflow stage.
 
-        Uses the TaskManager's public `set_task_metadata` API so the
-        stage update is an EXPLICIT revision-safe write rather than an
-        in-memory mutation that relies on save_checkpoint merging it.
-        G11 reopen: the merge path now only adds brand-new metadata
-        keys, so intentional updates to existing keys must go through
-        this public API.
+        G11 reopen (reviewer finding on 9d2ce25): this is an INTENTIONAL
+        update to an existing metadata key (``stage``) and MUST therefore
+        go through `set_task_metadata(if_revision=...)` so a stale
+        in-memory read cannot clobber a newer committed revision. The
+        write both pins ``if_revision`` to the current committed value
+        AND bumps ``metadata['revision']`` on the new payload so every
+        stage transition is a monotonic CAS step.
         """
         task = self.tm.get_task(task_id)
         if not task:
             raise KeyError(f"Task {task_id} not found")
+        current_revision = int((task.metadata or {}).get("revision", 1))
         updated_metadata = dict(task.metadata or {})
         updated_metadata["stage"] = to_stage.value
         updated_metadata["stage_entered_at"] = time.time()
-        self.tm.set_task_metadata(task_id, updated_metadata)
+        updated_metadata["revision"] = current_revision + 1
+        # If this raises StaleRevisionError, propagate — a stale caller
+        # MUST reconcile against the newer committed state rather than
+        # silently overwrite it.
+        self.tm.set_task_metadata(
+            task_id, updated_metadata, if_revision=current_revision
+        )
         self.tm.save_checkpoint(task_id, {"stage": to_stage.value, "detail": detail})
         self.tm.transition(
             task_id, TaskState.RUNNING, detail=f"Stage -> {to_stage.value}: {detail}"
