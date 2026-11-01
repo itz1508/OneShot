@@ -145,8 +145,7 @@ class S1PlanCorrectionTest(unittest.TestCase):
         # When status is resolved but critical IDs remain, the message is
         # 'unresolved critical gaps: ...'. Either error is a valid r1 refusal.
         self.assertTrue(
-            "gap analysis must be resolved" in joined
-            or "unresolved critical gaps" in joined,
+            "gap analysis must be resolved" in joined or "unresolved critical gaps" in joined,
             f"expected gap-related pydantic error; got: {joined}",
         )
 

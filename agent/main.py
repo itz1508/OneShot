@@ -1273,13 +1273,18 @@ class OneShotController:
                 "updated_at": now,
             }
         )
+        _plan_milestones = (plan.get("implementation") or {}).get("milestones") or []
+        _plan_criteria = (plan.get("purpose") or {}).get("acceptance_criteria") or []
         build["plan_input"] = {
             "record_ref": plan["record_id"],
             "record_id": plan["record_id"],
             "record_revision": plan["revision"],
             "artifact_manifest_ref": plan["handoff"]["artifact_manifest_ref"],
-            "accepted_milestone_ids": ["m1"],
-            "accepted_criterion_ids": ["c1", "c2", "c3", "c4"],
+            # Build accepts whatever the Plan declared; the bundle-override
+            # merge below (and the DO_NOT_USE / VALIDATE_FIRST admission
+            # filter) can narrow this further.
+            "accepted_milestone_ids": [m.get("id") for m in _plan_milestones if m.get("id")],
+            "accepted_criterion_ids": [c.get("id") for c in _plan_criteria if c.get("id")],
         }
         build["execution"] = {
             "workspace_snapshot_ref": "AGENTS.md",
