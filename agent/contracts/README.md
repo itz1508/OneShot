@@ -8,7 +8,7 @@
 - `agent/contracts/plan.yaml`: executable Plan reference, Scanner Gap Analysis (missing, drift, overlap, duplication, contradiction, dependency, feasibility, coverage), Gap Fix and **Fixture Validation + Chaos**.
 - `agent/contracts/build.yaml`: execution receipts, implementation checks, actual **post-Build E2E**, recovery and final result.
 
-The legacy `src/` source, old tests and numbered 00–11 assignments are preserved under [`archive/legacy-src-pre-harness-2026-10-29`](https://github.com/itz1508/OneShot/tree/archive/legacy-src-pre-harness-2026-10-29), not active on `main`. This checkout contains **templates and a verifier, not a running agent harness**. Do not restore archived modules or invent System Scanner bindings.
+The legacy `src/` source and the retired 00–11 numbered-prompt set are preserved under [`archive/legacy-src-pre-harness-2026-10-29`](https://github.com/itz1508/OneShot/tree/archive/legacy-src-pre-harness-2026-10-29), not active on `main`. This checkout contains the live OneShotController harness, its Pydantic validators, and the three contract YAMLs. Do not restore archived modules or invent System Scanner bindings.
 
 ## Lifecycle and persistence
 

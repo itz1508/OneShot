@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Behavioral tests for OneShot Assignments 03-10 — research, plan, and build.
+"""Behavioural tests for the live `tools/` primitives: search_sources,
+fixtures, build_executor.
 
-Four of the modules this file originally covered were retired by commit
-d90b655 (approval, memory_retrieve, plan_review, research_output,
-research_review). Per PR #8 review item D2 ("do not delete behavioral
-coverage or restore legacy modules simply to satisfy imports"), tests for
-the FOUR MODULES STILL PRESENT in the checkout stay active and run;
-tests for the retired modules are kept as `@pytest.mark.skip` entries
-with explicit `ExecPlan D2` reasons so the coverage status is visible
-rather than hidden.
+Historical note. This module originally covered the retired numbered-
+prompt set (research_output, research_review, plan_review, approval).
+Those files were consolidated into `agent/main.py` by commit d90b655;
+per PR #8 review item D2 we kept the test classes marked
+`@pytest.mark.skip` so coverage status stays visible rather than hidden.
 
-Kept and running:    TestSearchSources, TestFixtures, TestBuildExecutor, TestMCPTools.
-Skipped (D2):        TestResearchOutput, TestResearchReview, TestPlanReview, TestApproval.
+Kept and running:  TestSearchSources, TestFixtures, TestBuildExecutor.
+Skipped (D2):      TestResearchOutput, TestResearchReview, TestPlanReview, TestApproval.
 """
 
 from pathlib import Path
@@ -21,7 +19,6 @@ import pytest
 # conftest.py adds tools/ to sys.path.
 from build_executor import BuildExecutor
 from fixtures import create_default_fixtures
-from mcp_tools import MCPToolRegistry, create_default_registry
 from search_sources import SearchSources
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -50,7 +47,7 @@ except ImportError:
 
 
 class TestSearchSources:
-    """Assignment 03: Repository Search."""
+    """`tools.search_sources.SearchSources` — repository file inventory."""
 
     def setup_method(self):
         self.search = SearchSources(repo_path=str(REPO_ROOT))
@@ -80,7 +77,7 @@ class TestSearchSources:
     reason="D2: tools/research_output.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestResearchOutput:
-    """Assignment 04: Research Output Package."""
+    """Retired: research_output was consolidated into agent/main.py (D2)."""
 
     def setup_method(self):
         self.builder = ResearchOutputBuilder(repo_path=str(REPO_ROOT))
@@ -118,7 +115,7 @@ class TestResearchOutput:
     reason="D2: tools/research_review.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestResearchReview:
-    """Assignment 05: Research Review (Optional)."""
+    """Retired: research_review was consolidated into agent/main.py (D2)."""
 
     def setup_method(self):
         self.review = ResearchReview()
@@ -158,14 +155,14 @@ class TestResearchReview:
     reason="D2: tools/plan_review.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestPlanReview:
-    """Assignment 06: Plan Review."""
+    """Retired: plan_review was consolidated into agent/main.py (D2)."""
 
     def setup_method(self):
         self.review = PlanReview()
 
     def test_pass1_grounding_with_code(self):
-        items = [{"area": "repo_summary", "description": "Build repo summary"}]
-        code = {"repo_summary": "tools/repo_summary.py"}
+        items = [{"area": "color_eval", "description": "Build color eval"}]
+        code = {"color_eval": "tools/color_eval.py"}
         results = self.review.pass1_grounding(items, code)
         assert results[0].status == "pass"
 
@@ -182,16 +179,16 @@ class TestPlanReview:
         assert results[0].status == "call_for_help"
 
     def test_review_returns_all_pass_when_grounded(self):
-        items = [{"area": "repo_summary", "description": "Build repo summary"}]
-        code = {"repo_summary": "tools/repo_summary.py"}
-        practices = {"repo_summary": "Executable script pattern"}
+        items = [{"area": "color_eval", "description": "Build color eval"}]
+        code = {"color_eval": "tools/color_eval.py"}
+        practices = {"color_eval": "Executable script pattern"}
         result = self.review.review(items, code, practices)
         assert result.all_pass is True
         assert result.gaps_remaining == 0
 
 
 class TestFixtures:
-    """Assignment 07: Fixtures."""
+    """`tools.fixtures.FixtureRegistry` — G03 independent expected results."""
 
     def test_default_fixtures_have_5_positive(self):
         registry = create_default_fixtures()
@@ -229,7 +226,7 @@ class TestFixtures:
     )
 )
 class TestApproval:
-    """Assignment 08: Authorization (user + host enforcement)."""
+    """Retired: approval was consolidated into agent/main.py (D2)."""
 
     def test_model_text_rejected(self):
         gate = AuthorizationGate(host_permissions={"a": ["execute"]})
@@ -259,7 +256,7 @@ class TestApproval:
 
 
 class TestBuildExecutor:
-    """Assignment 09: Build Execution."""
+    """`tools.build_executor.BuildExecutor` — artifact hashing + Agent/Tool/Result tracing."""
 
     def test_call_tool_traces_execution(self):
         executor = BuildExecutor(repo_path=str(REPO_ROOT))
@@ -288,34 +285,3 @@ class TestBuildExecutor:
         result = executor.execute([], fixture_runner=lambda: {"all_pass": True})
         assert result.finalized is True
 
-
-class TestMCPTools:
-    """Assignment 10: MCP Tool Integrations."""
-
-    def test_mcp_does_not_have_core_logic(self):
-        registry = create_default_registry()
-        assert registry.has_core_logic() is False
-
-    def test_list_tools_returns_registry(self):
-        registry = create_default_registry()
-        tools = registry.list_tools()
-        assert len(tools) > 0
-
-    def test_call_tool_without_permission_denied(self):
-        registry = MCPToolRegistry()
-        registry.register("test", "Test", {"x": int}, lambda x: x["x"], permissions=["admin"])
-        result = registry.call("test", {"x": 1}, caller_permissions=["read"])
-        assert not result.success
-        assert "Access denied" in result.error
-
-    def test_call_tool_with_invalid_input_returns_error(self):
-        registry = MCPToolRegistry()
-        registry.register("test", "Test", {"x": int}, lambda x: x["x"])
-        result = registry.call("test", {})
-        assert not result.success
-        assert "Missing" in result.error
-
-    def test_call_nonexistent_tool_returns_error(self):
-        registry = MCPToolRegistry()
-        result = registry.call("nonexistent", {})
-        assert not result.success

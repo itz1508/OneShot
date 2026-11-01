@@ -257,6 +257,16 @@ class ContractTest(unittest.TestCase):
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
             },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
+            },
             handoff={
                 "to": "complete",
                 "ready": True,
@@ -698,6 +708,16 @@ class PerStageValidationTest(unittest.TestCase):
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
             },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
+            },
             handoff={
                 "to": "complete",
                 "ready": True,
@@ -790,6 +810,16 @@ class PerStageValidationTest(unittest.TestCase):
                 "criterion_results": [
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
+            },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
             },
             handoff={
                 "to": "complete",
@@ -884,6 +914,16 @@ class PerStageValidationTest(unittest.TestCase):
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
             },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
+            },
             handoff={
                 "to": "complete",
                 "ready": True,
@@ -977,6 +1017,16 @@ class PerStageValidationTest(unittest.TestCase):
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
             },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
+            },
             handoff={"to": "complete", "ready": True, "completion_receipt_ref": ref("complete")},
         )
         # Note: no validation_receipt_ref — preflight should skip it
@@ -1048,6 +1098,16 @@ class PerStageValidationTest(unittest.TestCase):
                 "criterion_results": [
                     {"criterion_id": "c1", "status": "passed", "evidence_ref": "e2e"}
                 ],
+            },
+            manifest_binding={
+                "task_id": "t1",
+                "research_revision": 2,
+                "plan_revision": 2,
+                "scanner_identity": "stub-identity",
+                "detector_identities": {"stub": "stub-identity"},
+                "fixture_oracle_sha": "0" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "0" * 64,
             },
             handoff={
                 "to": "complete",

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import uuid
@@ -30,8 +31,18 @@ if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
 import contextlib  # noqa: E402 - must follow sys.path manipulation above
+from typing import TYPE_CHECKING  # noqa: E402
 
 from task_management import TaskManager, TaskState  # noqa: E402 - standalone-script path setup
+
+if TYPE_CHECKING:
+    from agent.prompt_authoring import PromptStore
+    from agent.providers import (
+        ProviderConfig,
+        UnifiedRequest,
+        UnifiedResponse,
+    )
+
 
 # Gap Analysis specialist integration
 _AGENT_DIR = Path(__file__).resolve().parent
@@ -67,6 +78,55 @@ try:
     _PYDANTIC_AVAILABLE = True
 except ImportError:
     _PYDANTIC_AVAILABLE = False
+
+
+# G08 — trusted-test bundle fields.
+#
+# `input_bundle` is the test-harness seam. Four fields
+#   * `gap_findings`
+#   * `gap_findings_mark_resolved`
+#   * `accepted_milestone_ids`
+#   * `accepted_criterion_ids`
+# can supply trusted Plan resolution that would normally come from the
+# real workflow. Production invocations must not carry them; only test
+# runs that explicitly set `ONESHOT_TRUSTED_TEST_INPUT=1` may use them.
+# When the gate is off and these fields appear in a bundle, they are
+# ignored and recorded in `self._last_dropped_bundle_fields`.
+_TRUSTED_TEST_FIELDS = frozenset(
+    [
+        "gap_findings",
+        "gap_findings_mark_resolved",
+        "accepted_milestone_ids",
+        "accepted_criterion_ids",
+    ]
+)
+
+
+def _trusted_test_input_enabled() -> bool:
+    """Return True when the trusted-test-input bundle fields are
+    permitted (env `ONESHOT_TRUSTED_TEST_INPUT=1`). Read at call
+    time, not at import, so tests can monkeypatch the environment.
+    """
+    return os.environ.get("ONESHOT_TRUSTED_TEST_INPUT") == "1"
+
+
+def _sanitise_input_bundle(bundle):
+    """Drop trusted-test-input fields from a bundle when the gate is off.
+
+    Returns (sanitised_bundle, dropped_field_names).
+    """
+    if bundle is None:
+        return None, []
+    if _trusted_test_input_enabled():
+        return bundle, []
+    dropped: list[str] = []
+    clean: dict = {}
+    for key, value in bundle.items():
+        if key in _TRUSTED_TEST_FIELDS:
+            dropped.append(key)
+            continue
+        clean[key] = value
+    return clean, dropped
 
 
 def _pydantic_errors(record, model_class, stage):
@@ -212,14 +272,70 @@ def make_hybrid_resolver(file_index: dict, root):
 
 
 class OneShotController:
-    """Single workflow controller — routing, transitions, continuation."""
+    """Single workflow controller — routing, transitions, continuation.
 
-    def __init__(self, storage_path: str | None = None):
+    Opt-in provider abstraction: pass `provider_config` to install a
+    unified model client on `self.client`. When unset, `self.client`
+    stays `None`; the existing deterministic research / plan / build
+    code paths do not call out, so they do not need a client. See
+    `agent/providers/` for the ProviderRegistry → Adapter → Unified
+    Client stack and the ownership rules.
+    """
+
+    def __init__(
+        self,
+        storage_path: str | None = None,
+        *,
+        provider_config: ProviderConfig | None = None,
+    ):
+        self._last_dropped_bundle_fields: list[str] = []
         self.tm = TaskManager(storage_path=storage_path or "/tmp/oneshot_tasks.json")
         self.registry = CapabilityRegistry()
         self._decision_waits: dict[str, UserDecisionWait] = {}
         self._stage_handlers: dict[str, Callable] = {}
         self._register_default_capabilities()
+        # Provider stack is OPT-IN. Importing agent.providers is cheap
+        # (no vendor SDK) but we still defer it to the constructor so
+        # callers that never touch the model path do not even load the
+        # module.
+        self.provider_config = provider_config
+        self.client = None
+        if provider_config is not None:
+            from agent.providers import ProviderRegistry
+
+            self.client = ProviderRegistry.create(provider_config)
+
+    def model_call(self, request: UnifiedRequest) -> UnifiedResponse:
+        """Route a unified request through the configured provider.
+
+        OneShot owns the request / response shape; the adapter owns
+        the vendor translation. If no `provider_config` was supplied
+        at construction, raises `RuntimeError` — this is the explicit
+        contract that avoids silently calling out to an unconfigured
+        provider.
+        """
+        if self.client is None:
+            raise RuntimeError(
+                "OneShotController.model_call: no provider_config supplied; "
+                "pass provider_config=ProviderConfig(...) at construction, or "
+                "call ProviderRegistry.create(...) directly."
+            )
+        return self.client.generate(request)
+
+    @property
+    def prompt_store(self) -> PromptStore:
+        """Lazy-constructed PromptStore (append-only revision registry).
+
+        Prompt Authoring is a development capability, not a workflow
+        stage; the store is here so Research / Plan / Build code can
+        look up an ACTIVE prompt revision in future callers WITHOUT
+        inventing a second seam. Zero workflow stages touch it today.
+        """
+        if getattr(self, "_prompt_store", None) is None:
+            from agent.prompt_authoring import PromptStore as _PromptStore
+
+            self._prompt_store = _PromptStore()
+        return self._prompt_store
 
     def _register_default_capabilities(self) -> None:
         """Register known capabilities. Actual availability verified at runtime."""
@@ -251,16 +367,88 @@ class OneShotController:
         return str(task.task_id)
 
     def transition_stage(self, task_id: str, to_stage: WorkflowStage, detail: str = "") -> None:
-        """Transition task to a new workflow stage."""
+        """Transition task to a new workflow stage.
+
+        G11 reopen (reviewer finding on 9d2ce25): this is an INTENTIONAL
+        update to an existing metadata key (``stage``) and MUST therefore
+        go through `set_task_metadata(if_revision=...)` so a stale
+        in-memory read cannot clobber a newer committed revision. The
+        write both pins ``if_revision`` to the current committed value
+        AND bumps ``metadata['revision']`` on the new payload so every
+        stage transition is a monotonic CAS step.
+        """
         task = self.tm.get_task(task_id)
         if not task:
             raise KeyError(f"Task {task_id} not found")
-        task.metadata["stage"] = to_stage.value
-        task.metadata["stage_entered_at"] = time.time()
+        current_revision = int((task.metadata or {}).get("revision", 1))
+        updated_metadata = dict(task.metadata or {})
+        updated_metadata["stage"] = to_stage.value
+        updated_metadata["stage_entered_at"] = time.time()
+        updated_metadata["revision"] = current_revision + 1
+        # If this raises StaleRevisionError, propagate — a stale caller
+        # MUST reconcile against the newer committed state rather than
+        # silently overwrite it.
+        self.tm.set_task_metadata(
+            task_id, updated_metadata, if_revision=current_revision
+        )
         self.tm.save_checkpoint(task_id, {"stage": to_stage.value, "detail": detail})
         self.tm.transition(
             task_id, TaskState.RUNNING, detail=f"Stage -> {to_stage.value}: {detail}"
         )
+
+    def _load_decision_waits(self, task_id: str) -> None:
+        """Rebuild self._decision_waits for a task from TaskManager metadata.
+
+        Pending user decisions are persisted on TaskRecord.metadata so a
+        restarted controller can resume them. This helper keeps the
+        in-memory cache in sync with that persisted state.
+        """
+        task = self.tm.get_task(task_id)
+        if not task:
+            return
+        waits_raw = (task.metadata or {}).get("decision_waits") or {}
+        if not isinstance(waits_raw, dict):
+            return
+        for request_id, data in waits_raw.items():
+            if request_id in self._decision_waits:
+                continue
+            try:
+                self._decision_waits[request_id] = UserDecisionWait(
+                    task_id=data["task_id"],
+                    input_request_id=data["input_request_id"],
+                    stage=data.get("stage", ""),
+                    action=data.get("action", ""),
+                    request_revision=int(data.get("request_revision", 1)),
+                    question=data.get("question", ""),
+                    permissible_answers=list(data.get("permissible_answers") or []),
+                    answered=bool(data.get("answered", False)),
+                    answer=data.get("answer"),
+                    created_at=float(data.get("created_at", time.time())),
+                )
+            except (KeyError, TypeError, ValueError):
+                # Corrupt entry — skip rather than crash the controller.
+                continue
+
+    def _persist_decision_wait(self, wait: UserDecisionWait) -> None:
+        """Persist a single UserDecisionWait via TaskManager's public API."""
+        payload = {
+            "task_id": wait.task_id,
+            "input_request_id": wait.input_request_id,
+            "stage": wait.stage,
+            "action": wait.action,
+            "request_revision": wait.request_revision,
+            "question": wait.question,
+            "permissible_answers": list(wait.permissible_answers),
+            "answered": wait.answered,
+            "answer": wait.answer,
+            "created_at": wait.created_at,
+        }
+        try:
+            self.tm.set_decision_wait(wait.task_id, wait.input_request_id, payload)
+        except KeyError:
+            # Task vanished — swallow quietly; caller already handled
+            # the parent task's absence upstream.
+            return
 
     def request_user_decision(
         self, task_id: str, question: str, permissible_answers: list[str] | None = None
@@ -280,6 +468,7 @@ class OneShotController:
             permissible_answers=permissible_answers or [],
         )
         self._decision_waits[request_id] = wait
+        self._persist_decision_wait(wait)
         self.tm.interrupt(
             task_id,
             {
@@ -293,6 +482,9 @@ class OneShotController:
 
     def provide_user_decision(self, task_id: str, input_request_id: str, answer: str) -> bool:
         """Provide an answer to a pending user-decision wait."""
+        # Hydrate the in-memory cache from TaskManager so a fresh
+        # process can answer a wait persisted in a prior run.
+        self._load_decision_waits(task_id)
         wait = self._decision_waits.get(input_request_id)
         if not wait or wait.task_id != task_id:
             return False
@@ -306,11 +498,17 @@ class OneShotController:
             return False  # Invalid answer
         wait.answered = True
         wait.answer = answer
+        self._persist_decision_wait(wait)
         self.tm.resume(task_id)
         return True
 
     def has_pending_decision(self, task_id: str) -> UserDecisionWait | None:
-        """Check if a task has a pending user-decision wait."""
+        """Check if a task has a pending user-decision wait.
+
+        Hydrates from TaskManager metadata so a fresh controller still
+        sees waits persisted in a prior run (audit item 01.6).
+        """
+        self._load_decision_waits(task_id)
         for w in self._decision_waits.values():
             if w.task_id == task_id and not w.answered:
                 return w
@@ -368,6 +566,7 @@ class OneShotController:
         BLOCKED_RESUMABLE. Parent task is never cancelled — only interrupted.
         """
         attempts: list[dict] = []
+        last_identity: str | None = None
         for attempt_num in range(1, max_repair_attempts + 1):
             if not _GAP_ANALYSIS_AVAILABLE:
                 return {
@@ -393,6 +592,34 @@ class OneShotController:
                 self.tm.save_checkpoint(task_id, {"capability_preflight": receipt})
                 receipt["attempts"] = attempts
                 return dict(receipt)
+
+            # G06 — a retry MUST be against a different detector
+            # identity than the previous attempt. A no-change retry is
+            # a stall and is refused with BLOCKED_RESUMABLE instead of
+            # consuming another attempt budget.
+            current_identity = receipt.get("scanner_identity", "")
+            if attempt_num > 1 and last_identity is not None and current_identity == last_identity:
+                self.tm.interrupt(
+                    task_id,
+                    {
+                        "preflight_stall": True,
+                        "scanner_identity": current_identity,
+                        "message": (
+                            "preflight re-run with unchanged scanner identity; "
+                            "refusing to repeat without a material correction"
+                        ),
+                    },
+                )
+                receipt["attempts"] = attempts
+                receipt["blocked_resumable"] = True
+                receipt["blocker"] = (
+                    "no_material_correction: scanner_identity unchanged since previous attempt"
+                )
+                receipt["next_action"] = (
+                    "Apply a material correction to the detector / source before retrying"
+                )
+                return dict(receipt)
+            last_identity = current_identity
 
             if result.invalid_categories:
                 # INVALID — checkpoint and retry
@@ -475,7 +702,10 @@ class OneShotController:
     # No new Scanner, Task Management, or artifact persistence owner.
     # ------------------------------------------------------------------
 
-    def research_plan(self, task_id, objective, repo_root):
+    def research_plan(self, task_id, objective, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Research: inspect source, gather evidence, validate."""
         import hashlib
         import subprocess
@@ -514,8 +744,9 @@ class OneShotController:
             "agent/contracts/plan.yaml",
             "agent/contracts/build.yaml",
             "agent/main.py",
+            "agent/gap_analysis.py",
             "bin/context_counter.py",
-            "agent/templates/execplan.md",
+            "bin/sqlite_effect_runner.py",
         ]:
             if key_file not in ev_idx:
                 kf = root / key_file
@@ -629,7 +860,7 @@ class OneShotController:
         }
         research["outputs"] = {
             "evidence_refs": ["AGENTS.md"],
-            "candidate_plan_ref": "agent/templates/execplan.md",
+            "candidate_plan_ref": "agent/contracts/research.yaml",
             "fixture_refs": ["bin/context_counter.py"],
             "success_criteria_refs": ["agent/contracts/build.yaml"],
             "requirement_trace": [
@@ -698,6 +929,23 @@ class OneShotController:
             "validation_receipt_ref": None,
         }
 
+        # Scenario bundle merge: let the caller inject real requirements and
+        # findings so S1-S5 can supply distinct inputs without rewriting the
+        # research_plan body. Backward compatible: no bundle → demo behavior.
+        if input_bundle is not None:
+            b_requirements = input_bundle.get("requirements")
+            if b_requirements is not None:
+                research["purpose"]["accepted_requirements"] = list(b_requirements)
+            b_findings = input_bundle.get("findings")
+            if b_findings is not None:
+                research["search"]["findings"] = list(b_findings)
+            b_sources = input_bundle.get("sources")
+            if b_sources is not None:
+                research["search"]["sources"] = list(b_sources)
+            b_trace = input_bundle.get("requirement_trace")
+            if b_trace is not None:
+                research["outputs"]["requirement_trace"] = list(b_trace)
+
         errors = []
         errors.extend(_pydantic_errors(research, _ResearchModel, "research"))
         if errors:
@@ -712,7 +960,10 @@ class OneShotController:
             research["handoff"]["ready"] = False
         return {"record": research, "errors": errors2, "evidence_index": ev_idx}
 
-    def review_research_plan(self, task_id, research, evidence_index, repo_root):
+    def review_research_plan(self, task_id, research, evidence_index, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Plan: create Plan record from accepted Research."""
         from datetime import datetime, timezone
         from pathlib import Path
@@ -849,11 +1100,27 @@ class OneShotController:
 
         scanner_adapter = SourceInspection(_host_inspector)
         scanner_inventory = scanner_adapter.inspect(root)
+        # G07 reopen (reviewer finding): every scanner_call that will
+        # populate manifest_binding.detector_identities MUST carry a
+        # non-empty, content-derived scanner_identity. Hash the adapter
+        # source file so the identity rotates on code change and is
+        # auditable at receipt time, exactly like
+        # gap_analysis.CapabilityPreflight._compute_scanner_identity.
+        import hashlib as _hashlib_rsi
+        _repo_inv_path = root / "agent" / "adapters" / "repository_inventory.py"
+        if not _repo_inv_path.is_file():
+            raise RuntimeError(
+                "G07 manifest integrity: adapter source "
+                f"{_repo_inv_path} is missing; cannot derive "
+                "scanner_identity for repository_inventory receipt."
+            )
+        _repo_inv_identity = _hashlib_rsi.sha256(_repo_inv_path.read_bytes()).hexdigest()
         scanner_receipt = {
             "at": now,
             "tool_ref": "agent/adapters/repository_inventory.py",
             "host_scanner": "git-ls-files+sha256",
             "scope_ref": "AGENTS.md",
+            "scanner_identity": _repo_inv_identity,
             "files_scanned": len(scanner_inventory.files),
             "files_excluded": len(scanner_inventory.excluded_paths),
             "limitations": list(scanner_inventory.limitations),
@@ -998,12 +1265,21 @@ class OneShotController:
                     "recheck_ref": None,
                 }
             )
+        _src_cmp_path = root / "agent" / "adapters" / "source_comparison.py"
+        if not _src_cmp_path.is_file():
+            raise RuntimeError(
+                "G07 manifest integrity: adapter source "
+                f"{_src_cmp_path} is missing; cannot derive "
+                "scanner_identity for source_comparison receipt."
+            )
+        _src_cmp_identity = _hashlib_rsi.sha256(_src_cmp_path.read_bytes()).hexdigest()
         comparison_receipt = {
             "at": now,
             "tool_ref": "agent/adapters/source_comparison.py",
             "host_scanner": "git-ls-tree-diff",
             "method": comparison_result.method,
             "scope_ref": "AGENTS.md",
+            "scanner_identity": _src_cmp_identity,
             "differences": len(comparison_result.differences),
             "comparison_complete": comparison_result.comparison_complete,
             "content_complete": comparison_result.content_complete,
@@ -1015,11 +1291,117 @@ class OneShotController:
         scanner_receipt["findings_ref"] = "AGENTS.md"
 
         unresolved = [f for f in gap_findings if f["type"] == "missing"]
+        # G05: run the eight-category capability preflight BEFORE
+        # constructing plan.gap_analysis. The result is folded into
+        # scanner_calls as a receipt AND into findings as critical gap
+        # findings per invalid / not-validated category so the Plan
+        # cannot reach 'resolved' with a failing preflight.
+        preflight_receipt = None
+        preflight_findings: list[dict] = []
+        preflight_blocks_plan = False
+        try:
+            from gap_analysis import CapabilityPreflight
+
+            _preflight = CapabilityPreflight(scanner_source_path=root / "agent" / "gap_analysis.py")
+            _pf_result = _preflight.run()
+            preflight_receipt = {
+                "at": now,
+                "tool_ref": "agent/gap_analysis.py",
+                "method": "capability_preflight",
+                "host_scanner": "capability-chaos-8",
+                "scope_ref": "AGENTS.md",
+                "scanner_identity": _pf_result.scanner_identity,
+                "input_revision": plan["revision"],
+                "aggregate_verdict": _pf_result.aggregate_verdict,
+                "invalid_categories": [c.category for c in _pf_result.invalid_categories],
+                "not_validated_categories": [
+                    c.category for c in _pf_result.not_validated_categories
+                ],
+                "coverage_complete": _pf_result.coverage_complete,
+                "limitations": list(_pf_result.limitations),
+                "receipt_ref": "AGENTS.md",
+                "findings_ref": "AGENTS.md",
+                "outcome": "passed" if _pf_result.can_proceed else "partial",
+            }
+            if not _pf_result.can_proceed:
+                preflight_blocks_plan = True
+                for cat in _pf_result.invalid_categories:
+                    preflight_findings.append(
+                        {
+                            "id": f"preflight-invalid-{cat.category}",
+                            "type": "missing",
+                            "path": "agent/gap_analysis.py",
+                            "finding": f"preflight category {cat.category!r} is INVALID",
+                            "status": "open",
+                            "severity": "critical",
+                            "evidence_ref": "AGENTS.md",
+                            "fix_receipt_ref": None,
+                            "recheck_ref": None,
+                        }
+                    )
+                for cat in _pf_result.not_validated_categories:
+                    preflight_findings.append(
+                        {
+                            "id": f"preflight-not-validated-{cat.category}",
+                            "type": "missing",
+                            "path": "agent/gap_analysis.py",
+                            "finding": (f"preflight category {cat.category!r} is NOT_VALIDATED"),
+                            "status": "open",
+                            "severity": "critical",
+                            "evidence_ref": "AGENTS.md",
+                            "fix_receipt_ref": None,
+                            "recheck_ref": None,
+                        }
+                    )
+        except Exception as _preflight_exc:  # noqa: BLE001 — recorded, not swallowed
+            preflight_receipt = {
+                "at": now,
+                "tool_ref": "agent/gap_analysis.py",
+                "method": "capability_preflight",
+                "host_scanner": "capability-chaos-8",
+                "scope_ref": "AGENTS.md",
+                "scanner_identity": "",
+                "input_revision": plan["revision"],
+                "aggregate_verdict": "not_validated",
+                "invalid_categories": [],
+                "not_validated_categories": [],
+                "coverage_complete": False,
+                "limitations": [
+                    f"preflight raised {type(_preflight_exc).__name__}: {_preflight_exc}"
+                ],
+                "receipt_ref": "AGENTS.md",
+                "findings_ref": "AGENTS.md",
+                "outcome": "partial",
+            }
+            preflight_blocks_plan = True
+            preflight_findings.append(
+                {
+                    "id": "preflight-exception",
+                    "type": "missing",
+                    "path": "agent/gap_analysis.py",
+                    "finding": (
+                        f"preflight raised {type(_preflight_exc).__name__}: {_preflight_exc}"
+                    ),
+                    "status": "open",
+                    "severity": "critical",
+                    "evidence_ref": "AGENTS.md",
+                    "fix_receipt_ref": None,
+                    "recheck_ref": None,
+                }
+            )
+
+        _plan_blocked = bool(unresolved) or preflight_blocks_plan
         plan["gap_analysis"] = {
-            "status": "resolved" if not unresolved else "partial",
-            "scanner_calls": [scanner_receipt, comparison_receipt],
-            "findings": gap_findings,
-            "unresolved_critical_ids": [f["id"] for f in unresolved],
+            "status": "findings_open" if _plan_blocked else "resolved",
+            "scanner_calls": (
+                [preflight_receipt, scanner_receipt, comparison_receipt]
+                if preflight_receipt is not None
+                else [scanner_receipt, comparison_receipt]
+            ),
+            "findings": gap_findings + preflight_findings,
+            "unresolved_critical_ids": (
+                [f["id"] for f in unresolved] + [f["id"] for f in preflight_findings]
+            ),
             "last_recheck_ref": "AGENTS.md",
         }
         # M5: Pre-Build fixture validation using FixtureRegistry
@@ -1137,6 +1519,51 @@ class OneShotController:
             "validation_receipt_ref": None,
         }
 
+        # Scenario bundle merge for Plan: inject claim decisions (new in
+        # Gate B), real milestones, custom acceptance criteria, custom
+        # accepted_requirement_ids and gap findings. Backward compatible.
+        if input_bundle is not None:
+            b_milestones = input_bundle.get("plan_milestones")
+            if b_milestones is not None:
+                plan["implementation"]["milestones"] = list(b_milestones)
+            b_criteria = input_bundle.get("acceptance_criteria")
+            if b_criteria is not None:
+                plan["purpose"]["acceptance_criteria"] = list(b_criteria)
+            b_requirement_ids = input_bundle.get("accepted_requirement_ids")
+            if b_requirement_ids is not None:
+                plan["research_input"]["accepted_requirement_ids"] = list(b_requirement_ids)
+            b_decisions = input_bundle.get("claim_decisions")
+            if b_decisions is not None:
+                plan["claim_decisions"] = list(b_decisions)
+            b_gap_findings = input_bundle.get("gap_findings")
+            if b_gap_findings is not None:
+                plan["gap_analysis"]["findings"] = list(b_gap_findings)
+                plan["gap_analysis"]["unresolved_critical_ids"] = [
+                    f["id"]
+                    for f in b_gap_findings
+                    if f.get("status") == "open" and f.get("severity") == "critical"
+                ]
+                has_unresolved = bool(plan["gap_analysis"]["unresolved_critical_ids"])
+                plan["gap_analysis"]["status"] = (
+                    "resolved" if not has_unresolved else "findings_open"
+                )
+            b_gap_resolution = input_bundle.get("gap_findings_mark_resolved")
+            if b_gap_resolution:
+                # The scenario accepts scanner-reported drift as benign:
+                # mark every open finding resolved with the supplied receipt.
+                receipt = b_gap_resolution.get("fix_receipt_ref") or "AGENTS.md"
+                recheck = b_gap_resolution.get("recheck_ref") or "AGENTS.md"
+                for f in plan["gap_analysis"]["findings"]:
+                    if f.get("status") == "open":
+                        f["status"] = "resolved"
+                        f["fix_receipt_ref"] = receipt
+                        # NOTE: the validator checks `recheck_receipt_ref` (not
+                        # `recheck_ref`) when a finding is marked resolved.
+                        f["recheck_receipt_ref"] = recheck
+                        f["recheck_ref"] = recheck
+                plan["gap_analysis"]["unresolved_critical_ids"] = []
+                plan["gap_analysis"]["status"] = "resolved"
+
         errors = []
         errors.extend(_pydantic_errors(plan, _PlanModel, "plan"))
         if not errors:
@@ -1146,7 +1573,10 @@ class OneShotController:
             plan["handoff"]["artifact_manifest_ref"] = "agent/contracts/plan.yaml"
         return {"record": plan, "errors": errors}
 
-    def build_plan(self, task_id, plan, evidence_index, repo_root):
+    def build_plan(self, task_id, plan, evidence_index, repo_root, input_bundle=None):
+        input_bundle, _dropped = _sanitise_input_bundle(input_bundle)
+        if _dropped:
+            self._last_dropped_bundle_fields = _dropped
         """Execute Build: run context_counter.py, capture receipts, validate."""
         import subprocess
         import sys
@@ -1212,13 +1642,18 @@ class OneShotController:
                 "updated_at": now,
             }
         )
+        _plan_milestones = (plan.get("implementation") or {}).get("milestones") or []
+        _plan_criteria = (plan.get("purpose") or {}).get("acceptance_criteria") or []
         build["plan_input"] = {
             "record_ref": plan["record_id"],
             "record_id": plan["record_id"],
             "record_revision": plan["revision"],
             "artifact_manifest_ref": plan["handoff"]["artifact_manifest_ref"],
-            "accepted_milestone_ids": ["m1"],
-            "accepted_criterion_ids": ["c1", "c2", "c3", "c4"],
+            # Build accepts whatever the Plan declared; the bundle-override
+            # merge below (and the DO_NOT_USE / VALIDATE_FIRST admission
+            # filter) can narrow this further.
+            "accepted_milestone_ids": [m.get("id") for m in _plan_milestones if m.get("id")],
+            "accepted_criterion_ids": [c.get("id") for c in _plan_criteria if c.get("id")],
         }
         build["execution"] = {
             "workspace_snapshot_ref": "AGENTS.md",
@@ -1347,8 +1782,7 @@ class OneShotController:
                 "step": "e2e",
                 "result": "{passed}/{total}".format(
                     passed=sum(
-                        1 for c in e2e_cases
-                        if c["exit"] == (0 if c["case"] != "no_args" else 1)
+                        1 for c in e2e_cases if c["exit"] == (0 if c["case"] != "no_args" else 1)
                     ),
                     total=len(e2e_cases),
                 ),
@@ -1398,6 +1832,117 @@ class OneShotController:
             "validation_receipt_ref": None,
         }
 
+        # G07 — manifest binding. The Build attempt is pinned to the exact
+        # Research / Plan revisions, scanner identity (from the preflight
+        # receipt on the Plan), detector identities (per-adapter sha-of-source
+        # or declared tool_ref), fixture oracle sha (file-level SHA-256 of
+        # the independent oracle file), oracle revision (ORACLE_CATALOG_REVISION
+        # from agent/contracts/oracles.py), and a derived build_receipt_sha
+        # (sha-256 of the serialised execution.command_receipts list).
+        #
+        # G07 reopen (reviewer finding on 9d2ce25): manifest INTEGRITY is a
+        # hard requirement — fallbacks like 'unknown' / 'no_oracle_module'
+        # or empty detector identities would satisfy a non-empty check
+        # while leaving the manifest effectively unbound. We refuse the
+        # Build with a RuntimeError when these values cannot be computed,
+        # rather than emitting a placeholder.
+        import hashlib as _hashlib_g07
+        import json as _json_g07
+
+        _scanner_identity = ""
+        _plan_scanner_calls = (plan.get("gap_analysis") or {}).get("scanner_calls") or []
+        for _call in _plan_scanner_calls:
+            if _call.get("method") == "capability_preflight":
+                _scanner_identity = _call.get("scanner_identity", "") or ""
+                break
+        if not _scanner_identity:
+            raise RuntimeError(
+                "G07 manifest integrity: scanner_identity missing from "
+                "plan.gap_analysis.scanner_calls (no capability_preflight "
+                "receipt carries scanner_identity). Refusing to emit a "
+                "placeholder manifest."
+            )
+
+        _detector_identities = {}
+        for _call in _plan_scanner_calls:
+            _tool_ref = _call.get("tool_ref")
+            if not _tool_ref:
+                continue
+            _ident = str(_call.get("scanner_identity", "") or "").strip()
+            if not _ident:
+                raise RuntimeError(
+                    f"G07 manifest integrity: empty scanner_identity on "
+                    f"scanner_call tool_ref={_tool_ref!r}. Every scanner "
+                    "call that reaches build_plan must carry a non-empty "
+                    "identity so detector_identities is auditable."
+                )
+            _detector_identities[_tool_ref] = _ident
+        if not _detector_identities:
+            raise RuntimeError(
+                "G07 manifest integrity: no detector_identities derivable "
+                "from plan.gap_analysis.scanner_calls — the manifest would "
+                "not pin any detector. Refusing to proceed."
+            )
+
+        _oracle_module = root / "agent" / "contracts" / "oracles.py"
+        if not _oracle_module.is_file():
+            raise RuntimeError(
+                f"G07 manifest integrity: oracle module {_oracle_module} "
+                "not found. fixture_oracle_sha cannot be computed; refusing "
+                "to emit a placeholder manifest."
+            )
+        try:
+            from oracles import ORACLE_CATALOG_REVISION as _ORACLE_REV  # noqa: N811
+        except ImportError as _exc:
+            raise RuntimeError(
+                "G07 manifest integrity: cannot import ORACLE_CATALOG_REVISION "
+                f"from oracles module ({_exc}). oracle_revision is unbound; "
+                "refusing to emit a placeholder manifest."
+            ) from _exc
+        _fixture_sha = _hashlib_g07.sha256(_oracle_module.read_bytes()).hexdigest()
+
+        _receipts_payload = _json_g07.dumps(
+            build["execution"].get("command_receipts") or [], sort_keys=True
+        ).encode("utf-8")
+        _build_receipt_sha = _hashlib_g07.sha256(_receipts_payload).hexdigest()
+
+        build["manifest_binding"] = {
+            "task_id": task_id,
+            "research_revision": int(plan["research_input"]["record_revision"]),
+            "plan_revision": int(plan["revision"]),
+            "scanner_identity": _scanner_identity,
+            "detector_identities": _detector_identities,
+            "fixture_oracle_sha": _fixture_sha,
+            "oracle_revision": int(_ORACLE_REV),
+            "build_receipt_sha": _build_receipt_sha,
+        }
+
+        # Scenario bundle merge for Build: filter the accepted milestone list
+        # through claim_decisions on the Plan (DO_NOT_USE / VALIDATE_FIRST
+        # transitively block affected milestones from admission), and let the
+        # bundle narrow / replace accepted_milestone_ids and
+        # accepted_criterion_ids. Backward compatible.
+        if input_bundle is not None:
+            # Admission filter: remove any accepted milestone whose provenance
+            # is governed by a DO_NOT_USE or VALIDATE_FIRST decision.
+            decisions = plan.get("claim_decisions") or []
+            blocked_steps: set[str] = set()
+            for d in decisions:
+                if d.get("applicability") in ("DO_NOT_USE", "VALIDATE_FIRST"):
+                    for sid in d.get("affected_step_ids") or []:
+                        blocked_steps.add(sid)
+            accepted = build["plan_input"].get("accepted_milestone_ids") or []
+            filtered = [m for m in accepted if m not in blocked_steps]
+            build["plan_input"]["accepted_milestone_ids"] = filtered
+
+            # Explicit override: a scenario may further narrow admission.
+            b_accepted = input_bundle.get("accepted_milestone_ids")
+            if b_accepted is not None:
+                build["plan_input"]["accepted_milestone_ids"] = list(b_accepted)
+            b_accepted_c = input_bundle.get("accepted_criterion_ids")
+            if b_accepted_c is not None:
+                build["plan_input"]["accepted_criterion_ids"] = list(b_accepted_c)
+
         errors = []
         errors.extend(_pydantic_errors(build, _BuildModel, "build"))
         if not errors:
@@ -1413,12 +1958,40 @@ class OneShotController:
             "all_pass": all_pass,
         }
 
-    def run_workflow(self, objective, repo_root, storage_path=None):
-        """Execute full Research -> Plan -> Build with SHA-256 evidence resolver."""
-        ctrl = OneShotController(storage_path=storage_path or "/tmp/oneshot_workflow.json")
-        tid = ctrl.start_task(objective)
+    def run_workflow(
+        self,
+        objective,
+        repo_root,
+        storage_path=None,
+        input_bundle=None,
+        existing_task_id=None,
+    ):
+        """Execute full Research -> Plan -> Build with SHA-256 evidence resolver.
 
-        r_result = ctrl.research_plan(tid, objective, repo_root)
+        G09 reopen (reviewer finding on 9d2ce25): when `existing_task_id`
+        is supplied we preserve the previous attempt's lineage on
+        `task.results["workflow_records"]` and bump `plan["revision"]`
+        (and `research["revision"]` when the Research actually changed)
+        past the last-committed revision, writing `plan["preceding_*"]`
+        back-references so the correction is traceable to its ancestor.
+        """
+        ctrl = OneShotController(storage_path=storage_path or "/tmp/oneshot_workflow.json")
+
+        prior_records: list[dict] = []
+        prior_last: dict | None = None
+        if existing_task_id:
+            prior_task = ctrl.tm.get_task(existing_task_id)
+            if prior_task is None:
+                raise KeyError(f"existing_task_id={existing_task_id!r} not found in storage")
+            tid = existing_task_id
+            prior_records = list((prior_task.results or {}).get("workflow_records") or [])
+            if prior_records:
+                prior_last = prior_records[-1]
+            ctrl.tm.transition(tid, "running", detail=f"continue: {objective}")
+        else:
+            tid = ctrl.start_task(objective)
+
+        r_result = ctrl.research_plan(tid, objective, repo_root, input_bundle=input_bundle)
         if r_result["errors"]:
             return {
                 "task_id": tid,
@@ -1428,9 +2001,23 @@ class OneShotController:
             }
         research = r_result["record"]
         ev_idx = r_result["evidence_index"]
+
+        # G09 — bump Research revision past the previous attempt when
+        # continuing. If the previous Research record was identical we
+        # keep its revision; otherwise advance monotonically so the new
+        # attempt's revision strictly dominates the committed one.
+        if prior_last and prior_last.get("research"):
+            prev_research = prior_last["research"]
+            prev_r_rev = int(prev_research.get("revision") or 1)
+            research["revision"] = prev_r_rev + 1
+            research["preceding_record_id"] = prev_research.get("record_id")
+            research["preceding_revision"] = prev_r_rev
+
         ctrl.transition_stage(tid, WorkflowStage.PLAN, "research complete")
 
-        p_result = ctrl.review_research_plan(tid, research, ev_idx, repo_root)
+        p_result = ctrl.review_research_plan(
+            tid, research, ev_idx, repo_root, input_bundle=input_bundle
+        )
         if p_result["errors"]:
             return {
                 "task_id": tid,
@@ -1439,9 +2026,31 @@ class OneShotController:
                 "classification": "BLOCKED",
             }
         plan = p_result["record"]
+
+        # G09 — bump Plan revision past the previous attempt and record
+        # back-references to the prior Plan on this task.
+        if prior_last and prior_last.get("plan"):
+            prev_plan = prior_last["plan"]
+            prev_p_rev = int(prev_plan.get("revision") or 1)
+            plan["revision"] = prev_p_rev + 1
+            plan["preceding_record_id"] = prev_plan.get("record_id")
+            plan["preceding_revision"] = prev_p_rev
+            # Research-input bookkeeping on the Plan tracks the new
+            # Research revision too.
+            plan.setdefault("research_input", {})
+            plan["research_input"]["record_revision"] = research["revision"]
+            # Rewrite scanner_call.input_revision on every receipt so
+            # the Plan-level "scanner stale after revision" invariant
+            # (validate_pipeline) still holds — the receipts belong to
+            # the newly-committed Plan revision, not the previous one.
+            gap = plan.get("gap_analysis") or {}
+            for _call in gap.get("scanner_calls") or []:
+                if isinstance(_call, dict):
+                    _call["input_revision"] = plan["revision"]
+
         ctrl.transition_stage(tid, WorkflowStage.BUILD, "plan approved")
 
-        b_result = ctrl.build_plan(tid, plan, ev_idx, repo_root)
+        b_result = ctrl.build_plan(tid, plan, ev_idx, repo_root, input_bundle=input_bundle)
         if b_result["errors"]:
             return {
                 "task_id": tid,
@@ -1453,15 +2062,51 @@ class OneShotController:
 
         from pathlib import Path
 
-        make_hybrid_resolver(ev_idx, Path(repo_root))
-        all_errors = _validate_pipeline_pyd(research, plan, build)
+        resolver = make_hybrid_resolver(ev_idx, Path(repo_root))
+        all_errors = _validate_pipeline_pyd(research, plan, build, resolve=resolver)
 
-        if not all_errors:
+        # G10 — VERIFIED requires BOTH clean cross-record validation AND
+        # the Build's own all_pass flag. A failed Build cannot carry a
+        # VERIFIED classification just because its records happened to be
+        # schema-clean.
+        verified = bool(not all_errors and b_result.get("all_pass"))
+
+        # G09 — persist this attempt's records on task.results.workflow_records
+        # BEFORE completing / failing. complete() and fail() both merge
+        # metadata but overwrite results, so compose the new results dict
+        # by appending the attempt to the (possibly empty) prior list.
+        attempt_record = {
+            "attempt_index": len(prior_records) + 1,
+            "research": research,
+            "plan": plan,
+            "build": build,
+            "classification": "VERIFIED" if verified else "PARTIAL",
+            "cross_record_errors": list(all_errors),
+            "all_pass": bool(b_result.get("all_pass")),
+            "color": b_result["color"],
+            "recorded_at": time.time(),
+        }
+        updated_records = prior_records + [attempt_record]
+
+        if verified:
             ctrl.complete_task(
-                tid, {"e2e": "passed", "color": b_result["color"], "validation": "passed"}
+                tid,
+                {
+                    "e2e": "passed",
+                    "color": b_result["color"],
+                    "validation": "passed",
+                    "workflow_records": updated_records,
+                },
             )
         else:
-            ctrl.fail_task(tid, f"Cross-record: {len(all_errors)} errors")
+            # fail_task records the fail state, but we also need the
+            # attempt records persisted. Write them explicitly via
+            # TaskManager.save_results, then flag the fail state.
+            ctrl.tm.save_results(tid, {"workflow_records": updated_records})
+            reason = (
+                f"Cross-record: {len(all_errors)} errors" if all_errors else "Build all_pass=False"
+            )
+            ctrl.fail_task(tid, reason)
 
         return {
             "task_id": tid,
@@ -1472,7 +2117,8 @@ class OneShotController:
             "color": b_result["color"],
             "all_pass": b_result["all_pass"],
             "cross_record_errors": all_errors,
-            "classification": "VERIFIED" if not all_errors else "PARTIAL",
+            "classification": "VERIFIED" if verified else "PARTIAL",
+            "workflow_records": updated_records,
         }
 
 
@@ -1494,6 +2140,51 @@ def main() -> int:
 
     sub.add_parser("list", help="List all tasks")
     sub.add_parser("capabilities", help="List registered capabilities")
+
+    rn = sub.add_parser(
+        "run",
+        help="Execute the full Research→Plan→Build workflow for a request",
+    )
+    rn.add_argument(
+        "--request-file",
+        required=True,
+        type=Path,
+        help="UTF-8 file containing the task request / objective text.",
+    )
+    rn.add_argument(
+        "--storage",
+        type=Path,
+        default=Path("/tmp/oneshot_tasks.json"),
+        help="TaskManager storage path (JSON).",
+    )
+    rn.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="Workspace root used for Research / Scanner / Build evidence.",
+    )
+    rn.add_argument(
+        "--bundle",
+        type=Path,
+        default=None,
+        help=(
+            "Optional JSON file whose contents are passed as input_bundle to "
+            "the controller. Used by the five-scenario acceptance suite."
+        ),
+    )
+
+    cn = sub.add_parser(
+        "continue",
+        help=(
+            "Re-run the full workflow against an EXISTING task_id "
+            "(G09 — same-task BAD → correction → GOOD)."
+        ),
+    )
+    cn.add_argument("--task-id", required=True, help="Existing task_id to continue.")
+    cn.add_argument("--request-file", required=True, type=Path)
+    cn.add_argument("--storage", type=Path, default=Path("/tmp/oneshot_tasks.json"))
+    cn.add_argument("--repo-root", type=Path, default=Path.cwd())
+    cn.add_argument("--bundle", type=Path, default=None)
 
     args = parser.parse_args()
     if not args.command:
@@ -1531,6 +2222,56 @@ def main() -> int:
         caps = ctrl.registry.list_capabilities()
         print(json.dumps([asdict(c) for c in caps], indent=2))
         return 0
+
+    if args.command == "run":
+        request_text = args.request_file.read_text(encoding="utf-8").strip()
+        bundle = None
+        if args.bundle is not None:
+            bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+        result = ctrl.run_workflow(
+            request_text,
+            str(args.repo_root),
+            storage_path=str(args.storage),
+            input_bundle=bundle,
+        )
+        # Serialise only the top-level status fields by default; dump the
+        # full generated records when they fit. Records live in result for
+        # callers that imported run_workflow directly.
+        summary = {
+            "task_id": result.get("task_id"),
+            "classification": result.get("classification"),
+            "stage": result.get("stage"),
+            "errors": result.get("errors") or [],
+            "cross_record_errors": result.get("cross_record_errors") or [],
+            "all_pass": result.get("all_pass"),
+            "color": result.get("color"),
+        }
+        print(json.dumps(summary, indent=2, default=str))
+        return 0 if result.get("classification") == "VERIFIED" else 1
+
+    if args.command == "continue":
+        request_text = args.request_file.read_text(encoding="utf-8").strip()
+        bundle = None
+        if args.bundle is not None:
+            bundle = json.loads(args.bundle.read_text(encoding="utf-8"))
+        result = ctrl.run_workflow(
+            request_text,
+            str(args.repo_root),
+            storage_path=str(args.storage),
+            input_bundle=bundle,
+            existing_task_id=args.task_id,
+        )
+        summary = {
+            "task_id": result.get("task_id"),
+            "classification": result.get("classification"),
+            "stage": result.get("stage"),
+            "errors": result.get("errors") or [],
+            "cross_record_errors": result.get("cross_record_errors") or [],
+            "all_pass": result.get("all_pass"),
+            "color": result.get("color"),
+        }
+        print(json.dumps(summary, indent=2, default=str))
+        return 0 if result.get("classification") == "VERIFIED" else 1
 
     return 0
 

@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""
-OneShot Assignment 09: Build Execution
+"""Build executor with artifact hashing and `Agent → Tool → Result`
+tracing.
 
-Executes approved build using supported built-in tools. Captures and hashes
-artifacts, validates output schemas, runs fixtures, and traces the
-Agent → Tool → Result → Agent continuation pattern. Partial failures
-are preserved, not silently cleaned up.
+Executes an approved Plan milestone step-by-step, capturing:
+  * SHA-256-hashed artifact receipts (`Artifact.sha256`) so Build
+    receipts can be re-verified independently;
+  * ordered `ToolCall` records of (tool, input, output, timestamp)
+    forming the Agent → Tool → Result trace;
+  * `BuildResult.partial` on any step failure, so partial progress is
+    preserved rather than silently cleaned up (G06 bounded-retry
+    contract).
+
+Refuses to execute a step whose `tool_fn` field is not a callable —
+the audit-item 06.6 authorization gate. Exercised by
+`tests/scenarios/test_build_executor_authorization.py`.
 """
 
 import hashlib
@@ -111,10 +119,24 @@ class BuildExecutor:
         result = BuildResult()
 
         for step in build_steps:
+            tool_name = step.get("tool", "unknown")
+            tool_input = step.get("input", {})
+            tool_fn = step.get("function")
+            # Audit item 06.6: a Build step whose `function` is missing or
+            # not callable is UNAUTHORISED — refuse it, do not pretend it
+            # was executed with a no-op.
+            if tool_fn is None or not callable(tool_fn):
+                result.partial_failures.append(
+                    {
+                        "step": tool_name,
+                        "error": (
+                            "unauthorized_tool_fn: step is missing a callable "
+                            "`function` entry; refusing to execute"
+                        ),
+                    }
+                )
+                continue
             try:
-                tool_name = step.get("tool", "unknown")
-                tool_input = step.get("input", {})
-                tool_fn = step.get("function", lambda x: None)
                 self.call_tool(tool_name, tool_input, tool_fn)
 
                 if step.get("artifact_path"):
@@ -124,7 +146,7 @@ class BuildExecutor:
             except Exception as e:
                 result.partial_failures.append(
                     {
-                        "step": step.get("tool", "unknown"),
+                        "step": tool_name,
                         "error": str(e),
                     }
                 )

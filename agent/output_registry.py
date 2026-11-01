@@ -101,7 +101,6 @@ class SchemaRegistry:
         "output_research": "research_record",
         "output_gap_analysis": "gap_analysis",
         "output_built": "build_record",
-        "output_repo_summary": "repo_summary",
     }
 
     def __init__(self, schemas_dir: Path | None = None):
@@ -112,7 +111,7 @@ class SchemaRegistry:
     # -- registration ------------------------------------------------------
 
     def _register_defaults(self) -> None:
-        """Register the four built-in output schemas."""
+        """Register the three built-in output schemas."""
         defaults = [
             OutputSchemaDescriptor(
                 name="output_research",
@@ -140,15 +139,6 @@ class SchemaRegistry:
                 model_ref="agent/contracts/models.py:BuildRecord",
                 description="Build execution results, E2E validation, and outcome",
                 priority=10,
-            ),
-            OutputSchemaDescriptor(
-                name="output_repo_summary",
-                schema_file="output_repo_summary.json",
-                stage="any",
-                contract_ref="tools/repo_summary.py:RepoSummary",
-                model_ref=None,
-                description="Repository summary with gap matrix and color eval baseline",
-                priority=5,
             ),
         ]
         for desc in defaults:
@@ -361,19 +351,6 @@ class SchemaRegistry:
         gap.setdefault("plan_record_id", plan_record.get("record_id"))
         gap.setdefault("plan_revision", plan_record.get("revision"))
         return gap
-
-    @staticmethod
-    def extract_repo_summary(summary_obj: Any) -> dict:
-        """Extract a repo summary dict from a ``RepoSummary`` dataclass or dict."""
-        if isinstance(summary_obj, dict):
-            return summary_obj
-        if hasattr(summary_obj, "__dataclass_fields__"):
-            return asdict(summary_obj)
-        if hasattr(summary_obj, "to_dict"):
-            return dict(summary_obj.to_dict())
-        if hasattr(summary_obj, "model_dump"):
-            return dict(summary_obj.model_dump())
-        return dict(summary_obj)
 
     # -- internal helpers --------------------------------------------------
 

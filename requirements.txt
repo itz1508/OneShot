@@ -1,6 +1,3 @@
 # OneShot runtime dependencies
 PyYAML>=6.0
 pydantic>=2.0
-
-# Optional: uncomment for MLflow experiment tracking
-# mlflow>=3.0
