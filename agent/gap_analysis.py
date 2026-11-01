@@ -429,9 +429,7 @@ class CapabilityPreflight:
         else:
             verdict = CapabilityVerdict.INVALID.value
             summary = [(d.status, d.path) for d in neg_diffs]
-            evidence = (
-                f"False positive: scanner flagged negative control (got {summary})"
-            )
+            evidence = f"False positive: scanner flagged negative control (got {summary})"
 
         return PreflightCategoryResult(
             category=category,
