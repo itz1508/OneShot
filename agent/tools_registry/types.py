@@ -65,10 +65,35 @@ class DispatchAuditEntry:
 
     Written whether or not dispatch succeeded; stored in-process on the
     registry. ``status`` is one of
-    ``\"ok\"`` | ``\"invalid_input\"`` | ``\"unknown_tool\"`` |
-    ``\"not_available\"`` | ``\"error\"`` | ``\"timeout\"`` |
-    ``\"input_too_large\"``. The ``error_class`` field names the exception
-    type (never the message, which may contain sensitive data).
+    ``\"ok\"`` | ``\"invalid_input\"`` | ``\"invalid_schema\"`` |
+    ``\"unknown_tool\"`` | ``\"not_available\"`` | ``\"error\"`` |
+    ``\"tool_timeout\"`` | ``\"input_too_large\"`` |
+    ``\"untrusted_identity\"``. The ``error_class`` field names the
+    exception type (never the message, which may contain sensitive data).
+
+    Side-effect reconciliation fields
+    ---------------------------------
+    When a FUNCTION or MCP tool breaches its wall-clock timeout the
+    dispatcher raises ``tool_timeout`` to the caller IMMEDIATELY and does
+    NOT wait for the worker thread (Python has no safe thread
+    cancellation). The worker may therefore still complete, fail, or
+    partially mutate state after the caller gets its error. The
+    reviewer's required policy is encoded here:
+
+      * ``worker_termination_confirmed`` — False at the moment of
+        ``tool_timeout`` (the worker is unreachable); True once
+        ``ToolRegistry.reconcile_pending()`` has observed the Future
+        complete (success or exception) and updated the record.
+      * ``side_effect_state`` — one of ``\"ok\"`` (completed normally;
+        no uncertainty), ``\"uncertain\"`` (``tool_timeout`` fired and
+        reconciliation has not yet confirmed the worker is done),
+        ``\"settled\"`` (reconciliation observed the worker return),
+        or ``\"settled_error\"`` (reconciliation observed the worker
+        raise). Callers performing writes MUST pass ``uncertain``
+        entries through ``reconcile_pending()`` before retrying — the
+        tool may have already applied its effect.
+      * ``entry_id`` — monotonic integer stable across reconciliation
+        rewrites; identifies the record even after retention eviction.
     """
 
     at: float
@@ -78,6 +103,9 @@ class DispatchAuditEntry:
     duration_ms: float
     error_class: str | None = None
     input_bytes: int = 0
+    worker_termination_confirmed: bool = True
+    side_effect_state: str = "ok"
+    entry_id: int = 0
 
 
 @dataclass(frozen=True)

@@ -29,7 +29,7 @@ typecheck:
 	$(PYTHON) -m mypy agent/ tools/
 
 spell:
-	$(PYTHON) -m codespell \
+	codespell \
 		agent/ tools/ tests/ bin/ README.md AGENTS.md pyproject.toml
 
 clean:

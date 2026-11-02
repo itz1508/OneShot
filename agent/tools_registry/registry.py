@@ -30,10 +30,14 @@ Ownership boundaries:
 """
 from __future__ import annotations
 
+import dataclasses
+import itertools
 import json
+import threading
 import time
+from collections import deque
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as _FutureTimeout
 from typing import Any
 
@@ -80,6 +84,8 @@ class ToolRegistry:
         trust_actor_strings: bool = False,
         input_byte_limit: int = 256 * 1024,
         default_timeout_s: float = 30.0,
+        audit_max_entries: int = 10_000,
+        dispatch_workers: int = 4,
     ) -> None:
         """Build a registry.
 
@@ -94,9 +100,21 @@ class ToolRegistry:
           serialisation exceeds this many bytes. Protects against DoS
           through oversized payloads; set to ``0`` to disable.
         * ``default_timeout_s`` — hard wall-clock cap for a single dispatch
-          call. Function tools run under a ThreadPoolExecutor with this
-          timeout; MCP tools go through the same gate. Set to ``0`` to
+          call. Function and MCP tools run on a persistent ThreadPoolExecutor
+          and the caller returns at the deadline whether or not the worker
+          has finished; see ``_invoke_with_timeout`` and ``reconcile_pending``
+          for the side-effect reconciliation contract. Set to ``0`` to
           disable (not recommended).
+        * ``audit_max_entries`` — ring-buffer bound on the in-process audit
+          log. The oldest entries are evicted first; set to 0 to make the
+          buffer unbounded (NOT recommended — OOM risk under high dispatch
+          volume).
+        * ``dispatch_workers`` — worker-thread pool size for the persistent
+          dispatch executor. Must be >= 1. Independent of per-call
+          ``timeout_s``: workers that outlive a ``tool_timeout`` continue
+          running until they return of their own accord (Python has no safe
+          thread cancellation); their eventual settlement is observed via
+          ``reconcile_pending()``.
         """
         self._toolkits: dict[str, ToolkitDescriptor] = {}
         self._tools: dict[str, ToolDescriptor] = {}
@@ -105,9 +123,28 @@ class ToolRegistry:
         self._input_byte_limit = int(input_byte_limit)
         self._default_timeout_s = float(default_timeout_s)
         # Structured audit log — one DispatchAuditEntry per dispatch
-        # attempt. Append-only in-process; durable persistence is
-        # intentionally out of scope here (TaskManager owns durable state).
-        self._audit: list[DispatchAuditEntry] = []
+        # attempt. Append-only in-process (durable persistence stays with
+        # TaskManager — single-ownership rule); ring-buffered under a lock
+        # for retention bounds and thread safety.
+        cap = int(audit_max_entries)
+        self._audit_cap: int | None = cap if cap > 0 else None
+        self._audit: deque[DispatchAuditEntry] = deque(maxlen=self._audit_cap)
+        self._audit_lock = threading.Lock()
+        self._audit_counter: itertools.count[int] = itertools.count(1)
+        # Pending "tool_timeout" dispatches — the caller has already received
+        # tool_timeout but the worker Future is still live. Reconciliation
+        # (see reconcile_pending) updates the audit entry once the Future
+        # completes or fails. Map: entry_id -> _PendingTimeout dict.
+        self._pending_timeouts: dict[int, dict[str, Any]] = {}
+        # Persistent dispatch executor. One pool for the registry's
+        # lifetime — a per-call ``with ThreadPoolExecutor(...) as pool:``
+        # would ``shutdown(wait=True)`` on exit and silently defeat the
+        # caller-side timeout.
+        workers = max(1, int(dispatch_workers))
+        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(
+            max_workers=workers, thread_name_prefix="tool_dispatch"
+        )
+        self._closed = False
         # Per-registry provenance marker. Only IdentityProviders obtained via
         # self.identity_provider(credentials) bake this token into their
         # Principals; _resolve_principal rejects verified Principals whose
@@ -381,16 +418,28 @@ class ToolRegistry:
           * a tool that exceeds the per-call ``timeout_s`` (``tool_timeout``).
 
         The dispatcher writes one ``DispatchAuditEntry`` per attempt to its
-        in-process audit log (readable via ``audit_log()``). Error entries
-        name the exception class but never the exception message, which may
-        carry sensitive data.
+        in-process audit log (readable via ``audit_log(caller=...)``). Error
+        entries name the exception class but never the exception message,
+        which may carry sensitive data.
+
+        A ``tool_timeout`` entry starts with ``side_effect_state="uncertain"``
+        and ``worker_termination_confirmed=False``. The audit record is
+        promoted to ``settled`` / ``settled_error`` by
+        ``reconcile_pending()`` once the worker's Future completes.
         """
+        if self._closed:
+            raise ToolRegistryError("registry_closed: dispatch after close()")
         start = time.monotonic()
         payload = inputs or {}
         error_class: str | None = None
         status = "ok"
         principal_name = "<unresolved>"
         payload_bytes = 0
+        side_effect_state = "ok"
+        worker_termination_confirmed = True
+        # Pre-allocate an entry id so a tool_timeout can reference it in
+        # _pending_timeouts before the finally block appends.
+        entry_id = next(self._audit_counter)
         try:
             principal_name = self._resolve_principal(caller)
             try:
@@ -419,12 +468,16 @@ class ToolRegistry:
                 float(timeout_s) if timeout_s is not None else self._default_timeout_s
             )
             return self._invoke_with_timeout(
-                tool, payload, principal_name, effective_timeout
+                tool, payload, principal_name, effective_timeout, entry_id
             )
         except ToolRegistryError as exc:
             if status == "ok":
                 msg = str(exc)
                 status = msg.split(":", 1)[0] if ":" in msg else "invalid_input"
+            # tool_timeout -> uncertain side effects.
+            if status == "tool_timeout":
+                side_effect_state = "uncertain"
+                worker_termination_confirmed = False
             raise
         except Exception as exc:  # noqa: BLE001 - re-raise after audit
             error_class = type(exc).__name__
@@ -432,17 +485,20 @@ class ToolRegistry:
                 status = "error"
             raise
         finally:
-            self._audit.append(
-                DispatchAuditEntry(
-                    at=time.time(),
-                    principal=principal_name,
-                    tool_id=tool_id,
-                    status=status,
-                    duration_ms=round((time.monotonic() - start) * 1000, 3),
-                    error_class=error_class,
-                    input_bytes=payload_bytes,
-                )
+            entry = DispatchAuditEntry(
+                at=time.time(),
+                principal=principal_name,
+                tool_id=tool_id,
+                status=status,
+                duration_ms=round((time.monotonic() - start) * 1000, 3),
+                error_class=error_class,
+                input_bytes=payload_bytes,
+                worker_termination_confirmed=worker_termination_confirmed,
+                side_effect_state=side_effect_state,
+                entry_id=entry_id,
             )
+            with self._audit_lock:
+                self._audit.append(entry)
 
     def _invoke_with_timeout(
         self,
@@ -450,15 +506,24 @@ class ToolRegistry:
         payload: dict[str, Any],
         principal_name: str,
         timeout_s: float,
+        entry_id: int,
     ) -> Any:
         """Run a FUNCTION or MCP tool with a wall-clock timeout.
 
-        Timeout is enforced via a ThreadPoolExecutor future. If the tool
-        does not return within ``timeout_s`` seconds, a ``ToolRegistryError``
-        with ``tool_timeout`` is raised. The worker thread is NOT killed —
-        Python has no safe thread cancellation — so a slow tool leaks the
-        thread until it eventually returns. Callers should treat the
-        timeout as a resource leak and plan accordingly.
+        The dispatch executor is persistent for the registry's lifetime
+        (see ``__init__``), so a ``tool_timeout`` returns control to the
+        caller IMMEDIATELY — the executor's ``shutdown(wait=True)`` is
+        avoided by not entering a per-call ``with ThreadPoolExecutor(...)``
+        block. The worker Future is NOT force-cancelled: Python has no
+        safe thread cancellation, and ``Future.cancel()`` only drops
+        work that has not started yet.
+
+        When the Future outlives the caller's deadline the entry is kept
+        in ``self._pending_timeouts`` and the paired audit record is
+        marked ``side_effect_state="uncertain"``. Callers performing a
+        write MUST pass the uncertain record through
+        ``ToolRegistry.reconcile_pending()`` before retrying — the tool
+        may have already applied its effect in the detached worker.
         """
         def _run() -> Any:
             if tool.kind == ToolKind.FUNCTION:
@@ -481,27 +546,75 @@ class ToolRegistry:
 
         if timeout_s <= 0:
             return _run()
-        with ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="tool_dispatch"
-        ) as pool:
-            fut = pool.submit(_run)
-            try:
-                return fut.result(timeout=timeout_s)
-            except _FutureTimeout as exc:
-                raise ToolRegistryError(
-                    f"tool_timeout: {tool.id!r} did not return within "
-                    f"{timeout_s:g}s"
-                ) from exc
+        fut: Future[Any] = self._executor.submit(_run)
+        try:
+            return fut.result(timeout=timeout_s)
+        except _FutureTimeout as exc:
+            # Record the still-running Future for later reconciliation.
+            # We attempt a soft cancel first — it only succeeds if the
+            # worker never started — but mostly we accept that the
+            # worker is detached.
+            cancelled = fut.cancel()
+            with self._audit_lock:
+                self._pending_timeouts[entry_id] = {
+                    "future": fut,
+                    "tool_id": tool.id,
+                    "principal": principal_name,
+                    "deadline_s": float(timeout_s),
+                    "submitted_at": time.time(),
+                    "cancel_attempted": True,
+                    "cancel_succeeded": cancelled,
+                }
+            raise ToolRegistryError(
+                f"tool_timeout: {tool.id!r} did not return within "
+                f"{timeout_s:g}s. Worker is detached; call "
+                "ToolRegistry.reconcile_pending() before retrying any write."
+            ) from exc
 
     def audit_log(
         self,
+        caller: Principal | str | None = None,
         *,
         principal: str | None = None,
         tool_id: str | None = None,
         status: str | None = None,
     ) -> list[DispatchAuditEntry]:
-        """Return a filtered view of the in-process dispatch audit log."""
-        out = list(self._audit)
+        """Return a filtered view of the in-process dispatch audit log.
+
+        Access control
+        --------------
+        Reading the audit log can disclose which principals called which
+        tools and when, so the view is gated by the ``audit_read`` or
+        ``task_admin`` permission. When ``permission_grant`` is set the
+        caller is required and must present a verified Principal (or a
+        bare string if ``trust_actor_strings=True``); the view is empty
+        when neither permission is granted.
+
+        Backward compatibility
+        ----------------------
+        A legacy ``audit_log()`` call with no caller is accepted only when
+        no ``permission_grant`` is configured — i.e. the registry is in
+        an un-gated test-harness mode. Any registry with grants wired up
+        refuses unauthenticated reads with ``untrusted_identity``.
+        """
+        if isinstance(self._grant, EmptyGrant):
+            # Un-gated registry — legacy behaviour; no caller required.
+            pass
+        else:
+            if caller is None:
+                raise ToolRegistryError(
+                    "untrusted_identity: audit_log requires a caller "
+                    "(Principal or str) when a permission_grant is set."
+                )
+            principal_name = self._resolve_principal(caller)
+            granted = self._grant.granted(principal_name)
+            if not ({"audit_read", "task_admin"} & granted):
+                raise ToolRegistryError(
+                    f"insufficient_permission: {principal_name!r} needs "
+                    "`audit_read` or `task_admin` to read the audit log."
+                )
+        with self._audit_lock:
+            out = list(self._audit)
         if principal is not None:
             out = [e for e in out if e.principal == principal]
         if tool_id is not None:
@@ -509,6 +622,128 @@ class ToolRegistry:
         if status is not None:
             out = [e for e in out if e.status == status]
         return out
+
+    def reconcile_pending(
+        self,
+        caller: Principal | str | None = None,
+    ) -> list[DispatchAuditEntry]:
+        """Observe completed-after-timeout workers; rewrite audit entries.
+
+        Returns the list of audit entries updated by this call (empty when
+        every detached worker is still running).
+
+        For each Future recorded by ``_invoke_with_timeout``:
+          * ``future.done() is False`` — leave the ``uncertain`` audit
+            entry in place; the worker is still running.
+          * ``future.done() is True`` and no exception — replace the
+            audit entry with ``side_effect_state="settled"`` and
+            ``worker_termination_confirmed=True``.
+          * ``future.done() is True`` and ``future.exception()`` set —
+            replace the audit entry with ``side_effect_state="settled_error"``,
+            ``error_class`` recording the exception type (never the
+            message), and ``worker_termination_confirmed=True``.
+
+        Access control mirrors ``audit_log`` — ``audit_read`` or
+        ``task_admin``. The audit entry may have been evicted from the
+        retention ring buffer; in that case the Future's result is still
+        drained from ``_pending_timeouts`` but the return list simply
+        omits the vanished record.
+        """
+        if not isinstance(self._grant, EmptyGrant):
+            if caller is None:
+                raise ToolRegistryError(
+                    "untrusted_identity: reconcile_pending requires a caller "
+                    "when a permission_grant is set."
+                )
+            principal_name = self._resolve_principal(caller)
+            granted = self._grant.granted(principal_name)
+            if not ({"audit_read", "task_admin"} & granted):
+                raise ToolRegistryError(
+                    f"insufficient_permission: {principal_name!r} needs "
+                    "`audit_read` or `task_admin` to reconcile pending timeouts."
+                )
+        updated: list[DispatchAuditEntry] = []
+        with self._audit_lock:
+            pending_now = list(self._pending_timeouts.items())
+            for entry_id, meta in pending_now:
+                fut: Future[Any] = meta["future"]
+                if not fut.done():
+                    continue
+                exc = fut.exception()
+                if exc is None:
+                    new_state = "settled"
+                    error_class = None
+                else:
+                    new_state = "settled_error"
+                    error_class = type(exc).__name__
+                # Locate the audit entry (may have been evicted). Audit is
+                # a deque; linear scan is acceptable at retention sizes.
+                replaced = None
+                for idx, old in enumerate(self._audit):
+                    if old.entry_id != entry_id:
+                        continue
+                    replaced = dataclasses.replace(
+                        old,
+                        side_effect_state=new_state,
+                        worker_termination_confirmed=True,
+                        error_class=error_class if error_class is not None
+                        else old.error_class,
+                    )
+                    self._audit[idx] = replaced
+                    break
+                self._pending_timeouts.pop(entry_id, None)
+                if replaced is not None:
+                    updated.append(replaced)
+        return updated
+
+    def pending_timeouts(
+        self, caller: Principal | str | None = None
+    ) -> list[int]:
+        """Return the entry ids of currently-detached timed-out workers.
+
+        Audit-read gated like ``audit_log`` / ``reconcile_pending``.
+        """
+        if not isinstance(self._grant, EmptyGrant):
+            if caller is None:
+                raise ToolRegistryError(
+                    "untrusted_identity: pending_timeouts requires a caller "
+                    "when a permission_grant is set."
+                )
+            principal_name = self._resolve_principal(caller)
+            granted = self._grant.granted(principal_name)
+            if not ({"audit_read", "task_admin"} & granted):
+                raise ToolRegistryError(
+                    f"insufficient_permission: {principal_name!r} needs "
+                    "`audit_read` or `task_admin` to read pending timeouts."
+                )
+        with self._audit_lock:
+            return list(self._pending_timeouts.keys())
+
+    def close(self) -> None:
+        """Shut down the dispatch executor without waiting on live workers.
+
+        Idempotent. After ``close()`` any further ``dispatch`` call fails
+        with ``registry_closed``. Pending futures from timed-out dispatches
+        are NOT awaited — they continue running until the Python
+        interpreter exits (or the process is terminated). Call
+        ``reconcile_pending()`` before ``close()`` if you want to settle
+        the audit log first.
+        """
+        if self._closed:
+            return
+        self._closed = True
+        self._executor.shutdown(wait=False)
+
+    def __enter__(self) -> ToolRegistry:
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
+    def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
+        import contextlib
+        with contextlib.suppress(Exception):
+            self.close()
 
     def _validate_inputs(
         self, tool: ToolDescriptor, inputs: dict[str, Any]

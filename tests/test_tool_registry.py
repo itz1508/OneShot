@@ -1225,7 +1225,9 @@ class TestMCPEffectsAndConnectorPerms:
 class TestAuditLog:
     def _make(self):
         reg = ToolRegistry(
-            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"read_only", "audit_read"})}
+            ),
             trust_actor_strings=True,
         )
         reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
@@ -1247,7 +1249,7 @@ class TestAuditLog:
     def test_successful_dispatch_recorded(self):
         reg = self._make()
         reg.dispatch("o", "x", {"flag": True})
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert len(log) == 1
         entry = log[0]
         assert entry.status == "ok"
@@ -1261,7 +1263,7 @@ class TestAuditLog:
         reg = self._make()
         with pytest.raises(ToolRegistryError, match="unknown_tool"):
             reg.dispatch("o", "nope", {})
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert log[-1].status == "unknown_tool"
         assert log[-1].error_class is None
 
@@ -1269,7 +1271,7 @@ class TestAuditLog:
         reg = self._make()
         with pytest.raises(ToolRegistryError, match="invalid_input"):
             reg.dispatch("o", "x", {"flag": "not-a-bool"})
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert log[-1].status == "invalid_input"
 
     def test_impl_exception_recorded(self):
@@ -1280,7 +1282,7 @@ class TestAuditLog:
         )
         with pytest.raises(PermissionError, match="boom"):
             reg.dispatch("o", "x", {})
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert log[-1].status == "error"
         assert log[-1].error_class == "PermissionError"
 
@@ -1289,18 +1291,20 @@ class TestAuditLog:
         reg.dispatch("o", "x", {})
         with pytest.raises(ToolRegistryError):
             reg.dispatch("o", "missing", {})
-        oks = reg.audit_log(status="ok")
-        err = reg.audit_log(status="unknown_tool")
+        oks = reg.audit_log("o", status="ok")
+        err = reg.audit_log("o", status="unknown_tool")
         assert len(oks) == 1
         assert len(err) == 1
-        assert reg.audit_log(tool_id="x") == oks
-        assert reg.audit_log(principal="not-o") == []
+        assert reg.audit_log("o", tool_id="x") == oks
+        assert reg.audit_log("o", principal="not-o") == []
 
 
 class TestInputByteCap:
     def test_oversize_payload_refused(self):
         reg = ToolRegistry(
-            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"read_only", "audit_read"})}
+            ),
             trust_actor_strings=True,
             input_byte_limit=512,
         )
@@ -1318,7 +1322,7 @@ class TestInputByteCap:
         big = {"blob": "A" * 5_000}
         with pytest.raises(ToolRegistryError, match="input_too_large"):
             reg.dispatch("o", "x", big)
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert log[-1].status == "input_too_large"
 
     def test_cap_zero_disables(self):
@@ -1345,7 +1349,9 @@ class TestInputByteCap:
 class TestDispatchTimeout:
     def _reg(self, timeout_s):
         reg = ToolRegistry(
-            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"read_only", "audit_read"})}
+            ),
             trust_actor_strings=True,
             default_timeout_s=timeout_s,
         )
@@ -1367,7 +1373,7 @@ class TestDispatchTimeout:
         )
         with pytest.raises(ToolRegistryError, match="tool_timeout"):
             reg.dispatch("o", "slow", {})
-        log = reg.audit_log()
+        log = reg.audit_log("o")
         assert log[-1].status == "tool_timeout"
 
     def test_per_call_override(self):
@@ -1400,3 +1406,289 @@ class TestDispatchTimeout:
             lambda inputs: {"ok": True},
         )
         assert reg.dispatch("o", "fast", {}) == {"ok": True}
+
+
+
+class TestTimeoutDeadlineAndReconciliation:
+    """R3 corrective — the caller must return at the configured deadline,
+    regardless of the worker's progress, and tool_timeout audit entries
+    must carry side-effect uncertainty until reconcile_pending observes
+    the Future complete."""
+
+    def _reg(self, timeout_s=0.1):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"read_only", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=timeout_s,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        return reg
+
+    def _register(self, reg, impl):
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="slow", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            impl,
+        )
+
+    def test_caller_returns_at_deadline_not_after_worker_finishes(self):
+        """Reviewer: `shutdown(wait=True)` on the executor must not block
+        the caller past the configured timeout."""
+        import threading
+        import time
+        reg = self._reg(0.15)
+        released = threading.Event()
+        def _impl(inputs):
+            # Hold the worker thread for 1.5s regardless of caller fate.
+            time.sleep(1.5)
+            released.set()
+            return {"late": True}
+        self._register(reg, _impl)
+
+        t0 = time.monotonic()
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        elapsed = time.monotonic() - t0
+        # Caller must have returned by now — i.e. before the worker's
+        # sleep finishes (1.5s). We give an upper bound well below 1.5s
+        # to prove shutdown(wait=True) is NOT in effect.
+        assert elapsed < 0.9, (
+            f"dispatch blocked for {elapsed:.3f}s; expected < 0.9s"
+        )
+        assert not released.is_set(), (
+            "worker should still be running; caller returned too late"
+        )
+        reg.close()
+
+    def test_timeout_audit_entry_marks_uncertain_before_reconcile(self):
+        import time
+        reg = self._reg(0.1)
+        self._register(reg, lambda inputs: (time.sleep(0.8) or {"ok": True}))
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        log = reg.audit_log("o")
+        assert log[-1].status == "tool_timeout"
+        assert log[-1].side_effect_state == "uncertain"
+        assert log[-1].worker_termination_confirmed is False
+        assert log[-1].entry_id > 0
+        pending = reg.pending_timeouts("o")
+        assert log[-1].entry_id in pending
+        reg.close()
+
+    def test_reconcile_pending_settles_successful_worker(self):
+        import time
+        reg = self._reg(0.1)
+        self._register(reg, lambda inputs: (time.sleep(0.5) or {"ok": True}))
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        # Wait for the worker to actually finish.
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled"
+        assert updated[0].worker_termination_confirmed is True
+        # The audit log view is also updated.
+        log = reg.audit_log("o")
+        assert log[-1].side_effect_state == "settled"
+        assert log[-1].worker_termination_confirmed is True
+        # Pending set drained.
+        assert reg.pending_timeouts("o") == []
+        reg.close()
+
+    def test_reconcile_pending_settles_failing_worker(self):
+        import time
+        reg = self._reg(0.1)
+        def _impl(inputs):
+            time.sleep(0.5)
+            raise RuntimeError("worker exploded late")
+        self._register(reg, _impl)
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_error"
+        assert updated[0].error_class == "RuntimeError"
+        assert updated[0].worker_termination_confirmed is True
+        # Exception message is NOT recorded anywhere on the entry.
+        for field_value in updated[0].__dict__.values():
+            if isinstance(field_value, str):
+                assert "exploded" not in field_value
+        reg.close()
+
+    def test_reconcile_pending_leaves_live_worker_uncertain(self):
+        import time
+        reg = self._reg(0.1)
+        self._register(reg, lambda inputs: (time.sleep(2.0) or {"ok": True}))
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        # Reconcile too early — worker still running.
+        updated = reg.reconcile_pending("o")
+        assert updated == []
+        # Entry is still uncertain.
+        log = reg.audit_log("o")
+        assert log[-1].side_effect_state == "uncertain"
+        reg.close()
+
+    def test_reconcile_pending_requires_audit_read(self):
+        import time
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={
+                    "o": frozenset({"read_only", "audit_read"}),
+                    "n": frozenset({"read_only"}),
+                }
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="slow", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: (time.sleep(0.5) or {"ok": True}),
+        )
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        # Caller "n" lacks audit_read.
+        with pytest.raises(ToolRegistryError, match="insufficient_permission"):
+            reg.reconcile_pending("n")
+        # Missing caller when grants are set.
+        with pytest.raises(ToolRegistryError, match="untrusted_identity"):
+            reg.reconcile_pending()
+        reg.close()
+
+
+class TestAuditRetentionAndAccessControl:
+    """R3 corrective — audit retention bounds, thread safety, and
+    read-side access control."""
+
+    def _make(self, *, audit_max_entries=10_000, grants=None):
+        if grants is None:
+            grants = {"o": frozenset({"read_only", "audit_read"})}
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions=grants),
+            trust_actor_strings=True,
+            audit_max_entries=audit_max_entries,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="x", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: {"ok": True},
+        )
+        return reg
+
+    def test_ring_buffer_eviction_keeps_most_recent(self):
+        reg = self._make(audit_max_entries=5)
+        for _ in range(50):
+            reg.dispatch("o", "x", {})
+        log = reg.audit_log("o")
+        assert len(log) == 5
+        # Entry ids are monotonic — most recent are the highest.
+        ids = [e.entry_id for e in log]
+        assert ids == sorted(ids)
+        assert ids[0] == 46 and ids[-1] == 50
+        reg.close()
+
+    def test_concurrent_dispatch_appends_are_lossless(self):
+        import threading
+        reg = self._make(audit_max_entries=10_000)
+        n_threads = 8
+        per_thread = 50
+        errors: list[BaseException] = []
+        def _worker():
+            try:
+                for _ in range(per_thread):
+                    reg.dispatch("o", "x", {})
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+        threads = [threading.Thread(target=_worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert errors == []
+        log = reg.audit_log("o")
+        assert len(log) == n_threads * per_thread, (
+            f"expected {n_threads * per_thread} entries, got {len(log)}"
+        )
+        # All status=ok, principal=o.
+        assert {e.status for e in log} == {"ok"}
+        # entry_ids are unique.
+        assert len({e.entry_id for e in log}) == len(log)
+        reg.close()
+
+    def test_audit_log_requires_caller_when_grant_set(self):
+        reg = self._make()
+        with pytest.raises(ToolRegistryError, match="untrusted_identity"):
+            reg.audit_log()
+        reg.close()
+
+    def test_audit_log_refuses_caller_without_audit_read(self):
+        reg = self._make(
+            grants={
+                "o": frozenset({"read_only", "audit_read"}),
+                "n": frozenset({"read_only"}),  # no audit_read
+            }
+        )
+        reg.dispatch("o", "x", {})
+        with pytest.raises(ToolRegistryError, match="insufficient_permission"):
+            reg.audit_log("n")
+        reg.close()
+
+    def test_audit_log_allows_task_admin(self):
+        reg = self._make(
+            grants={
+                "o": frozenset({"read_only"}),
+                "admin": frozenset({"task_admin"}),
+            }
+        )
+        # 'o' can dispatch but not read; 'admin' can read via task_admin.
+        reg.dispatch("o", "x", {})
+        log = reg.audit_log("admin")
+        assert len(log) == 1
+        reg.close()
+
+    def test_audit_log_open_when_grant_absent(self):
+        # No permission_grant => legacy un-gated behaviour; audit_log()
+        # with no caller returns the view.
+        reg = ToolRegistry(trust_actor_strings=True)
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="x", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=(),
+            ),
+            lambda inputs: {"ok": True},
+        )
+        reg.dispatch("o", "x", {})
+        assert len(reg.audit_log()) == 1
+        reg.close()
+
+    def test_close_refuses_further_dispatch(self):
+        reg = self._make()
+        reg.dispatch("o", "x", {})
+        reg.close()
+        with pytest.raises(ToolRegistryError, match="registry_closed"):
+            reg.dispatch("o", "x", {})
