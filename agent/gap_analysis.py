@@ -469,7 +469,7 @@ class CapabilityPreflight:
             pass  # No changes — no drift
 
         return self._validate_category(
-            "drift", baseline, positive, negative, ["modified"], ["main.py"]
+            "drift", baseline, positive, negative, ["modified"], ["__main__.py"]
         )
 
     def _validate_missing(self) -> PreflightCategoryResult:
