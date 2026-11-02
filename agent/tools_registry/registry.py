@@ -745,12 +745,20 @@ class ToolRegistry:
             # settled_error) under the lock; the probe is then called
             # outside; and the final state is written back under the
             # lock below.
+            #
+            # Correction (round 4): the pending entry is POPPED here,
+            # under the same lock that gated the drain, so a concurrent
+            # ``reconcile_pending`` cannot re-drain the same entry and
+            # run the probe twice. Whichever caller got here first owns
+            # the entry; the second observes it already-gone and
+            # returns an empty list for those ids.
             drained: list[tuple[int, dict[str, Any], BaseException | None]] = []
             for entry_id, meta in pending_now:
                 fut: Future[Any] = meta["future"]
                 if not fut.done():
                     continue
                 drained.append((entry_id, meta, fut.exception()))
+                self._pending_timeouts.pop(entry_id, None)
         # Run probes outside the lock.
         probe_results: dict[int, tuple[str, str | None, str | None]] = {}
         for entry_id, meta, exc in drained:
@@ -817,8 +825,18 @@ class ToolRegistry:
                 error_class = probe_error_class
             else:
                 error_class = exc_error_class
+            # Correction (round 4): when the probe raised, surface the
+            # probe's exception class via probe_evidence so operators
+            # can tell "no probe run" (evidence is None) apart from
+            # "probe raised" even when the worker also raised and owns
+            # error_class. The message is never recorded — only the
+            # class name.
+            if probe_error_class is not None and probe_evidence is None:
+                probe_evidence = f"probe_raised:{probe_error_class}"
             probe_results[entry_id] = (final_state, error_class, probe_evidence)
-        # Write results back under the lock.
+        # Write results back under the lock. The pending-timeouts
+        # entries were already popped during drain above, so there is
+        # no additional pop here.
         with self._audit_lock:
             for entry_id, _meta, _exc in drained:
                 final_state, error_class, probe_evidence = probe_results[entry_id]
@@ -836,7 +854,6 @@ class ToolRegistry:
                     )
                     self._audit[idx] = replaced
                     break
-                self._pending_timeouts.pop(entry_id, None)
                 if replaced is not None:
                     updated.append(replaced)
         return updated

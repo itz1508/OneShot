@@ -2247,3 +2247,204 @@ class TestDefaultProbesWiring:
             reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
         )
         assert "get_task_status" not in reg._side_effect_probes
+
+
+
+class TestWriteSideEffectVerificationCorrections:
+    """R3 reviewer corrections (round 4) — two small fixes inside the
+    accepted side-effect probe task.
+
+    Correction 1: concurrent reconcile_pending must not drain the same
+    pending entry twice.
+
+    Correction 2: when the probe raises AND the worker also raised, the
+    audit entry must surface the probe's error class via probe_evidence
+    (never the probe's exception message) so operators can tell
+    \"no probe run\" apart from \"probe raised\".
+    """
+
+    def _build(self, probe, *, effects=("internal_write",)):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        descriptor = ToolDescriptor(
+            id="writer",
+            toolkit="t",
+            kind=ToolKind.FUNCTION,
+            description="d",
+            input_schema={"type": "object"},
+            owner="o",
+            effects=effects,
+            required_permissions=("task_write",),
+        )
+        import time as _time
+        reg.register_function_tool(
+            descriptor,
+            lambda inputs: (_time.sleep(0.5) or {"ok": True}),
+            side_effect_probe=probe,
+        )
+        return reg
+
+    # ---- Correction 1 -------------------------------------------------
+
+    def test_concurrent_reconcile_pending_drains_each_entry_once(self):
+        """Two threads call reconcile_pending at the same instant on the
+        same ready-but-detached entry. The entry must be drained exactly
+        once; the probe must be called exactly once; the second thread
+        sees an empty updated list."""
+        import threading
+        import time
+
+        probe_calls = []
+        probe_lock = threading.Lock()
+
+        def probe(payload, principal):
+            with probe_lock:
+                probe_calls.append(1)
+            # Simulate a slightly slow probe so the two reconcile_pending
+            # threads overlap.
+            time.sleep(0.05)
+            return {"applied": True, "evidence": "landed"}
+
+        reg = self._build(probe)
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "writer", {})
+        time.sleep(0.9)  # worker completes
+
+        results = {}
+        barrier = threading.Barrier(2)
+
+        def _reconcile(key):
+            barrier.wait()
+            results[key] = reg.reconcile_pending("o")
+
+        ta = threading.Thread(target=_reconcile, args=("a",))
+        tb = threading.Thread(target=_reconcile, args=("b",))
+        ta.start()
+        tb.start()
+        ta.join()
+        tb.join()
+
+        # Exactly one of the two callers drains the entry.
+        drained_counts = sorted([len(results["a"]), len(results["b"])])
+        assert drained_counts == [0, 1], (
+            f"expected one drain and one empty, got {drained_counts}"
+        )
+        # Probe was called exactly once.
+        assert len(probe_calls) == 1
+        # Audit entry is settled on the one that drained.
+        log = reg.audit_log("o")
+        assert log[-1].side_effect_state == "settled"
+        # Pending set is empty.
+        assert reg.pending_timeouts("o") == []
+        reg.close()
+
+    # ---- Correction 2 -------------------------------------------------
+
+    def test_probe_raise_with_worker_raise_surfaces_probe_class(self):
+        """When both the worker and the probe raise, worker's exception
+        class owns ``error_class`` but ``probe_evidence`` MUST carry
+        the probe's exception class (never its message) so operators
+        can tell the probe actually ran and failed."""
+        import time
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+
+        def _impl(inputs):
+            time.sleep(0.5)
+            raise RuntimeError("worker boom (SECRET=abc)")
+
+        def _probe(payload, principal):
+            raise ValueError("probe boom (SECRET=xyz)")
+
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="w", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                effects=("internal_write",),
+                required_permissions=("task_write",),
+            ),
+            _impl,
+            side_effect_probe=_probe,
+        )
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "w", {})
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        entry = updated[0]
+        # Worker owns error_class — not the probe.
+        assert entry.error_class == "RuntimeError"
+        # Probe-raise is still surfaced via probe_evidence, class name only.
+        assert entry.probe_evidence == "probe_raised:ValueError"
+        # No secret message leaks anywhere on the entry.
+        for value in entry.__dict__.values():
+            if isinstance(value, str):
+                assert "SECRET" not in value
+                assert "abc" not in value
+                assert "xyz" not in value
+        # Unverified because probe didn't produce applied=True/False.
+        assert entry.side_effect_state == "settled_error_unverified"
+        reg.close()
+
+    def test_probe_raise_with_worker_success_surfaces_probe_class(self):
+        """Companion: worker returned OK, probe raised. error_class is
+        the probe's; probe_evidence is 'probe_raised:<ProbeExc>'."""
+        import time
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+
+        def _impl(inputs):
+            time.sleep(0.5)
+            return {"ok": True}
+
+        def _probe(payload, principal):
+            raise LookupError("probe-can-not-find (SECRET=qqq)")
+
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="w2", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                effects=("internal_write",),
+                required_permissions=("task_write",),
+            ),
+            _impl,
+            side_effect_probe=_probe,
+        )
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "w2", {})
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        entry = updated[0]
+        assert entry.error_class == "LookupError"
+        assert entry.probe_evidence == "probe_raised:LookupError"
+        for value in entry.__dict__.values():
+            if isinstance(value, str):
+                assert "SECRET" not in value and "qqq" not in value
+        assert entry.side_effect_state == "settled_unverified"
+        reg.close()
