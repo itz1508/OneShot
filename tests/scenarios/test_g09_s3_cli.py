@@ -162,7 +162,7 @@ class G09S3SameTaskCLITest(unittest.TestCase):
             bad_path.write_text(json.dumps(_bundle_s3(stale_admission=True)))
             run_bad = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "run",
+                    sys.executable, "-m", "agent", "run",
                     "--request-file", str(request_file),
                     "--storage", str(storage),
                     "--repo-root", str(_REPO),
@@ -188,7 +188,7 @@ class G09S3SameTaskCLITest(unittest.TestCase):
             good_path.write_text(json.dumps(_bundle_s3(stale_admission=False)))
             run_good = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "continue",
+                    sys.executable, "-m", "agent", "continue",
                     "--task-id", tid,
                     "--request-file", str(request_file),
                     "--storage", str(storage),

@@ -14,7 +14,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from main import OneShotController  # type: ignore[import-not-found]
+from agent.__main__ import OneShotController  # type: ignore[import-not-found]
 
 
 class DecisionWaitPersistenceTest(unittest.TestCase):

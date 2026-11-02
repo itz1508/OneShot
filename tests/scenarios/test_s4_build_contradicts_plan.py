@@ -169,7 +169,7 @@ class S4ContradictionTest(unittest.TestCase):
 
         import tempfile
 
-        from main import OneShotController  # type: ignore[import-not-found]
+        from agent.__main__ import OneShotController  # type: ignore[import-not-found]
 
         with tempfile.TemporaryDirectory(prefix="s4-persist-") as td:
             storage = Path(td) / "tasks.json"

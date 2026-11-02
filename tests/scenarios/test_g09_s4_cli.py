@@ -116,7 +116,7 @@ class G09S4SameTaskCLITest(unittest.TestCase):
             r1_path.write_text(json.dumps(_bundle_s4("characters: 99")))
             run_r1 = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "run",
+                    sys.executable, "-m", "agent", "run",
                     "--request-file", str(request_file),
                     "--storage", str(storage),
                     "--repo-root", str(_REPO),
@@ -140,7 +140,7 @@ class G09S4SameTaskCLITest(unittest.TestCase):
             r2_path.write_text(json.dumps(_bundle_s4("characters: 4")))
             run_r2 = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "continue",
+                    sys.executable, "-m", "agent", "continue",
                     "--task-id", tid,
                     "--request-file", str(request_file),
                     "--storage", str(storage),

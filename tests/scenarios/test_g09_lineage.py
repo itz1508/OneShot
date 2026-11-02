@@ -66,7 +66,7 @@ class G09LineagePreservedTest(unittest.TestCase):
             bad_bundle_path.write_text(json.dumps(_s2_bundle(include_do_not_use=False)))
             run_bad, bad_summary = _run_cli(
                 [
-                    sys.executable, "-m", "agent.main", "run",
+                    sys.executable, "-m", "agent", "run",
                     "--request-file", str(request_file),
                     "--storage", str(storage),
                     "--repo-root", str(_REPO),
@@ -83,7 +83,7 @@ class G09LineagePreservedTest(unittest.TestCase):
             good_bundle_path.write_text(json.dumps(_s2_bundle(include_do_not_use=True)))
             run_good, good_summary = _run_cli(
                 [
-                    sys.executable, "-m", "agent.main", "continue",
+                    sys.executable, "-m", "agent", "continue",
                     "--task-id", tid,
                     "--request-file", str(request_file),
                     "--storage", str(storage),

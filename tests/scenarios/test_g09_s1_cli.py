@@ -140,7 +140,7 @@ class G09S1SameTaskCLITest(unittest.TestCase):
             bad_bundle_path.write_text(json.dumps(_bundle_s1(gap_open=True)))
             run_bad = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "run",
+                    sys.executable, "-m", "agent", "run",
                     "--request-file", str(request_file),
                     "--storage", str(storage),
                     "--repo-root", str(_REPO),
@@ -160,7 +160,7 @@ class G09S1SameTaskCLITest(unittest.TestCase):
             good_bundle_path.write_text(json.dumps(_bundle_s1(gap_open=False)))
             run_good = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "continue",
+                    sys.executable, "-m", "agent", "continue",
                     "--task-id", tid,
                     "--request-file", str(request_file),
                     "--storage", str(storage),
