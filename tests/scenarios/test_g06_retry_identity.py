@@ -20,7 +20,7 @@ for sub in ("agent", "tools"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from main import OneShotController  # noqa: E402
+from agent.__main__ import OneShotController  # noqa: E402
 
 
 class StubPreflight:
@@ -55,7 +55,7 @@ class RetryIdentityTest(unittest.TestCase):
 
             # Patch the CapabilityPreflight class the controller uses
             # so every call returns the same INVALID identity.
-            with patch("main._CapabilityPreflight", StubPreflight):
+            with patch("agent.__main__._CapabilityPreflight", StubPreflight):
                 receipt = ctrl.run_capability_preflight_with_correction(tid, max_repair_attempts=3)
 
             self.assertEqual(len(receipt["attempts"]), 2)

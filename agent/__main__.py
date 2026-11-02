@@ -7,9 +7,9 @@ Does NOT own: task state (TaskManager), evaluation (ColorEval), scanning (Scanne
 contract checking, or artifact storage (host store).
 
 CLI:
-    python agent/main.py start --request-file <path>
-    python agent/main.py resume --task-id <id>
-    python agent/main.py status --task-id <id>
+    python -m agent start --request-file <path>
+    python -m agent resume --task-id <id>
+    python -m agent status --task-id <id>
 """
 
 from __future__ import annotations
@@ -743,7 +743,7 @@ class OneShotController:
             "agent/contracts/research.yaml",
             "agent/contracts/plan.yaml",
             "agent/contracts/build.yaml",
-            "agent/main.py",
+            "agent/__main__.py",
             "agent/gap_analysis.py",
             "bin/context_counter.py",
             "bin/sqlite_effect_runner.py",

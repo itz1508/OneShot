@@ -1,6 +1,6 @@
 # Tools — OneShot workflow primitives
 
-Reusable, pure-Python primitives used by `agent/main.py::OneShotController`. Each module owns ONE responsibility; the controller does the orchestration. All modules are importable via `tools/` (configured in `conftest.py` and `pyproject.toml`) and exercised by the suite in `tests/`.
+Reusable, pure-Python primitives used by `agent/__main__.py::OneShotController`. Each module owns ONE responsibility; the controller does the orchestration. All modules are importable via `tools/` (configured in `conftest.py` and `pyproject.toml`) and exercised by the suite in `tests/`.
 
 ## Tool inventory
 
@@ -15,10 +15,10 @@ Reusable, pure-Python primitives used by `agent/main.py::OneShotController`. Eac
 
 ## Design principles
 
-- Each tool owns one responsibility; no duplications. Nothing in `tools/` orchestrates — orchestration lives in `agent/main.py::OneShotController`.
+- Each tool owns one responsibility; no duplications. Nothing in `tools/` orchestrates — orchestration lives in `agent/__main__.py::OneShotController`.
 - Failures fail closed. No fabricated success receipts, no silent swallow of exceptions, no "any exception counts as pass" (see the G03 `expected_rejection` fix in `fixtures.py`).
 - Scanner / inventory primitives shell out to `git` so their view matches `git grep` and the agent-read deny list in `.agents/settings.json`.
-- Previously-tracked modules (`approval.py`, `memory_retrieve.py`, `plan_review.py`, `research_output.py`, `research_review.py`, `mcp_tools.py`, `repo_summary.py`) were consolidated into `agent/main.py` and `agent/adapters/` during the OneShotController migration. The RepoSummary / MCPToolRegistry stacks were the last remnants of the retired 00–11 numbered-prompt set and are no longer referenced by live code.
+- Previously-tracked modules (`approval.py`, `memory_retrieve.py`, `plan_review.py`, `research_output.py`, `research_review.py`, `mcp_tools.py`, `repo_summary.py`) were consolidated into `agent/__main__.py` and `agent/adapters/` during the OneShotController migration. The RepoSummary / MCPToolRegistry stacks were the last remnants of the retired 00–11 numbered-prompt set and are no longer referenced by live code.
 
 ## Related
 

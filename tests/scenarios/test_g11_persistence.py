@@ -307,7 +307,7 @@ class TransitionStageCASTest(unittest.TestCase):
         """Each successful stage transition increments metadata.revision."""
         import sys as _sys
 
-        from main import (
+        from agent.__main__ import (
             OneShotController,  # type: ignore[import-not-found]
             WorkflowStage,  # type: ignore[import-not-found]
         )
@@ -332,11 +332,12 @@ class TransitionStageCASTest(unittest.TestCase):
         import subprocess
         import sys as _sys
 
-        from main import (
+        from task_management import StaleRevisionError
+
+        from agent.__main__ import (
             OneShotController,  # type: ignore[import-not-found]
             WorkflowStage,  # type: ignore[import-not-found]
         )
-        from task_management import StaleRevisionError
 
         with tempfile.TemporaryDirectory(prefix="g11-cas-stale-") as td:
             storage = Path(td) / "tasks.json"

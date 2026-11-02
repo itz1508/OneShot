@@ -146,7 +146,7 @@ class TestControllerIntegration:
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def test_preflight_valid_returns_can_proceed(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("preflight test")
@@ -155,7 +155,7 @@ class TestControllerIntegration:
         assert result["can_proceed"] is True
 
     def test_preflight_valid_preserves_task(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("preflight test")
@@ -166,7 +166,7 @@ class TestControllerIntegration:
 
     def test_not_validated_blocks_and_preserves_task(self):
         """Scenario 9, 12: NOT_VALIDATED blocks but does NOT cancel the task."""
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         ctrl.start_task("blocked test")
@@ -185,7 +185,7 @@ class TestControllerIntegration:
 
     def test_no_material_change_retry_terminates_blocked(self):
         """Scenario 8: Repeatedly INVALID with no change → BLOCKED_RESUMABLE."""
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("retry test")
@@ -197,7 +197,7 @@ class TestControllerIntegration:
 
     def test_checkpoint_preserved_on_block(self):
         """Scenario 11: Checkpoint data is preserved when blocked."""
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("checkpoint test")
@@ -248,7 +248,7 @@ class TestConcurrentTasks:
     """Scenario 13: Concurrent tasks do not exchange fixtures or receipts."""
 
     def test_two_tasks_have_separate_checkpoints(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         storage = os.path.join(tempfile.mkdtemp(), "concurrent.json")
         try:
@@ -332,7 +332,7 @@ class TestEndToEnd:
 
     def test_preflight_valid_then_proceeds_to_plan(self):
         """Scenario 16: VALID preflight → controller proceeds to real Plan Gap Analysis."""
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path=self.storage)
         tid = ctrl.start_task("e2e preflight")
@@ -416,7 +416,7 @@ class TestRepairLoop:
     """Scenarios 3, 6, 8: Correction and bounded retry."""
 
     def test_valid_on_first_attempt(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         storage = os.path.join(tempfile.mkdtemp(), "repair.json")
         try:
@@ -432,7 +432,7 @@ class TestRepairLoop:
 
     def test_bounded_retry_limit(self):
         """Retry is bounded by max_repair_attempts."""
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         storage = os.path.join(tempfile.mkdtemp(), "bounded.json")
         try:
@@ -449,8 +449,9 @@ class TestRepairLoop:
 
     def test_task_not_cancelled_on_block(self):
         """Parent task is never cancelled — only interrupted."""
-        from main import OneShotController
         from task_management import TaskState
+
+        from agent.__main__ import OneShotController
 
         storage = os.path.join(tempfile.mkdtemp(), "not_cancelled.json")
         try:

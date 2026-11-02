@@ -25,6 +25,13 @@ classifiers = [
 dependencies = [
     "PyYAML>=6.0",
     "pydantic>=2.0",
+    # Mandatory for ToolRegistry dispatch and BehaviorEvaluator input
+    # validation. R3 reviewer directive H2: no silent fallback.
+    "jsonschema>=4.0",
+    # TOML parser for the Operational Judge config loader. tomllib is
+    # stdlib on 3.11+; tomli is the 3.10 fallback. We import tomllib
+    # first, then tomli as a fallback — the dep ensures both paths work.
+    "tomli>=2.0; python_version<'3.11'",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +40,8 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.10",
+    # Grammar / typo gate; see `make spell` and the configuration below.
+    "codespell>=2.3",
 ]
 # Provider adapter extras. OneShot core carries ZERO vendor SDKs; the
 # default `echo` adapter needs none. Install the extras below only if
@@ -41,7 +50,7 @@ openai = ["openai>=1.0"]
 anthropic = ["anthropic>=0.25"]
 
 [project.scripts]
-oneshot = "agent.main:main"
+oneshot = "agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent", "tools", "bin"]
@@ -73,3 +82,9 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.codespell]
+# Skip binary + generated + lock-ish artefacts.
+skip = ".git,__pycache__,*.lock,*.pyc,*.pyo,*.svg,*.png,/work,.ruff_cache,.mypy_cache"
+# Project-specific terms the dictionary flags as typos but are intentional.
+ignore-words-list = "CAS,caf,re-use,fo,ba"

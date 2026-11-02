@@ -4,12 +4,12 @@ Represents a shortcut version of the audit's "S1-S5 through the real
 CLI with same task_id" requirement, demonstrated here for the S2
 DO_NOT_USE scenario because it has the simplest fault model:
 
-  1. Run `python -m agent.main run --request-file ... --bundle BAD`
+  1. Run `python -m agent run --request-file ... --bundle BAD`
      against a fresh `--storage`. The BAD bundle omits the
      DO_NOT_USE decision for the unsupported finding — classification
      is PARTIAL and exit code is 1.
   2. Parse the task_id from the first run's JSON stdout.
-  3. Run `python -m agent.main continue --task-id <id> --bundle GOOD`
+  3. Run `python -m agent continue --task-id <id> --bundle GOOD`
      against the SAME --storage. The GOOD bundle supplies the
      corrective DO_NOT_USE decision; classification is VERIFIED and
      exit code is 0.
@@ -170,7 +170,7 @@ class G09SameTaskCLITest(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "agent.main",
+                    "agent",
                     "run",
                     "--request-file",
                     str(request_file),
@@ -200,7 +200,7 @@ class G09SameTaskCLITest(unittest.TestCase):
                 [
                     sys.executable,
                     "-m",
-                    "agent.main",
+                    "agent",
                     "continue",
                     "--task-id",
                     tid,

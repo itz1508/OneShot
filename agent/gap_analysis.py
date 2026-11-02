@@ -460,16 +460,16 @@ class CapabilityPreflight:
         Positive: authorized content changed to unauthorized — Scanner detects 'modified'.
         Negative: file unchanged — Scanner detects nothing.
         """
-        baseline = {"agent/main.py": "# original controller\n", "tools/helper.py": "# helper\n"}
+        baseline = {"agent/__main__.py": "# original controller\n", "tools/helper.py": "# helper\n"}
 
         def positive(ws: Path):
-            (ws / "agent" / "main.py").write_text("# modified controller — drift\n")
+            (ws / "agent" / "__main__.py").write_text("# modified controller — drift\n")
 
         def negative(ws: Path):
             pass  # No changes — no drift
 
         return self._validate_category(
-            "drift", baseline, positive, negative, ["modified"], ["main.py"]
+            "drift", baseline, positive, negative, ["modified"], ["__main__.py"]
         )
 
     def _validate_missing(self) -> PreflightCategoryResult:
@@ -478,7 +478,7 @@ class CapabilityPreflight:
         Positive: required file deleted — Scanner detects 'missing'.
         Negative: all required files present — Scanner detects nothing.
         """
-        baseline = {"agent/main.py": "# controller\n", "tools/task_management.py": "# tasks\n"}
+        baseline = {"agent/__main__.py": "# controller\n", "tools/task_management.py": "# tasks\n"}
 
         def positive(ws: Path):
             (ws / "tools" / "task_management.py").unlink()

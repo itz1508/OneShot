@@ -40,8 +40,9 @@ for sub in ("agent", "agent/contracts", "agent/adapters", "tools"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 # noqa: E402 justified — path setup must precede imports.
-from main import OneShotController, make_hybrid_resolver  # noqa: E402  # type: ignore[import-not-found]
 from models import validate_pipeline  # noqa: E402  # type: ignore[import-not-found]
+
+from agent.__main__ import OneShotController, make_hybrid_resolver  # noqa: E402  # type: ignore[import-not-found]
 
 
 @dataclass

@@ -22,7 +22,7 @@ for sub in ("agent", "agent/contracts", "tools"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from main import OneShotController  # noqa: E402
+from agent.__main__ import OneShotController  # noqa: E402
 
 
 class PreflightWiringTest(unittest.TestCase):
@@ -211,7 +211,7 @@ class PreflightFailureBlocksPlanTest(unittest.TestCase):
                     return_value=StubPreflight(),
                 ),
             ):
-                from main import OneShotController
+                from agent.__main__ import OneShotController
 
                 storage = Path(td) / "tasks.json"
                 ctrl = OneShotController(storage_path=str(storage))

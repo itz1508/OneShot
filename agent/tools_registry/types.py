@@ -1,0 +1,239 @@
+"""Toolkit / Tool discovery types.
+
+Each `ToolDescriptor` carries:
+
+  * stable `id` — never recycled across tool identities.
+  * `toolkit` — the owning toolkit id (foreign key into `ToolkitDescriptor`).
+  * `kind` — Function / Host-native / MCP. The three categories STAY DISTINCT
+    (reviewer directive).
+  * `description`, `version`, `owner`, `effects`, `available` — reused from
+    `CapabilityDescriptor` semantics.
+  * `input_schema` — JSON Schema for the tool's inputs. Discovery clients can
+    validate inputs client-side before dispatch.
+  * `required_permissions` — list of permission tokens the caller must hold
+    (same closed vocabulary as `agent.prompt_authoring.types.ToolPermission`).
+
+`HostCapabilities` tells the registry which host-native tools the host
+actually advertises; `apply_patch`, `shell`, and `update_plan` are registered
+only when the host says they are supported, per reviewer directive.
+
+`PermissionGrant` is the injectable permission oracle. The default
+`EmptyGrant` refuses everything — the host MUST supply a grant that maps
+`principal -> set[ToolPermission.value]` for any tool to pass dispatch.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Protocol
+
+
+class ToolKind(str, Enum):
+    """Three distinct categories, verbatim from the reviewer directive.
+
+    FUNCTION — Custom Function Tool, callable in-process by the controller.
+    HOST_NATIVE — a tool provided by the agent host (e.g. apply_patch, shell).
+                  Registered ONLY when the host advertises it.
+    MCP — a tool exposed via the Model Context Protocol tools/list contract.
+          Discovered through an MCP connector, not hard-coded.
+    """
+
+    FUNCTION = "function"
+    HOST_NATIVE = "host_native"
+    MCP = "mcp"
+
+
+class ToolRegistryError(RuntimeError):
+    """Any discovery / registration / dispatch error.
+
+    The message carries a short classification key so callers can branch:
+      * ``unknown_toolkit`` — `list_tools(toolkit_id=…)` referenced a toolkit
+        the registry does not know.
+      * ``unknown_tool`` — `dispatch(..., tool_id=…)` referenced an id that
+        does not exist OR is filtered out for the caller.
+      * ``not_permitted`` — the caller's grant does not satisfy all
+        `required_permissions`.
+      * ``not_available`` — tool is registered but `available=False` right now.
+      * ``duplicate_tool`` / ``duplicate_toolkit`` — id already registered.
+      * ``invalid_input`` — dispatch inputs failed `input_schema` validation.
+    """
+
+
+@dataclass(frozen=True)
+class DispatchAuditEntry:
+    """One structured record per `ToolRegistry.dispatch` attempt.
+
+    Written whether or not dispatch succeeded; stored in-process on the
+    registry. ``status`` is one of
+    ``\"ok\"`` | ``\"invalid_input\"`` | ``\"invalid_schema\"`` |
+    ``\"unknown_tool\"`` | ``\"not_available\"`` | ``\"error\"`` |
+    ``\"tool_timeout\"`` | ``\"input_too_large\"`` |
+    ``\"untrusted_identity\"``. The ``error_class`` field names the
+    exception type (never the message, which may contain sensitive data).
+
+    Side-effect reconciliation fields
+    ---------------------------------
+    When a FUNCTION or MCP tool breaches its wall-clock timeout the
+    dispatcher raises ``tool_timeout`` to the caller IMMEDIATELY and does
+    NOT wait for the worker thread (Python has no safe thread
+    cancellation). The worker may therefore still complete, fail, or
+    partially mutate state after the caller gets its error. The
+    reviewer's required policy is encoded here:
+
+      * ``worker_termination_confirmed`` — False at the moment of
+        ``tool_timeout`` (the worker is unreachable); True once
+        ``ToolRegistry.reconcile_pending()`` has observed the Future
+        complete (success or exception) and updated the record.
+      * ``side_effect_state`` — one of:
+          ``\"ok\"`` — completed normally; no uncertainty.
+          ``\"uncertain\"`` — ``tool_timeout`` fired and reconciliation
+            has not yet observed the worker complete.
+          ``\"settled\"`` — worker returned AND, for write-type tools,
+            a registered side-effect probe confirmed the write landed.
+            Read-only tools reach ``settled`` on worker completion alone
+            because there is nothing to verify. Safe to NOT retry.
+          ``\"settled_no_effect\"`` — worker returned but the probe
+            confirmed the write did NOT land. The caller may retry.
+          ``\"settled_unverified\"`` — worker returned, tool is
+            write-type, but no probe is registered (or the probe
+            returned an inconclusive result). The caller MUST verify
+            out-of-band before retrying — the registry refuses to
+            promise safety.
+          ``\"settled_partial_write\"`` — worker RAISED but the probe
+            confirmed the write landed first. The caller MUST NOT retry
+            (that would double-write); it must reconcile against the
+            effect and continue.
+          ``\"settled_error\"`` — worker raised and (for write-type
+            tools) the probe confirmed the write did NOT land. Safe to
+            retry.
+          ``\"settled_error_unverified\"`` — worker raised; tool is
+            write-type and either no probe is registered or the probe
+            was inconclusive. Caller MUST verify out-of-band before
+            retrying.
+        Callers performing writes MUST pass ``uncertain`` entries
+        through ``reconcile_pending()`` before retrying.
+      * ``entry_id`` — monotonic integer stable across reconciliation
+        rewrites; identifies the record even after retention eviction.
+    """
+
+    at: float
+    principal: str
+    tool_id: str
+    status: str
+    duration_ms: float
+    error_class: str | None = None
+    input_bytes: int = 0
+    worker_termination_confirmed: bool = True
+    side_effect_state: str = "ok"
+    entry_id: int = 0
+    # Side-effect probe evidence (populated by
+    # ``ToolRegistry.reconcile_pending`` when a probe runs). One-line
+    # human-readable summary that MUST NOT contain exception messages
+    # or caller-supplied payload data verbatim (the probe implementation
+    # is responsible for scrubbing those before returning). Capped at
+    # 256 characters.
+    probe_evidence: str | None = None
+
+
+@dataclass(frozen=True)
+class ToolkitDescriptor:
+    """Discovery descriptor for one toolkit (collection of related tools)."""
+
+    id: str
+    description: str
+    version: str = "1.0"
+    # Metadata hint for discovery clients. Not an authorization claim.
+    owner: str = "unknown"
+    # The number of tools (ALL kinds) registered under this toolkit at
+    # discovery time. The caller may hold permissions for only a subset,
+    # so this field is intentionally NOT the number of tools the caller
+    # can see — that is reported by the discovery call itself.
+    registered_tool_count: int = 0
+    # Which kinds the toolkit contains. A toolkit may hold a mix.
+    kinds: tuple[ToolKind, ...] = ()
+
+
+@dataclass(frozen=True)
+class ToolDescriptor:
+    """Discovery descriptor for one registered callable operation."""
+
+    id: str
+    toolkit: str
+    kind: ToolKind
+    description: str
+    input_schema: dict[str, Any]
+    owner: str
+    version: str = "1.0"
+    effects: tuple[str, ...] = ("read",)
+    available: bool = True
+    required_permissions: tuple[str, ...] = ()
+    # M3-addon reviewer directive: host-native tools are DISCOVERABLE but not
+    # DISPATCHABLE through this registry. Clients can read this flag to tell
+    # the two apart without parsing `kind`. For FUNCTION / MCP tools this
+    # defaults to True; HOST_NATIVE sets it False.
+    dispatchable_in_registry: bool = True
+
+    def is_available(self) -> bool:
+        return self.available
+
+
+@dataclass(frozen=True)
+class HostCapabilities:
+    """Which host-native tools the agent host advertises.
+
+    Reviewer: 'Register apply_patch, shell, and update_plan only when
+    supported by the actual host.' update_plan is a FUNCTION tool (not
+    host-native) but the host decides whether a progress-tracking UI is
+    present, so its availability also comes through here.
+    """
+
+    apply_patch: bool = False
+    shell: bool = False
+    update_plan: bool = False
+    # Free-form name list — hosts may advertise additional native tools.
+    extensions: tuple[str, ...] = ()
+
+
+class PermissionGrant(Protocol):
+    """How the host maps a Principal to a set of granted permission tokens.
+
+    Vocabulary matches `agent.prompt_authoring.types.ToolPermission` but is
+    kept as plain strings here to avoid a cross-import (toolkit discovery
+    may be used by code that does not depend on prompt_authoring).
+
+    The default `EmptyGrant` refuses everything, matching the reviewer
+    rule that discovery does NOT grant permissions.
+    """
+
+    def granted(self, principal_name: str) -> set[str]:
+        ...
+
+
+@dataclass(frozen=True)
+class EmptyGrant:
+    """The default grant — refuses every permission."""
+
+    def granted(self, principal_name: str) -> set[str]:
+        return set()
+
+
+@dataclass(frozen=True)
+class StaticGrant:
+    """In-memory grant mapping, useful for tests and small deployments."""
+
+    permissions: dict[str, frozenset[str]] = field(default_factory=dict)
+
+    def granted(self, principal_name: str) -> set[str]:
+        return set(self.permissions.get(principal_name, frozenset()))
+
+
+__all__ = [
+    "EmptyGrant",
+    "HostCapabilities",
+    "PermissionGrant",
+    "StaticGrant",
+    "ToolDescriptor",
+    "ToolKind",
+    "ToolRegistryError",
+    "ToolkitDescriptor",
+]

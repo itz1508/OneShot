@@ -5,7 +5,13 @@ import os
 import tempfile
 
 import pytest
-from main import CapabilityDescriptor, CapabilityRegistry, OneShotController, WorkflowStage
+
+from agent.__main__ import (
+    CapabilityDescriptor,
+    CapabilityRegistry,
+    OneShotController,
+    WorkflowStage,
+)
 
 
 class TestTaskLifecycle:
@@ -222,3 +228,18 @@ class TestCapabilityRegistry:
         assert reg.check_effect("test", "read") is True
         assert reg.check_effect("test", "destructive") is False
         assert reg.check_effect("nonexistent", "read") is False
+
+
+def test_agent_package_cli_entrypoint_help():
+    """The canonical module entrypoint remains executable after moving main.py."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        [sys.executable, "-m", "agent", "--help"],
+        cwd=root, capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "usage:" in proc.stdout.lower()

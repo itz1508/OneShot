@@ -24,7 +24,7 @@ for sub in ("agent", "tools", "agent/contracts"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from main import OneShotController  # noqa: E402
+from agent.__main__ import OneShotController  # noqa: E402
 
 
 class VerifiedGateTest(unittest.TestCase):

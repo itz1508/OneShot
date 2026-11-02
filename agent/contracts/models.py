@@ -1131,7 +1131,7 @@ def _recompute_manifest_digests(manifest: dict, build: dict) -> list[str]:
       installed package.
     * `build_receipt_sha` must equal the sha-256 of the JSON-encoded
       `build.execution.command_receipts` list (sorted keys) — exactly
-      the derivation agent/main.py uses when it writes the manifest.
+      the derivation agent/__main__.py uses when it writes the manifest.
 
     A mismatch surfaces as a cross-record error string; a MISSING
     source (e.g. no oracle module shipped alongside this file) is a

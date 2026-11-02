@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
 class CLIEntrypointExemptionTest(unittest.TestCase):
     """Gap-analysis review of 26cf698: the duplication detector flagged
-    `main/0` across five CLI scripts (agent/main.py, bin/*.py, tools/*.py)
+    `main/0` across five CLI scripts (agent/__main__.py, bin/*.py, tools/*.py)
     as a duplicate callable. Those are per-module CLI entrypoints guarded
     by `if __name__ == "__main__":` — the project convention, not a
     duplicated responsibility.

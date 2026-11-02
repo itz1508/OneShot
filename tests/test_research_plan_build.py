@@ -4,7 +4,7 @@ fixtures, build_executor.
 
 Historical note. This module originally covered the retired numbered-
 prompt set (research_output, research_review, plan_review, approval).
-Those files were consolidated into `agent/main.py` by commit d90b655;
+Those files were consolidated into `agent/__main__.py` by commit d90b655;
 per PR #8 review item D2 we kept the test classes marked
 `@pytest.mark.skip` so coverage status stays visible rather than hidden.
 
@@ -77,7 +77,7 @@ class TestSearchSources:
     reason="D2: tools/research_output.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestResearchOutput:
-    """Retired: research_output was consolidated into agent/main.py (D2)."""
+    """Retired: research_output was consolidated into agent/__main__.py (D2)."""
 
     def setup_method(self):
         self.builder = ResearchOutputBuilder(repo_path=str(REPO_ROOT))
@@ -115,7 +115,7 @@ class TestResearchOutput:
     reason="D2: tools/research_review.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestResearchReview:
-    """Retired: research_review was consolidated into agent/main.py (D2)."""
+    """Retired: research_review was consolidated into agent/__main__.py (D2)."""
 
     def setup_method(self):
         self.review = ResearchReview()
@@ -155,7 +155,7 @@ class TestResearchReview:
     reason="D2: tools/plan_review.py retired by d90b655 — ExecPlan D2 decision pending."
 )
 class TestPlanReview:
-    """Retired: plan_review was consolidated into agent/main.py (D2)."""
+    """Retired: plan_review was consolidated into agent/__main__.py (D2)."""
 
     def setup_method(self):
         self.review = PlanReview()
@@ -226,7 +226,7 @@ class TestFixtures:
     )
 )
 class TestApproval:
-    """Retired: approval was consolidated into agent/main.py (D2)."""
+    """Retired: approval was consolidated into agent/__main__.py (D2)."""
 
     def test_model_text_rejected(self):
         gate = AuthorizationGate(host_permissions={"a": ["execute"]})

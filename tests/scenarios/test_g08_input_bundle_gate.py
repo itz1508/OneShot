@@ -23,7 +23,7 @@ for sub in ("agent", "tools"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from main import OneShotController, _sanitise_input_bundle  # noqa: E402
+from agent.__main__ import OneShotController, _sanitise_input_bundle  # noqa: E402
 
 
 class ProductionGateTest(unittest.TestCase):

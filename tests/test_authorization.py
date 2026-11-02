@@ -13,7 +13,7 @@ This module exercises what current OneShot source actually implements for the
 first responsibility (the "approval gate" of the Builder role in the
 specialist architecture). The relevant surface is OneShotController's
 request_user_decision / provide_user_decision / has_pending_decision triplet
-(agent/main.py:240-283), which already enforces:
+(agent/__main__.py:240-283), which already enforces:
 
   - exact revision binding (stale approvals rejected),
   - single-use consumption (duplicate approvals rejected),
@@ -33,7 +33,7 @@ import unittest
 from pathlib import Path
 
 # agent/ is added to sys.path by conftest.py — no manual sys.path manipulation.
-from main import OneShotController
+from agent.__main__ import OneShotController
 
 
 class TestUserApprovalLayer(unittest.TestCase):
@@ -95,7 +95,7 @@ class TestCapabilityMetadata(unittest.TestCase):
 
     The registry stores metadata about capabilities (owner, effects, invocation
     paths) and exposes check_effect() for lookup. The code is explicit that
-    this is NOT a permission service (agent/main.py:115, 137). These tests
+    this is NOT a permission service (agent/__main__.py:115, 137). These tests
     pin that distinction so future callers don't mistake metadata for a gate.
     """
 
