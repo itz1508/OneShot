@@ -266,6 +266,14 @@ def _glob_matches(path: str, pattern: str) -> bool:
 
 
 
+def _mark_principal_aware(fn: Any) -> Any:
+    """Flag a Function Tool impl as principal-aware without triggering mypy's
+    attr-defined check on narrowly-typed Callables.
+    """
+    fn._principal_aware = True
+    return fn
+
+
 def _impl_get_task_status(task_manager: Any):
     """Return task state, revision, stage, owner.
 
@@ -294,8 +302,7 @@ def _impl_get_task_status(task_manager: Any):
             "stage": md.get("stage"),
         }
 
-    fn._principal_aware = True
-    return fn
+    return _mark_principal_aware(fn)
 
 
 def _impl_update_task_progress(task_manager: Any):
@@ -359,8 +366,7 @@ def _impl_update_task_progress(task_manager: Any):
             "owner": owner,
         }
 
-    fn._principal_aware = True
-    return fn
+    return _mark_principal_aware(fn)
 
 
 def _impl_adopt_task_owner(task_manager: Any):
@@ -421,8 +427,7 @@ def _impl_adopt_task_owner(task_manager: Any):
             "assigned_by": principal_name,
         }
 
-    fn._principal_aware = True
-    return fn
+    return _mark_principal_aware(fn)
 
 
 def _impl_update_plan(host_plan_sink: Any):
