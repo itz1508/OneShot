@@ -28,6 +28,10 @@ dependencies = [
     # Mandatory for ToolRegistry dispatch and BehaviorEvaluator input
     # validation. R3 reviewer directive H2: no silent fallback.
     "jsonschema>=4.0",
+    # TOML parser for the Operational Judge config loader. tomllib is
+    # stdlib on 3.11+; tomli is the 3.10 fallback. We import tomllib
+    # first, then tomli as a fallback — the dep ensures both paths work.
+    "tomli>=2.0; python_version<'3.11'",
 ]
 
 [project.optional-dependencies]

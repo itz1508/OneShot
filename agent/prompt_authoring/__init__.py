@@ -27,6 +27,14 @@ from agent.prompt_authoring.author import (
     PromptAuthor,
     StatusTransitionError,
 )
+from agent.prompt_authoring.config import (
+    JudgeConfig,
+    JudgeConfigError,
+    JudgeSection,
+    ModelInventoryEntry,
+    ProviderConfigEntry,
+    load_judge_config,
+)
 from agent.prompt_authoring.evaluator import (
     CheckResult,
     EvaluationReceipt,
@@ -36,6 +44,15 @@ from agent.prompt_authoring.fixtures import (
     PromptFixture,
     PromptFixtureKind,
     PromptFixtureRegistry,
+)
+from agent.prompt_authoring.judge import (
+    BudgetExceeded,
+    CriterionResult,
+    EvaluationRubric,
+    Finding,
+    LLMJudge,
+    PairwiseEvaluationResult,
+    SingleEvaluationResult,
 )
 from agent.prompt_authoring.loader import (
     MarkdownPromptError,
@@ -80,4 +97,18 @@ __all__ = [
     "IdentityProvider",
     "Principal",
     "StatusTransitionError",
+    # Operational Judge
+    "JudgeConfig",
+    "JudgeConfigError",
+    "JudgeSection",
+    "ModelInventoryEntry",
+    "ProviderConfigEntry",
+    "load_judge_config",
+    "BudgetExceeded",
+    "CriterionResult",
+    "EvaluationRubric",
+    "Finding",
+    "LLMJudge",
+    "PairwiseEvaluationResult",
+    "SingleEvaluationResult",
 ]
