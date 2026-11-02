@@ -74,6 +74,43 @@ def _require_jsonschema():
     return jsonschema
 
 
+def _validate_probe_result(
+    result: Any,
+) -> tuple[bool | None, str | None]:
+    """Strictly validate a side-effect probe's return value.
+
+    Reviewer directive: a probe that returns an unexpected shape must
+    NOT silently fall through to ``applied=None``; it must surface
+    the shape error in the audit entry so operators can tell "probe
+    returned garbage" from "probe genuinely couldn't tell".
+
+    Returns ``(applied, evidence)``:
+      * ``(True, evidence)`` / ``(False, evidence)`` — well-formed
+        probe result. ``evidence`` is capped at 256 characters and
+        may be ``None`` when the probe omitted it.
+      * ``(None, "probe_shape_invalid:<tag>")`` — the probe's return
+        value failed validation. ``<tag>`` names the specific reason
+        (``not_dict``, ``applied_missing``, ``applied_not_bool``, or
+        ``evidence_not_string``). No caller-supplied data is echoed.
+      * ``(None, None)`` — probe explicitly returned ``None``.
+    """
+    if result is None:
+        return None, None
+    if not isinstance(result, dict):
+        return None, "probe_shape_invalid:not_dict"
+    if "applied" not in result:
+        return None, "probe_shape_invalid:applied_missing"
+    applied = result["applied"]
+    if not isinstance(applied, bool):
+        return None, "probe_shape_invalid:applied_not_bool"
+    ev_raw = result.get("evidence")
+    if ev_raw is not None and not isinstance(ev_raw, str):
+        return None, "probe_shape_invalid:evidence_not_string"
+    if isinstance(ev_raw, str) and ev_raw:
+        return applied, ev_raw[:256]
+    return applied, None
+
+
 class ToolRegistry:
     """Append-only, principal-gated registry of toolkits and tools."""
 
@@ -787,13 +824,9 @@ class ToolRegistry:
                         probe_applied = None
                         probe_error_class = type(pe).__name__
                     else:
-                        if isinstance(result, dict) and "applied" in result:
-                            probe_applied = bool(result["applied"])
-                            ev = result.get("evidence")
-                            if isinstance(ev, str) and ev:
-                                probe_evidence = ev[:256]
-                        else:
-                            probe_applied = None  # unknown shape
+                        probe_applied, probe_evidence = _validate_probe_result(
+                            result
+                        )
             # Decide final side_effect_state.
             if exc is None:
                 # Worker returned.

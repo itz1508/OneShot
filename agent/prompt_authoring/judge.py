@@ -268,6 +268,28 @@ class LLMJudge:
     def remaining_usd(self) -> float:
         return max(0.0, self._config.judge.max_cost_usd - self._spent_usd)
 
+    def would_admit(
+        self, *, estimated_output_tokens: int, estimated_input_tokens: int = 0
+    ) -> bool:
+        """Pre-call budget ADMISSION check.
+
+        Returns True when a hypothetical call that produces at most
+        ``estimated_output_tokens`` output and ``estimated_input_tokens``
+        input would NOT push total spend past the configured cap.
+
+        This is a predicate: callers decide what to do with the answer
+        (abort, downgrade, request a smaller model). The internal
+        ``_ask`` helper enforces the same rule and raises
+        ``BudgetExceeded`` on refusal, so admission is advisory and
+        enforcement is mandatory — the two are consistent.
+        """
+        projected = self._config.model_cost_usd(
+            self._model,
+            int(estimated_input_tokens),
+            int(estimated_output_tokens),
+        )
+        return (self._spent_usd + projected) <= self._config.judge.max_cost_usd
+
     # ------------------------------------------------------------------
     # single / pairwise / reference_guided
     # ------------------------------------------------------------------

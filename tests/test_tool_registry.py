@@ -2448,3 +2448,104 @@ class TestWriteSideEffectVerificationCorrections:
                 assert "SECRET" not in value and "qqq" not in value
         assert entry.side_effect_state == "settled_unverified"
         reg.close()
+
+
+
+class TestProbeShapeValidation:
+    """R3 reviewer round-5: strict shape validation on probe return
+    values. A probe that returns garbage must surface the shape error
+    on probe_evidence as `probe_shape_invalid:<tag>` so operators can
+    tell "probe bug" from "probe says it genuinely could not tell"."""
+
+    def _build(self, probe):
+        import time as _time
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="writer",
+                toolkit="t",
+                kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                effects=("internal_write",),
+                required_permissions=("task_write",),
+            ),
+            lambda inputs: (_time.sleep(0.5) or {"ok": True}),
+            side_effect_probe=probe,
+        )
+        return reg
+
+    def _trigger(self, reg):
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "writer", {})
+
+    def _reconcile(self, reg):
+        import time
+        time.sleep(0.9)
+        return reg.reconcile_pending("o")
+
+    def test_probe_returning_non_dict_marks_shape_invalid(self):
+        def probe(payload, principal):
+            return "I am not a dict"
+        reg = self._build(probe)
+        self._trigger(reg)
+        updated = self._reconcile(reg)
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].probe_evidence == "probe_shape_invalid:not_dict"
+        reg.close()
+
+    def test_probe_missing_applied_key_marks_shape_invalid(self):
+        def probe(payload, principal):
+            return {"evidence": "no applied key here"}
+        reg = self._build(probe)
+        self._trigger(reg)
+        updated = self._reconcile(reg)
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].probe_evidence == "probe_shape_invalid:applied_missing"
+        reg.close()
+
+    def test_probe_applied_not_bool_marks_shape_invalid(self):
+        def probe(payload, principal):
+            return {"applied": "yes", "evidence": "truthy string"}
+        reg = self._build(probe)
+        self._trigger(reg)
+        updated = self._reconcile(reg)
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].probe_evidence == "probe_shape_invalid:applied_not_bool"
+        reg.close()
+
+    def test_probe_evidence_wrong_type_marks_shape_invalid(self):
+        def probe(payload, principal):
+            return {"applied": True, "evidence": {"not": "a string"}}
+        reg = self._build(probe)
+        self._trigger(reg)
+        updated = self._reconcile(reg)
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].probe_evidence == "probe_shape_invalid:evidence_not_string"
+        reg.close()
+
+    def test_probe_returning_none_still_marks_unverified_no_evidence(self):
+        """Explicit None stays as "no evidence" rather than a shape-invalid
+        tag — None is a well-formed inconclusive signal, not a bug."""
+        def probe(payload, principal):
+            return None
+        reg = self._build(probe)
+        self._trigger(reg)
+        updated = self._reconcile(reg)
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].probe_evidence is None
+        reg.close()

@@ -423,3 +423,61 @@ class TestUnknownModelRefusal:
                 rubric=rubric,
                 model="made-up-model-xyz",
             )
+
+
+
+class TestBudgetAdmission:
+    """R3 reviewer round-5: pre-call budget admission.
+
+    ``would_admit`` is advisory — the enforcement path still raises
+    BudgetExceeded on refusal — but it lets callers decide whether to
+    even dispatch a call when they know approximately how expensive
+    it will be. Prevents a 50 000-token response from blowing a tight
+    cap in a single shot.
+    """
+
+    def _make(self, max_cost_usd, rubric):
+        cfg = JudgeConfig(
+            judge=JudgeSection(
+                default_model="muse-spark-open-1026",
+                max_cost_usd=max_cost_usd,
+                timeout_s=60.0,
+                usage_log_path="/tmp/u.jsonl",
+            ),
+            providers={},
+            models={
+                "muse-spark-open-1026": ModelInventoryEntry(
+                    input_per_1m=1.0, output_per_1m=2.0
+                ),
+            },
+        )
+        adapter = ScriptedJudgeAdapter([])
+        judge = LLMJudge(adapter=adapter, config=cfg, rubric=rubric)
+        return judge
+
+    def test_would_admit_true_when_projection_fits(self, rubric):
+        judge = self._make(max_cost_usd=1.0, rubric=rubric)
+        # 1000 output tokens @ $2/1M = $0.002 << $1 cap
+        assert judge.would_admit(estimated_output_tokens=1000) is True
+
+    def test_would_admit_false_when_projection_exceeds(self, rubric):
+        judge = self._make(max_cost_usd=0.001, rubric=rubric)
+        # 1_000_000 output tokens @ $2/1M = $2 >> $0.001 cap
+        assert judge.would_admit(estimated_output_tokens=1_000_000) is False
+
+    def test_would_admit_accounts_input_tokens(self, rubric):
+        judge = self._make(max_cost_usd=0.0025, rubric=rubric)
+        # 500 input @ $1/1M + 1000 output @ $2/1M = $0.0005 + $0.002 = $0.0025 (equal)
+        assert judge.would_admit(
+            estimated_output_tokens=1000, estimated_input_tokens=500
+        ) is True
+        # One extra token tips it over.
+        assert judge.would_admit(
+            estimated_output_tokens=1000, estimated_input_tokens=501
+        ) is False
+
+    def test_would_admit_rejects_when_already_overspent(self, rubric):
+        judge = self._make(max_cost_usd=0.001, rubric=rubric)
+        # Simulate prior overspend.
+        judge._spent_usd = 0.001
+        assert judge.would_admit(estimated_output_tokens=1) is False
