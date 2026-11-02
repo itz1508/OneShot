@@ -421,7 +421,7 @@ class TestPromptStore:
 
 class TestControllerIntegration:
     def test_controller_prompt_store_is_lazy_and_shared(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         with tempfile.TemporaryDirectory() as td:
             ctrl = OneShotController(storage_path=f"{td}/tasks.json")

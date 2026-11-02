@@ -307,7 +307,7 @@ class TransitionStageCASTest(unittest.TestCase):
         """Each successful stage transition increments metadata.revision."""
         import sys as _sys
 
-        from main import (
+        from agent.__main__ import (
             OneShotController,  # type: ignore[import-not-found]
             WorkflowStage,  # type: ignore[import-not-found]
         )
@@ -332,7 +332,7 @@ class TransitionStageCASTest(unittest.TestCase):
         import subprocess
         import sys as _sys
 
-        from main import (
+        from agent.__main__ import (
             OneShotController,  # type: ignore[import-not-found]
             WorkflowStage,  # type: ignore[import-not-found]
         )

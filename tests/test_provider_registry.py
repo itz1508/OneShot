@@ -273,14 +273,14 @@ class TestLazyVendorStubs:
 
 class TestOneShotControllerIntegration:
     def test_default_controller_has_no_client(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path="/tmp/oneshot_provider_test_1.json")
         assert ctrl.client is None
         assert ctrl.provider_config is None
 
     def test_controller_installs_echo_client_on_demand(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(
             storage_path="/tmp/oneshot_provider_test_2.json",
@@ -295,7 +295,7 @@ class TestOneShotControllerIntegration:
         assert resp.content.startswith("[echo:echo-1] ")
 
     def test_model_call_without_provider_raises(self):
-        from main import OneShotController
+        from agent.__main__ import OneShotController
 
         ctrl = OneShotController(storage_path="/tmp/oneshot_provider_test_3.json")
         with pytest.raises(RuntimeError) as ctx:
