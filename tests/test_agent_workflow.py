@@ -5,7 +5,13 @@ import os
 import tempfile
 
 import pytest
-from agent.__main__ import CapabilityDescriptor, CapabilityRegistry, OneShotController, WorkflowStage
+
+from agent.__main__ import (
+    CapabilityDescriptor,
+    CapabilityRegistry,
+    OneShotController,
+    WorkflowStage,
+)
 
 
 class TestTaskLifecycle:

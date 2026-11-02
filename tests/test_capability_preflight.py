@@ -449,8 +449,9 @@ class TestRepairLoop:
 
     def test_task_not_cancelled_on_block(self):
         """Parent task is never cancelled — only interrupted."""
-        from agent.__main__ import OneShotController
         from task_management import TaskState
+
+        from agent.__main__ import OneShotController
 
         storage = os.path.join(tempfile.mkdtemp(), "not_cancelled.json")
         try:

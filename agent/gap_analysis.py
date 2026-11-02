@@ -463,7 +463,7 @@ class CapabilityPreflight:
         baseline = {"agent/__main__.py": "# original controller\n", "tools/helper.py": "# helper\n"}
 
         def positive(ws: Path):
-            (ws / "agent" / "main.py").write_text("# modified controller — drift\n")
+            (ws / "agent" / "__main__.py").write_text("# modified controller — drift\n")
 
         def negative(ws: Path):
             pass  # No changes — no drift

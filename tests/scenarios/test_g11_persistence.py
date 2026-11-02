@@ -332,11 +332,12 @@ class TransitionStageCASTest(unittest.TestCase):
         import subprocess
         import sys as _sys
 
+        from task_management import StaleRevisionError
+
         from agent.__main__ import (
             OneShotController,  # type: ignore[import-not-found]
             WorkflowStage,  # type: ignore[import-not-found]
         )
-        from task_management import StaleRevisionError
 
         with tempfile.TemporaryDirectory(prefix="g11-cas-stale-") as td:
             storage = Path(td) / "tasks.json"

@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 
 from color_eval import Color, ColorEvaluator
+
 from agent.__main__ import OneShotController, WorkflowStage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
