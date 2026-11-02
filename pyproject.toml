@@ -25,6 +25,9 @@ classifiers = [
 dependencies = [
     "PyYAML>=6.0",
     "pydantic>=2.0",
+    # Mandatory for ToolRegistry dispatch and BehaviorEvaluator input
+    # validation. R3 reviewer directive H2: no silent fallback.
+    "jsonschema>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -33,10 +36,6 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.10",
-    # M3: schema conformance check in BehaviorEvaluator uses jsonschema when
-    # available. Behavior falls back to a required-key subset check if the
-    # module is missing, so this is a dev-only strict-mode dependency.
-    "jsonschema>=4.0",
 ]
 # Provider adapter extras. OneShot core carries ZERO vendor SDKs; the
 # default `echo` adapter needs none. Install the extras below only if

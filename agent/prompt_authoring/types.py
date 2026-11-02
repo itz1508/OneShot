@@ -60,6 +60,7 @@ class ToolPermission(str, Enum):
     """
 
     REPOSITORY_READ = "repository_read"
+    TASK_WRITE = "task_write"
     CODE_SEARCH = "code_search"
     OFFICIAL_DOCUMENTATION = "official_documentation"
     READ_ONLY = "read_only"

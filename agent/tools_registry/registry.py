@@ -33,6 +33,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from agent.prompt_authoring.store import Principal
 from agent.tools_registry.types import (
     EmptyGrant,
     PermissionGrant,
@@ -47,6 +48,23 @@ from agent.tools_registry.types import (
 FunctionImpl = Callable[[dict[str, Any]], Any]
 
 
+def _require_jsonschema():
+    """Return the jsonschema module or raise ToolRegistryError.
+
+    M3-addon reviewer directive: full schema validation is MANDATORY for
+    dispatch; the former silent fallback to a required-key subset check is
+    rejected.
+    """
+    try:
+        import jsonschema  # type: ignore
+    except ImportError as exc:  # pragma: no cover - exercised in test
+        raise ToolRegistryError(
+            "schema_validation_unavailable: jsonschema is required for dispatch. "
+            "Install `pip install jsonschema>=4.0`."
+        ) from exc
+    return jsonschema
+
+
 class ToolRegistry:
     """Append-only, principal-gated registry of toolkits and tools."""
 
@@ -54,12 +72,24 @@ class ToolRegistry:
         self,
         *,
         permission_grant: PermissionGrant | None = None,
+        trust_actor_strings: bool = False,
     ) -> None:
+        """Build a registry.
+
+        * ``permission_grant`` — maps principal name to granted permission set.
+        * ``trust_actor_strings`` — when True, discovery and dispatch accept
+          a bare principal_name string instead of a verified Principal. This
+          is the pre-corrective backward-compat path and is intended for
+          tests and single-process trusted sessions. Production deployments
+          MUST pass verified Principal objects (M1 contract) and keep this
+          at the default False.
+        """
         self._toolkits: dict[str, ToolkitDescriptor] = {}
         self._tools: dict[str, ToolDescriptor] = {}
         self._impls: dict[str, FunctionImpl] = {}
         self._mcp_invokers: dict[str, Any] = {}
         self._grant: PermissionGrant = permission_grant or EmptyGrant()
+        self._trust_actor_strings = trust_actor_strings
 
     # ------------------------------------------------------------------
     # Registration — toolkits and tools
@@ -133,10 +163,44 @@ class ToolRegistry:
         )
 
     # ------------------------------------------------------------------
+    # Identity resolution (M1 Principal contract)
+    # ------------------------------------------------------------------
+
+    def _resolve_principal(self, caller: Principal | str) -> str:
+        """Return the authenticated name, or raise ToolRegistryError.
+
+        A verified Principal (from an IdentityProvider) is always accepted.
+        An unverified Principal is accepted ONLY in trust_actor_strings mode.
+        A bare string is accepted ONLY in trust_actor_strings mode.
+        """
+        if isinstance(caller, Principal):
+            if caller.verified:
+                return caller.name
+            if self._trust_actor_strings:
+                return caller.name
+            raise ToolRegistryError(
+                f"untrusted_identity: Principal {caller.name!r} is unverified. "
+                "Obtain a verified Principal via an IdentityProvider or construct "
+                "the registry with trust_actor_strings=True (tests only)."
+            )
+        if isinstance(caller, str):
+            if self._trust_actor_strings:
+                return caller
+            raise ToolRegistryError(
+                "untrusted_identity: discovery and dispatch require a verified "
+                "Principal; bare principal_name strings are refused. Construct "
+                "the registry with trust_actor_strings=True (tests only), or "
+                "pass a verified Principal."
+            )
+        raise ToolRegistryError(
+            f"untrusted_identity: expected Principal or str, got {type(caller).__name__}"
+        )
+
+    # ------------------------------------------------------------------
     # Discovery — list_toolkits / list_tools
     # ------------------------------------------------------------------
 
-    def list_toolkits(self, principal_name: str) -> list[ToolkitDescriptor]:
+    def list_toolkits(self, caller: Principal | str) -> list[ToolkitDescriptor]:
         """Return toolkits visible to the authorized caller.
 
         A toolkit is visible when the caller holds grants for at least one
@@ -145,6 +209,7 @@ class ToolRegistry:
         only reported if it was registered (unknown toolkits are rejected
         by `list_tools`).
         """
+        principal_name = self._resolve_principal(caller)
         granted = self._grant.granted(principal_name)
         visible: list[ToolkitDescriptor] = []
         for tk_id, tk in self._toolkits.items():
@@ -159,7 +224,7 @@ class ToolRegistry:
 
     def list_tools(
         self,
-        principal_name: str,
+        caller: Principal | str,
         *,
         toolkit_id: str | None = None,
     ) -> list[ToolDescriptor]:
@@ -173,6 +238,7 @@ class ToolRegistry:
         """
         if toolkit_id is not None and toolkit_id not in self._toolkits:
             raise ToolRegistryError(f"unknown_toolkit: {toolkit_id!r}")
+        principal_name = self._resolve_principal(caller)
         granted = self._grant.granted(principal_name)
         tools = []
         for tool in self._tools.values():
@@ -196,7 +262,7 @@ class ToolRegistry:
 
     def dispatch(
         self,
-        principal_name: str,
+        caller: Principal | str,
         tool_id: str,
         inputs: dict[str, Any] | None = None,
     ) -> Any:
@@ -216,6 +282,7 @@ class ToolRegistry:
         required-key subset check (mirroring BehaviorEvaluator's
         degrade-gracefully pattern).
         """
+        principal_name = self._resolve_principal(caller)
         tool = self._tools.get(tool_id)
         granted = self._grant.granted(principal_name)
         if tool is None or not self._caller_sees_tool(tool, granted):
@@ -227,7 +294,15 @@ class ToolRegistry:
         self._validate_inputs(tool, payload)
         if tool.kind == ToolKind.FUNCTION:
             impl = self._impls[tool.id]
-            return impl(payload)
+            # M3-addon reviewer directive (C2): a Function Tool may need the
+            # verified caller identity to enforce ownership. Impls that opt in
+            # by setting `_principal_aware = True` receive (inputs, principal_name)
+            # — legacy impls keep the single-argument contract.
+            # Narrow via Any so mypy accepts the two-signature contract.
+            impl_any: Any = impl
+            if getattr(impl, "_principal_aware", False):
+                return impl_any(payload, principal_name)
+            return impl_any(payload)
         if tool.kind == ToolKind.MCP:
             connector = self._mcp_invokers.get(tool.id)
             if connector is None:
@@ -244,25 +319,26 @@ class ToolRegistry:
     def _validate_inputs(
         self, tool: ToolDescriptor, inputs: dict[str, Any]
     ) -> None:
+        """Full JSON Schema validation (mandatory, no silent fallback).
+
+        M3-addon reviewer directive: the pre-corrective silent fallback to a
+        required-key subset check is refused. If jsonschema is missing the
+        dispatcher raises `schema_validation_unavailable` so the deployment
+        gap is loud.
+        """
         schema = tool.input_schema or {}
+        jsonschema = _require_jsonschema()
         try:
-            import jsonschema  # type: ignore
-        except Exception:
-            jsonschema = None  # type: ignore
-        if jsonschema is not None:
-            try:
-                jsonschema.validate(inputs, schema)
-                return
-            except jsonschema.ValidationError as exc:
-                raise ToolRegistryError(
-                    f"invalid_input: {tool.id!r} inputs failed schema: {exc.message}"
-                ) from exc
-        required = schema.get("required") or []
-        missing = [k for k in required if k not in inputs]
-        if missing:
+            jsonschema.validate(inputs, schema)
+        except jsonschema.ValidationError as exc:
             raise ToolRegistryError(
-                f"invalid_input: {tool.id!r} missing required keys: {missing!r}"
-            )
+                f"invalid_input: {tool.id!r} inputs failed schema: {exc.message}"
+            ) from exc
+        except jsonschema.SchemaError as exc:
+            raise ToolRegistryError(
+                f"invalid_schema: {tool.id!r} declared an invalid input_schema: "
+                f"{exc.message}"
+            ) from exc
 
     # ------------------------------------------------------------------
     # Convenience accessors (used by defaults & tests)

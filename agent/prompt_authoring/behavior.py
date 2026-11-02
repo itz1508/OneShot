@@ -113,27 +113,26 @@ def _try_parse_json(text: str) -> dict | None:
 
 
 def _schema_shape_check(payload: dict, schema: dict) -> list[str]:
-    """Lightweight shape check against a JSON Schema fragment.
+    """Strict schema check — jsonschema is a core dependency.
 
-    If `jsonschema` is importable we use it; otherwise we fall back to a
-    required-key subset check so this module stays import-safe when the
-    dev dependency is missing in a stripped-down environment.
+    R3 reviewer directive H2: silent fallback to a required-key subset
+    check is refused. If `jsonschema` cannot be imported the check reports
+    `schema_validation_unavailable` so the deployment gap is loud.
     """
-    errors: list[str] = []
     try:
         import jsonschema  # type: ignore
-    except Exception:
-        jsonschema = None  # type: ignore
-    if jsonschema is not None:
-        try:
-            jsonschema.validate(payload, schema)
-        except jsonschema.ValidationError as exc:
-            errors.append(str(exc))
-        return errors
-    required = schema.get("required") or []
-    for key in required:
-        if key not in payload:
-            errors.append(f"missing required key: {key!r}")
+    except ImportError:
+        return [
+            "schema_validation_unavailable: jsonschema is required; "
+            "install `pip install jsonschema>=4.0`."
+        ]
+    errors: list[str] = []
+    try:
+        jsonschema.validate(payload, schema)
+    except jsonschema.ValidationError as exc:
+        errors.append(str(exc))
+    except jsonschema.SchemaError as exc:
+        errors.append(f"invalid_schema: {exc.message}")
     return errors
 
 

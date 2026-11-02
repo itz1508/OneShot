@@ -91,6 +91,11 @@ class ToolDescriptor:
     effects: tuple[str, ...] = ("read",)
     available: bool = True
     required_permissions: tuple[str, ...] = ()
+    # M3-addon reviewer directive: host-native tools are DISCOVERABLE but not
+    # DISPATCHABLE through this registry. Clients can read this flag to tell
+    # the two apart without parsing `kind`. For FUNCTION / MCP tools this
+    # defaults to True; HOST_NATIVE sets it False.
+    dispatchable_in_registry: bool = True
 
     def is_available(self) -> bool:
         return self.available
