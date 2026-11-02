@@ -46,6 +46,28 @@ class Stage(str, Enum):
     PROVIDER_ADAPTER = "provider_adapter"
 
 
+class ToolPermission(str, Enum):
+    """Closed vocabulary for the `tool_permissions` field.
+
+    A PromptDefinition DECLARES which capabilities its stage requires. The
+    HOST GRANTS (or refuses) each at runtime via the Builder Discovery runner
+    (M6). The two are deliberately separate: a prompt cannot grant itself
+    anything, and an un-granted request fails fast at the runner boundary.
+
+    The vocabulary is append-only. Adding a new permission bumps the digest
+    of every prompt that declares it, which is the intended behaviour — a
+    permission-vocabulary bump is a security-relevant change.
+    """
+
+    REPOSITORY_READ = "repository_read"
+    CODE_SEARCH = "code_search"
+    OFFICIAL_DOCUMENTATION = "official_documentation"
+    READ_ONLY = "read_only"
+    FILESYSTEM_WRITE = "filesystem_write"
+    NETWORK = "network"
+    MCP = "mcp"
+
+
 class PromptStatus(str, Enum):
     """Status machine from the spec.
 
@@ -131,6 +153,9 @@ class PromptSpec(BaseModel):
     evaluation_rules: list[str] = Field(default_factory=list)
     recovery_behavior: str = Field(min_length=1)
     fixture_refs: list[str] = Field(default_factory=list)
+    # M2: declared tool permissions. The prompt's REQUEST, not the host's GRANT.
+    # Validated against ToolPermission; included in canonical_content_digest.
+    tool_permissions: list[ToolPermission] = Field(default_factory=list)
 
     @field_validator("output_contract")
     @classmethod
@@ -178,6 +203,8 @@ class PromptDefinition(BaseModel):
     recovery_behavior: str = Field(min_length=1)
 
     fixture_refs: list[str] = Field(default_factory=list)
+    # M2: declared tool permissions, carried verbatim from PromptSpec.
+    tool_permissions: list[ToolPermission] = Field(default_factory=list)
     evaluation_receipt_ref: str | None = None
 
     supersedes: str | None = None
@@ -230,6 +257,7 @@ class PromptDefinition(BaseModel):
 
     @field_serializer(
         "runtime_inputs", "stable_instructions", "evaluation_rules", "fixture_refs",
+        "tool_permissions",
         when_used="always",
     )
     def _serialize_tuple_as_list(self, value):
@@ -271,6 +299,8 @@ class PromptDefinition(BaseModel):
             _set(self, "evaluation_rules", tuple(self.evaluation_rules))
         if isinstance(self.fixture_refs, list):
             _set(self, "fixture_refs", tuple(self.fixture_refs))
+        if isinstance(self.tool_permissions, list):
+            _set(self, "tool_permissions", tuple(self.tool_permissions))
         if isinstance(self.output_contract, dict) and not isinstance(
             self.output_contract, _types.MappingProxyType
         ):
@@ -294,6 +324,9 @@ _STABLE_FIELDS = (
     "output_contract",
     "evaluation_rules",
     "recovery_behavior",
+    # M2: tool_permissions is part of the digest — a permission change creates
+    # a new revision. Reviewer explicitly rejected leaving it outside.
+    "tool_permissions",
     "supersedes",
 )
 

@@ -809,3 +809,169 @@ class TestM1IntegrityClosure:
         assert b_eval.status == PromptStatus.EVALUATED
         assert b_eval.supersedes == f"{a.prompt_id}@1"
 
+
+
+# ---------------------------------------------------------------------------
+# M2 — Markdown integration + digested tool_permissions
+# ---------------------------------------------------------------------------
+
+
+class TestM2MarkdownLoader:
+    """R3 M2: safe Markdown integration + digested permissions."""
+
+    def _path(self, name: str = "builder_discovery.md") -> str:
+        import os
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(here, "agent", "prompt_authoring", "prompts", name)
+
+    def test_load_builder_discovery(self):
+        from agent.prompt_authoring import load_markdown_prompt
+        spec = load_markdown_prompt(self._path())
+        assert spec.prompt_id == "builder-discovery"
+        assert spec.stage == Stage.DISCOVERY
+        assert spec.owner.kind == "builder_discovery"
+        assert {ri.name for ri in spec.runtime_inputs} == {
+            "USER_INTENT", "RESEARCH", "REPOSITORY_CONTEXT", "DISCOVERY_TEMPLATE",
+        }
+        assert spec.required_capabilities.structured_outputs is True
+        from agent.prompt_authoring.types import ToolPermission
+        assert set(spec.tool_permissions) >= {
+            ToolPermission.REPOSITORY_READ,
+            ToolPermission.CODE_SEARCH,
+            ToolPermission.READ_ONLY,
+        }
+
+    def test_round_trip_digest_stability(self):
+        from agent.prompt_authoring import load_markdown_prompt
+        spec_a = load_markdown_prompt(self._path())
+        spec_b = load_markdown_prompt(self._path())
+        a = PromptAuthor().author_candidate(spec_a)
+        b = PromptAuthor().author_candidate(spec_b)
+        assert a.content_digest == b.content_digest, (
+            "digest must be identical for identical .md source"
+        )
+
+    def test_markdown_source_is_not_runtime_authority(self):
+        """Changing the .md body after a prompt was authored does not change
+        the authored prompt's content_digest. The .md file is authoring
+        source, not runtime authority."""
+        import pathlib
+        import tempfile
+
+        from agent.prompt_authoring import load_markdown_prompt
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "demo.md"
+            p.write_text(pathlib.Path(self._path()).read_text())
+            spec = load_markdown_prompt(str(p))
+            prompt = PromptAuthor().author_candidate(spec)
+            frozen_digest = prompt.content_digest
+            # Mutate the source file. The already-authored prompt's digest
+            # does NOT follow.
+            p.write_text(
+                pathlib.Path(self._path()).read_text().replace(
+                    "Preserve exact revisions",
+                    "Preserve exact revisions AND trees",
+                )
+            )
+            new_spec = load_markdown_prompt(str(p))
+            new_prompt = PromptAuthor().author_candidate(new_spec)
+            # Different digest for the new load; same digest for the
+            # already-authored instance.
+            assert new_prompt.content_digest != frozen_digest
+            assert prompt.content_digest == frozen_digest  # unchanged
+
+    def test_tool_permissions_change_digest(self):
+        """Reviewer directive: tool_permissions MUST be in canonical_content_digest."""
+        from agent.prompt_authoring.types import ToolPermission
+        p0 = PromptAuthor().author_candidate(_spec())
+        p1 = PromptAuthor().author_candidate(
+            _spec(tool_permissions=[ToolPermission.REPOSITORY_READ])
+        )
+        p2 = PromptAuthor().author_candidate(_spec(tool_permissions=[
+            ToolPermission.REPOSITORY_READ, ToolPermission.CODE_SEARCH
+        ]))
+        assert p0.content_digest != p1.content_digest
+        assert p1.content_digest != p2.content_digest
+
+    def test_loader_rejects_unknown_tool_permission(self):
+        import pathlib
+        import tempfile
+
+        from agent.prompt_authoring import MarkdownPromptError, load_markdown_prompt
+        bad = """---
+prompt_id: p-x
+stage: research
+owner:
+  kind: prompt_authoring
+  identifier: p.research
+stage_specification: s
+task_class: tc
+runtime_inputs:
+  - name: X
+    meaning: y
+    required: true
+required_capabilities:
+  structured_outputs: true
+tool_permissions:
+  - fly_to_the_moon
+output_contract:
+  type: object
+  properties: {}
+recovery_behavior: say so
+stable_instructions:
+  - Keep unknowns explicit.
+---
+"""
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "x.md"
+            p.write_text(bad)
+            with pytest.raises(MarkdownPromptError, match="closed vocabulary"):
+                load_markdown_prompt(str(p))
+
+    def test_loader_rejects_missing_frontmatter(self):
+        import pathlib
+        import tempfile
+
+        from agent.prompt_authoring import MarkdownPromptError, load_markdown_prompt
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "x.md"
+            p.write_text("# Just a heading, no frontmatter.")
+            with pytest.raises(MarkdownPromptError, match="frontmatter"):
+                load_markdown_prompt(str(p))
+
+    def test_loader_rejects_missing_required_runtime_input(self):
+        """A frontmatter block without `runtime_inputs` is a hard refusal."""
+        import pathlib
+        import tempfile
+
+        from agent.prompt_authoring import MarkdownPromptError, load_markdown_prompt
+        bad = """---
+prompt_id: p-y
+stage: research
+owner:
+  kind: prompt_authoring
+  identifier: p.research
+stage_specification: s
+task_class: tc
+output_contract:
+  type: object
+  properties: {}
+recovery_behavior: say so
+---
+
+body
+"""
+        with tempfile.TemporaryDirectory() as td:
+            p = pathlib.Path(td) / "y.md"
+            p.write_text(bad)
+            with pytest.raises(MarkdownPromptError, match="runtime_inputs"):
+                load_markdown_prompt(str(p))
+
+    def test_prompt_definition_tool_permissions_are_frozen_tuple(self):
+        """Container immutability extends to tool_permissions (M1 contract)."""
+        from agent.prompt_authoring.types import ToolPermission
+        prompt = PromptAuthor().author_candidate(_spec(tool_permissions=[
+            ToolPermission.REPOSITORY_READ
+        ]))
+        with pytest.raises((AttributeError, TypeError)):
+            prompt.tool_permissions.append(ToolPermission.NETWORK)  # type: ignore[attr-defined]

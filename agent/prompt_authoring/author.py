@@ -99,6 +99,10 @@ class PromptAuthor:
             "output_contract": dict(spec.output_contract),
             "evaluation_rules": list(spec.evaluation_rules),
             "recovery_behavior": spec.recovery_behavior,
+            # M2: declared permissions flow from spec -> definition; included
+            # in the canonical_content_digest so a permission change creates a
+            # new content_digest and therefore a new revision.
+            "tool_permissions": [tp.value for tp in spec.tool_permissions],
             "supersedes": None,
         }
         digest = canonical_content_digest(payload)
@@ -115,6 +119,7 @@ class PromptAuthor:
             evaluation_rules=list(spec.evaluation_rules),
             recovery_behavior=spec.recovery_behavior,
             fixture_refs=list(spec.fixture_refs),
+            tool_permissions=list(spec.tool_permissions),
             evaluation_receipt_ref=None,
             supersedes=None,
             status=PromptStatus.UNEVALUATED,
@@ -279,7 +284,8 @@ class PromptAuthor:
             "output_contract": new_contract,
             "evaluation_rules": new_rules,
             "recovery_behavior": new_recovery,
-            "supersedes": supersedes,
+            "tool_permissions": [tp.value for tp in prompt.tool_permissions],
+        "supersedes": supersedes,
         }
         digest = canonical_content_digest(payload)
         return PromptDefinition(
@@ -296,6 +302,7 @@ class PromptAuthor:
             recovery_behavior=new_recovery,
             fixture_refs=list(prompt.fixture_refs),
             evaluation_receipt_ref=None,
+            tool_permissions=list(prompt.tool_permissions),
             supersedes=supersedes,
             status=initial_status,
         )
