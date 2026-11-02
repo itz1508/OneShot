@@ -88,6 +88,13 @@ class ToolRegistry:
         self._tools: dict[str, ToolDescriptor] = {}
         self._impls: dict[str, FunctionImpl] = {}
         self._mcp_invokers: dict[str, Any] = {}
+        # Per-registry provenance marker. Only IdentityProviders obtained via
+        # self.identity_provider(credentials) bake this token into their
+        # Principals; _resolve_principal rejects verified Principals whose
+        # issuer_token does not match. Independently-minted IdentityProvider
+        # instances fail — the reviewer directive #1 ("Establish trusted host
+        # identity provenance; reject independently minted identities").
+        self._host_token: object = object()
         self._grant: PermissionGrant = permission_grant or EmptyGrant()
         self._trust_actor_strings = trust_actor_strings
 
@@ -122,15 +129,58 @@ class ToolRegistry:
         descriptor: ToolDescriptor,
         connector: Any,
     ) -> None:
+        """Register an MCP tool backed by `connector.invoke(tool_id, inputs)`.
+
+        Reviewer directive #7:
+          * Each MCP tool MUST declare non-empty ``effects`` — a connector
+            exposing an opaque remote operation cannot be registered with
+            effects=() because the registry would then advertise it as a
+            pure read.
+          * The connector MUST declare its own
+            ``required_connector_permissions`` set. The registry UNIONs
+            them into the descriptor's ``required_permissions`` so the
+            discovery filter sees both the per-tool AND per-connector
+            permissions.
+        """
         self._assert_registerable(descriptor, expected_kind=ToolKind.MCP)
         if not hasattr(connector, "invoke"):
             raise ToolRegistryError(
                 f"invalid_mcp_connector: connector for {descriptor.id!r} is missing "
                 "an `invoke(tool_id, inputs)` method."
             )
-        self._tools[descriptor.id] = descriptor
+        if not descriptor.effects or (
+            len(descriptor.effects) == 1 and descriptor.effects[0] == ""
+        ):
+            raise ToolRegistryError(
+                f"invalid_mcp_tool: {descriptor.id!r} must declare non-empty effects "
+                "(reviewer directive: enforce individual MCP tool effects)."
+            )
+        connector_perms = tuple(
+            getattr(connector, "required_connector_permissions", ()) or ()
+        )
+        if not isinstance(connector_perms, tuple):
+            raise ToolRegistryError(
+                f"invalid_mcp_connector: {descriptor.id!r} connector's "
+                "required_connector_permissions must be an iterable of strings."
+            )
+        for perm in connector_perms:
+            if not isinstance(perm, str):
+                raise ToolRegistryError(
+                    f"invalid_mcp_connector: {descriptor.id!r} connector has a "
+                    f"non-string permission token ({type(perm).__name__})."
+                )
+        # Union connector permissions into the descriptor's required_permissions.
+        from dataclasses import replace as _replace
+        effective = tuple(sorted(set(descriptor.required_permissions) | set(connector_perms)))
+        effective_desc = _replace(descriptor, required_permissions=effective)
+        self._tools[descriptor.id] = effective_desc
         self._mcp_invokers[descriptor.id] = connector
-        self._bump_toolkit_count(descriptor)
+        self._bump_toolkit_count(effective_desc)
+
+    # Toolkit "mcp" is a sentinel — only MCP tools may be registered under it.
+    # This keeps the three kinds (Function / Host-native / MCP) distinct
+    # (reviewer directive #7).
+    _MCP_RESERVED_TOOLKITS: frozenset[str] = frozenset({"mcp"})
 
     def _assert_registerable(
         self, descriptor: ToolDescriptor, *, expected_kind: ToolKind
@@ -144,6 +194,15 @@ class ToolRegistry:
             raise ToolRegistryError(
                 f"wrong_kind: {descriptor.id!r} is {descriptor.kind.value!r}, "
                 f"expected {expected_kind.value!r} for this registration path."
+            )
+        if (
+            descriptor.toolkit in self._MCP_RESERVED_TOOLKITS
+            and descriptor.kind != ToolKind.MCP
+        ):
+            raise ToolRegistryError(
+                f"wrong_kind: tool {descriptor.id!r} targets toolkit "
+                f"{descriptor.toolkit!r} which is reserved for MCP tools, "
+                f"got {descriptor.kind.value!r}."
             )
         if descriptor.id in self._tools:
             raise ToolRegistryError(
@@ -175,7 +234,16 @@ class ToolRegistry:
         """
         if isinstance(caller, Principal):
             if caller.verified:
-                return caller.name
+                if caller.issuer_token is self._host_token:
+                    return caller.name
+                if self._trust_actor_strings:
+                    return caller.name
+                raise ToolRegistryError(
+                    f"untrusted_identity: Principal {caller.name!r} was issued by "
+                    "a different host than this registry. Obtain the Principal "
+                    "via ToolRegistry.identity_provider(credentials=...) so it "
+                    "carries this registry's host provenance token."
+                )
             if self._trust_actor_strings:
                 return caller.name
             raise ToolRegistryError(
@@ -195,6 +263,18 @@ class ToolRegistry:
         raise ToolRegistryError(
             f"untrusted_identity: expected Principal or str, got {type(caller).__name__}"
         )
+
+    def identity_provider(self, *, credentials: dict[str, str]):
+        """Return an IdentityProvider sealed to THIS registry's host_token.
+
+        Reviewer directive #1: trusted host identity provenance. A caller who
+        builds their own IdentityProvider cannot forge our private host_token
+        reference, so the registry rejects verified Principals that didn't
+        come from this factory.
+        """
+        from agent.prompt_authoring.store import IdentityProvider
+
+        return IdentityProvider(credentials=credentials, issuer_token=self._host_token)
 
     # ------------------------------------------------------------------
     # Discovery — list_toolkits / list_tools

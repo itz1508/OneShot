@@ -54,20 +54,25 @@ _ISSUER_SENTINEL = object()
 
 @dataclass(frozen=True)
 class Principal:
-    """Identity carrier passed to PromptStore.activate / rollback.
+    """Identity carrier for authorization-gated operations.
 
     Construct an UNVERIFIED Principal with `Principal.unverified(name)`. The
     store accepts it only when `authorized_actors` is None (backward-compat).
-    To obtain a verified Principal, go through an IdentityProvider configured
-    with the (name, secret) pair.
+
+    `issuer_token` is a per-host provenance marker. ToolRegistry generates a
+    private `host_token` object at construction and only honours Principals
+    carrying that same reference. The M1 PromptStore uses the simpler
+    module-level `_issuer_sentinel` and does not inspect `issuer_token` — the
+    two gates are complementary.
     """
 
     name: str
     _issuer_sentinel: object = field(default=None, repr=False, compare=False)
+    issuer_token: object | None = field(default=None, repr=False, compare=False)
 
     @classmethod
     def unverified(cls, name: str) -> Principal:
-        return cls(name=name, _issuer_sentinel=None)
+        return cls(name=name, _issuer_sentinel=None, issuer_token=None)
 
     @property
     def verified(self) -> bool:
@@ -82,12 +87,23 @@ class IdentityProvider:
     assertion; here we validate a secret the host supplies out of band at
     construction. The store trusts the Principal because it carries the
     private `_ISSUER_SENTINEL`, which an attacker cannot reproduce.
+
+    When `issuer_token=<obj>` is supplied, authenticated Principals carry it
+    too. The ToolRegistry rejects Principals whose `issuer_token` does not
+    match the token it was constructed with — this is the trusted-host-
+    identity-provenance gate (reviewer directive #1): an attacker who builds
+    their own IdentityProvider with their own secrets still cannot forge the
+    registry's private host_token reference.
     """
 
-    def __init__(self, *, credentials: dict[str, str]) -> None:
-        # Store a defensive copy; mutating the input dict after construction
-        # does not change the configured credentials.
+    def __init__(
+        self,
+        *,
+        credentials: dict[str, str],
+        issuer_token: object | None = None,
+    ) -> None:
         self._credentials: dict[str, str] = dict(credentials)
+        self._issuer_token = issuer_token
 
     def authenticate(self, name: str, secret: str) -> Principal:
         """Return a verified Principal if (name, secret) matches, else raise."""
@@ -97,7 +113,11 @@ class IdentityProvider:
             raise PromptStoreError(
                 f"IdentityProvider.authenticate({name!r}): credential mismatch"
             )
-        return Principal(name=name, _issuer_sentinel=_ISSUER_SENTINEL)
+        return Principal(
+            name=name,
+            _issuer_sentinel=_ISSUER_SENTINEL,
+            issuer_token=self._issuer_token,
+        )
 
 
 class PromptStoreError(RuntimeError):

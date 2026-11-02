@@ -141,11 +141,14 @@ class TestDiscoveryFilter:
         assert "mcp" in ids  # empty toolkits still visible (hint to the host)
 
     def test_list_tools_filters_by_permission(self):
-        # R3 corrective (C2): update_task_progress now requires task_write.
-        grant = StaticGrant(permissions={"caller": frozenset({"read_only", "task_write"})})
+        # R3 corrective: get_task_status requires task_read; update_task_progress
+        # requires task_write.
+        grant = StaticGrant(permissions={
+            "caller": frozenset({"read_only", "task_read", "task_write"})
+        })
         reg = self._registry(grant)
         ids = {t.id for t in reg.list_tools("caller")}
-        # read_only + task_write permitted tools:
+        # Permitted tools:
         assert "get_task_status" in ids
         assert "update_task_progress" in ids
         assert "update_plan" in ids
@@ -156,17 +159,25 @@ class TestDiscoveryFilter:
         assert "search_files" not in ids         # read_only + code_search
         assert "apply_patch" not in ids          # filesystem_write
         assert "shell" not in ids                # filesystem_write + network
-        # New: without task_write, update_task_progress is dropped.
+        # Without task_write/task_read, task-management tools are dropped.
         grant_ro = StaticGrant(permissions={"caller": frozenset({"read_only"})})
         reg_ro = self._registry(grant_ro)
         ids_ro = {t.id for t in reg_ro.list_tools("caller")}
         assert "update_task_progress" not in ids_ro
+        assert "get_task_status" not in ids_ro
 
     def test_list_tools_scoped_to_toolkit(self):
-        grant = StaticGrant(permissions={"caller": frozenset({"read_only", "task_write"})})
+        grant = StaticGrant(permissions={
+            "caller": frozenset({"read_only", "task_read", "task_write", "task_admin"})
+        })
         reg = self._registry(grant)
         ids = {t.id for t in reg.list_tools("caller", toolkit_id="task_management")}
-        assert ids == {"get_task_status", "update_task_progress", "update_plan"}
+        assert ids == {
+            "get_task_status",
+            "update_task_progress",
+            "adopt_task_owner",
+            "update_plan",
+        }
 
     def test_list_tools_rejects_unknown_toolkit(self):
         reg = self._registry(StaticGrant(permissions={"c": frozenset()}))
@@ -199,7 +210,8 @@ class TestHostCapabilityGating:
         reg = ToolRegistry(permission_grant=StaticGrant(permissions={
                 "owner": frozenset({
                     "read_only", "code_search", "repository_read",
-                    "filesystem_write", "network", "task_write",
+                    "filesystem_write", "network",
+                    "task_read", "task_write", "task_admin",
                 }),
             }),
             trust_actor_strings=True,
@@ -259,7 +271,7 @@ class TestDispatchBoundary:
         self._tm.create_task("tid-1", {"revision": 1, "stage": "plan", "owner": "o"})
 
     def test_dispatch_function_tool_round_trip(self):
-        reg = self._registry(StaticGrant(permissions={"o": frozenset({"read_only"})}))
+        reg = self._registry(StaticGrant(permissions={"o": frozenset({"task_read"})}))
         out = reg.dispatch("o", "get_task_status", {"task_id": "tid-1"})
         assert out["found"] is True
         assert out["task_id"] == "tid-1"
@@ -281,7 +293,7 @@ class TestDispatchBoundary:
             reg.dispatch("o", "get_task_status", {"task_id": "tid-1"})
 
     def test_dispatch_schema_validation_missing_required(self):
-        reg = self._registry(StaticGrant(permissions={"o": frozenset({"read_only"})}))
+        reg = self._registry(StaticGrant(permissions={"o": frozenset({"task_read"})}))
         with pytest.raises(ToolRegistryError, match="invalid_input"):
             reg.dispatch("o", "get_task_status", {})  # missing task_id
 
@@ -508,14 +520,39 @@ class TestPrincipalGating:
             reg.list_tools(Principal.unverified("o"))
 
     def test_verified_principal_accepted(self):
-        from agent.prompt_authoring.store import IdentityProvider
+        """R3-corrective reviewer directive #1: Principals must carry the
+        registry's host_token. Only `registry.identity_provider(...)` produces
+        a Principal the registry trusts."""
         reg = self._reg()
         self._bootstrap(reg)
-        idp = IdentityProvider(credentials={"o": "s"})
+        idp = reg.identity_provider(credentials={"o": "s"})
         p = idp.authenticate("o", "s")
         tools = reg.list_tools(p)
         assert [t.id for t in tools] == ["x"]
         assert reg.dispatch(p, "x") == {"out": "ok"}
+
+    def test_independently_minted_identity_refused(self):
+        """A Principal from a BARE IdentityProvider (no host_token) is refused."""
+        from agent.prompt_authoring.store import IdentityProvider
+        reg = self._reg()
+        self._bootstrap(reg)
+        rogue_idp = IdentityProvider(credentials={"o": "s"})  # no issuer_token
+        rogue_principal = rogue_idp.authenticate("o", "s")
+        with pytest.raises(ToolRegistryError, match="different host"):
+            reg.list_tools(rogue_principal)
+
+    def test_cross_registry_identity_refused(self):
+        """A Principal from registry A cannot authenticate against registry B."""
+        reg_a = self._reg()
+        self._bootstrap(reg_a)
+        reg_b = self._reg()
+        self._bootstrap(reg_b)
+        p_a = reg_a.identity_provider(credentials={"o": "s"}).authenticate("o", "s")
+        # Works on A.
+        assert reg_a.list_tools(p_a)
+        # Refused on B — different host_token.
+        with pytest.raises(ToolRegistryError, match="different host"):
+            reg_b.list_tools(p_a)
 
 
 # ---------------------------------------------------------------------------
@@ -565,12 +602,18 @@ class TestUpdateTaskProgressContract:
                 "if_revision": 99,
             })
 
-    def test_owner_bind_adopts_caller(self):
+    def test_update_task_progress_refuses_ownerless_task(self):
+        """R3-corrective #5: update_task_progress no longer adopts ownership.
+
+        A legacy owner-less task must be adopted via `adopt_task_owner`
+        (requires task_admin) before any progress write.
+        """
         tm = _FakeTaskManager()
-        # Legacy task with no owner.
         tm.create_task("legacy", {"revision": 1, "stage": "plan"})
         reg = ToolRegistry(
-            permission_grant=StaticGrant(permissions={"alice": frozenset({"task_write"})}),
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write"}),
+            }),
             trust_actor_strings=True,
         )
         register_default_toolkits(
@@ -582,14 +625,56 @@ class TestUpdateTaskProgressContract:
                 "progress_note": "first write",
                 "if_revision": 1,
             })
-        out = reg.dispatch("alice", "update_task_progress", {
+
+    def test_adopt_task_owner_requires_task_admin(self):
+        """R3-corrective #5: owner adoption lives behind task_admin."""
+        tm = _FakeTaskManager()
+        tm.create_task("legacy", {"revision": 1, "stage": "plan"})
+        # Caller with task_write but NO task_admin cannot even see adopt_task_owner.
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        with pytest.raises(ToolRegistryError, match="unknown_tool"):
+            reg.dispatch("alice", "adopt_task_owner", {
+                "task_id": "legacy",
+                "new_owner": "alice",
+                "if_revision": 1,
+            })
+
+    def test_adopt_task_owner_assigns_owner(self):
+        """A task_admin caller can assign an owner (which may be another identity)."""
+        tm = _FakeTaskManager()
+        tm.create_task("legacy", {"revision": 1, "stage": "plan"})
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "admin": frozenset({"task_admin"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        out = reg.dispatch("admin", "adopt_task_owner", {
             "task_id": "legacy",
-            "progress_note": "first write",
+            "new_owner": "alice",  # admin assigns Alice as owner
             "if_revision": 1,
-            "owner_bind": True,
         })
         assert out["owner"] == "alice"
+        assert out["assigned_by"] == "admin"
         assert tm.get_task("legacy").metadata["owner"] == "alice"
+        # Second adoption is refused — owner already assigned.
+        with pytest.raises(PermissionError, match="already has owner"):
+            reg.dispatch("admin", "adopt_task_owner", {
+                "task_id": "legacy",
+                "new_owner": "bob",
+                "if_revision": 2,
+            })
 
 
 # ---------------------------------------------------------------------------
@@ -795,3 +880,338 @@ class TestHostNativeDispatchability:
         for t in reg.list_tools("o"):
             if t.kind == ToolKind.FUNCTION:
                 assert t.dispatchable_in_registry is True
+
+
+# ---------------------------------------------------------------------------
+# R3 corrective (round 2) — fail-closed, concurrent, restart, cross-identity
+# ---------------------------------------------------------------------------
+
+
+class TestPolicyLoadFailsClosed:
+    """Reviewer directive #2: malformed deny policy must fail closed."""
+
+    def _reg(self, tmp_path):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg,
+            host=HostCapabilities(),
+            task_manager=_FakeTaskManager(),
+            repo_root=str(tmp_path),
+        )
+        return reg
+
+    def test_missing_policy_file_allows_reads(self, tmp_path):
+        (tmp_path / "safe.txt").write_text("ok")
+        reg = self._reg(tmp_path)
+        out = reg.dispatch("o", "read_file", {"path": "safe.txt"})
+        assert out["found"] is True
+
+    def test_malformed_policy_denies_all(self, tmp_path):
+        agents = tmp_path / ".agents"
+        agents.mkdir()
+        (agents / "settings.json").write_text("{ not valid json")
+        (tmp_path / "safe.txt").write_text("ok")
+        # Clear the lru_cache so this test's policy actually loads.
+        from agent.tools_registry.defaults import _deny_patterns
+        _deny_patterns.cache_clear()
+        reg = self._reg(tmp_path)
+        with pytest.raises(PermissionError, match="deny policy"):
+            reg.dispatch("o", "read_file", {"path": "safe.txt"})
+
+    def test_wrong_type_policy_denies_all(self, tmp_path):
+        agents = tmp_path / ".agents"
+        agents.mkdir()
+        (agents / "settings.json").write_text('{"permissions": {"deny": "not-a-list"}}')
+        (tmp_path / "safe.txt").write_text("ok")
+        from agent.tools_registry.defaults import _deny_patterns
+        _deny_patterns.cache_clear()
+        reg = self._reg(tmp_path)
+        with pytest.raises(PermissionError, match="deny policy"):
+            reg.dispatch("o", "read_file", {"path": "safe.txt"})
+
+
+class TestConsistentRepoAndListFileSafety:
+    """Reviewer directive #3: list_files + search_sources also honour deny policy."""
+
+    def _reg(self, tmp_path, perms):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset(perms)}),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg,
+            host=HostCapabilities(),
+            task_manager=_FakeTaskManager(),
+            repo_root=str(tmp_path),
+        )
+        return reg
+
+    def _write_dist_and_safe(self, tmp_path):
+        import json
+        agents = tmp_path / ".agents"
+        agents.mkdir()
+        (agents / "settings.json").write_text(json.dumps({
+            "permissions": {"deny": ["Read(./**/dist/**/*)"]}
+        }))
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "ok.py").write_text("print('ok')\n")
+        (tmp_path / "dist").mkdir()
+        (tmp_path / "dist" / "bundle.js").write_text("danger")
+        # Clear cache so the policy loads for this workspace.
+        from agent.tools_registry.defaults import _deny_patterns
+        _deny_patterns.cache_clear()
+
+    def test_list_files_filters_denied(self, tmp_path):
+        self._write_dist_and_safe(tmp_path)
+        # Need to initialise git in tmp_path so SearchSources (git ls-tree) works.
+        import subprocess
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.email=x@y",
+             "-c", "user.name=x", "commit", "-q", "-m", "init"],
+            check=True,
+        )
+        reg = self._reg(tmp_path, {"repository_read"})
+        out = reg.dispatch("o", "list_files", {})
+        files = set(out["files"])
+        assert "src/ok.py" in files
+        assert all("dist/" not in f for f in files)
+        assert out["filtered_out"] >= 1
+
+    def test_search_sources_filters_denied(self, tmp_path):
+        import subprocess
+        self._write_dist_and_safe(tmp_path)
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "-c", "user.email=x@y",
+             "-c", "user.name=x", "commit", "-q", "-m", "init"],
+            check=True,
+        )
+        reg = self._reg(tmp_path, {"code_search"})
+        out = reg.dispatch("o", "search_sources", {"pattern": "bundle", "kind": "name"})
+        assert all("dist/" not in m for m in out["matches"])
+
+
+class TestConcurrentUpdateProgress:
+    """Reviewer directive #8: concurrent writes with revision checks."""
+
+    def test_cas_second_write_refused(self):
+        """Two writers against the same revision — only the first wins."""
+        tm = _FakeTaskManager()
+        tm.create_task("t1", {"revision": 1, "stage": "plan", "owner": "alice"})
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        # First writer at if_revision=1 succeeds; task bumps to revision=2.
+        out = reg.dispatch("alice", "update_task_progress", {
+            "task_id": "t1", "progress_note": "first", "if_revision": 1,
+        })
+        assert out["new_revision"] == 2
+        # Second writer still thinks revision=1 — stale CAS.
+        with pytest.raises(PermissionError, match="does not match committed"):
+            reg.dispatch("alice", "update_task_progress", {
+                "task_id": "t1", "progress_note": "second", "if_revision": 1,
+            })
+
+    def test_if_revision_required(self):
+        """R3-corrective #6: if_revision has no fallback — the schema enforces it."""
+        tm = _FakeTaskManager()
+        tm.create_task("t1", {"revision": 1, "stage": "plan", "owner": "alice"})
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        with pytest.raises(ToolRegistryError, match="invalid_input"):
+            reg.dispatch("alice", "update_task_progress", {
+                "task_id": "t1", "progress_note": "no revision",
+            })
+
+
+class TestRealTaskManagerPersistence:
+    """Reviewer directive #6: verify real TaskManager, including restart recovery."""
+
+    def test_update_task_progress_persists_across_restart(self, tmp_path):
+        """Write via a real TaskManager, open a fresh TaskManager, trail persists."""
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        # Create a task that we own.
+        task = tm.create_task(metadata={"revision": 1, "stage": "plan", "owner": "alice"})
+        task_id = str(task.task_id)
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        out = reg.dispatch("alice", "update_task_progress", {
+            "task_id": task_id,
+            "progress_note": "crossing restart",
+            "if_revision": 1,
+        })
+        assert out["new_revision"] == 2
+        # Restart: a brand-new TaskManager points at the same snapshot.
+        tm2 = TaskManager(storage_path=str(snapshot))
+        task2 = tm2.get_task(task_id)
+        assert task2 is not None
+        trail = task2.metadata.get("progress_trail", [])
+        assert len(trail) == 1
+        assert trail[0]["note"] == "crossing restart"
+        assert task2.metadata["revision"] == 2
+        assert task2.metadata["owner"] == "alice"
+
+    def test_adopt_task_owner_persists_across_restart(self, tmp_path):
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        task = tm.create_task(metadata={"revision": 1, "stage": "plan"})
+        task_id = str(task.task_id)
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "admin": frozenset({"task_admin"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        reg.dispatch("admin", "adopt_task_owner", {
+            "task_id": task_id,
+            "new_owner": "alice",
+            "if_revision": 1,
+        })
+        # Fresh TaskManager reads the owner back.
+        tm2 = TaskManager(storage_path=str(snapshot))
+        task2 = tm2.get_task(task_id)
+        assert task2.metadata["owner"] == "alice"
+
+
+class TestTaskReadACL:
+    """Reviewer directive #4: task-level ACL for reads."""
+
+    def _reg(self, tm, perms):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions=perms),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        return reg
+
+    def test_owner_sees_own_task(self):
+        tm = _FakeTaskManager()
+        tm.create_task("t", {"revision": 1, "owner": "alice", "stage": "plan"})
+        reg = self._reg(tm, {"alice": frozenset({"task_read"})})
+        out = reg.dispatch("alice", "get_task_status", {"task_id": "t"})
+        assert out["found"] is True
+        assert out["owner"] == "alice"
+
+    def test_non_owner_sees_not_found_by_default(self):
+        """Owner mismatch is opaque unless cross_owner=True is supplied."""
+        tm = _FakeTaskManager()
+        tm.create_task("t", {"revision": 1, "owner": "alice", "stage": "plan"})
+        reg = self._reg(tm, {"bob": frozenset({"task_read"})})
+        out = reg.dispatch("bob", "get_task_status", {"task_id": "t"})
+        assert out == {"found": False, "task_id": "t"}
+
+    def test_cross_owner_opt_in_reveals_task(self):
+        tm = _FakeTaskManager()
+        tm.create_task("t", {"revision": 1, "owner": "alice", "stage": "plan"})
+        reg = self._reg(tm, {"bob": frozenset({"task_read"})})
+        out = reg.dispatch("bob", "get_task_status", {
+            "task_id": "t", "cross_owner": True,
+        })
+        assert out["found"] is True
+        assert out["owner"] == "alice"
+
+
+class TestMCPEffectsAndConnectorPerms:
+    """Reviewer directive #7: MCP effects + connector permissions enforced."""
+
+    def test_empty_effects_refused(self):
+        reg = ToolRegistry(trust_actor_strings=True)
+        reg.register_toolkit(ToolkitDescriptor(id="mcp", description="d"))
+        class C:
+            required_connector_permissions = ("mcp",)
+            def invoke(self, tool_id, inputs):
+                return {}
+        with pytest.raises(ToolRegistryError, match="non-empty effects"):
+            reg.register_mcp_tool(
+                ToolDescriptor(
+                    id="mcp.x", toolkit="mcp", kind=ToolKind.MCP,
+                    description="d",
+                    input_schema={},
+                    owner="o",
+                    effects=(),  # empty — refused
+                    required_permissions=("mcp",),
+                ),
+                C(),
+            )
+
+    def test_connector_permissions_union_into_descriptor(self):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "bob": frozenset({"mcp"}),
+                "alice": frozenset({"mcp", "network"}),
+            }),
+            trust_actor_strings=True,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="mcp", description="d"))
+        class C:
+            required_connector_permissions = ("network",)  # connector needs network
+            def invoke(self, tool_id, inputs):
+                return {"ok": True}
+        reg.register_mcp_tool(
+            ToolDescriptor(
+                id="mcp.net", toolkit="mcp", kind=ToolKind.MCP,
+                description="network tool",
+                input_schema={"type": "object", "properties": {}},
+                owner="o",
+                effects=("external_write",),
+                required_permissions=("mcp",),
+            ),
+            C(),
+        )
+        # Bob only has `mcp` — the UNION (mcp + network) now gates discovery.
+        assert reg.list_tools("bob") == []
+        # Alice has both — discoverable and dispatchable.
+        tools = {t.id: t for t in reg.list_tools("alice")}
+        assert "mcp.net" in tools
+        # Permissions on the stored descriptor include BOTH.
+        assert set(tools["mcp.net"].required_permissions) == {"mcp", "network"}
+        out = reg.dispatch("alice", "mcp.net", {})
+        assert out == {"ok": True}
+
+    def test_mcp_function_hostnative_stay_distinctly_typed(self):
+        """A tool in `mcp` toolkit must be ToolKind.MCP — kind mismatch refused."""
+        reg = ToolRegistry(trust_actor_strings=True)
+        reg.register_toolkit(ToolkitDescriptor(id="mcp", description="d"))
+        with pytest.raises(ToolRegistryError, match="wrong_kind"):
+            reg.register_function_tool(
+                ToolDescriptor(
+                    id="mcp.not", toolkit="mcp", kind=ToolKind.FUNCTION,
+                    description="pretend MCP", input_schema={}, owner="o",
+                    effects=("read",),
+                ),
+                lambda inputs: {},
+            )
