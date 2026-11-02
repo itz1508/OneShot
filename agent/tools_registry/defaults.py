@@ -574,6 +574,126 @@ def _impl_search_files(root: str):
 # ---------------------------------------------------------------------------
 
 
+def _probe_update_task_progress(task_manager: Any):
+    """Side-effect probe for update_task_progress.
+
+    Given the caller-supplied payload the probe checks TaskManager and
+    returns:
+      * ``{"applied": True, "evidence": ...}`` if the current task
+        revision is exactly ``if_revision + 1`` AND the top-of-trail
+        entry's actor + note match the caller's values.
+      * ``{"applied": False, "evidence": ...}`` if the revision is
+        unchanged or has moved past the expected value in a way that
+        did NOT come from this write.
+      * ``None`` for anything the probe cannot determine (task vanished,
+        malformed metadata, etc.) — the registry treats this as
+        ``settled_unverified``.
+
+    The probe never raises against malformed input; it returns ``None``
+    so the registry can route the entry to the "verify out-of-band"
+    bucket rather than crash reconciliation.
+    """
+
+    def _probe(payload: dict[str, Any], principal_name: str) -> dict[str, Any] | None:
+        try:
+            task_id = payload["task_id"]
+            caller_if_revision = int(payload["if_revision"])
+            expected_note = payload["progress_note"]
+        except (KeyError, TypeError, ValueError):
+            return None
+        task = task_manager.get_task(task_id)
+        if task is None:
+            return {
+                "applied": False,
+                "evidence": f"task_absent:{task_id}",
+            }
+        metadata = task.metadata or {}
+        try:
+            current_revision = int(metadata.get("revision", 1))
+        except (TypeError, ValueError):
+            return None
+        expected_revision = caller_if_revision + 1
+        if current_revision == caller_if_revision:
+            # Revision never advanced — write did not land.
+            return {
+                "applied": False,
+                "evidence": (
+                    f"revision_unchanged:task={task_id} "
+                    f"revision={current_revision}"
+                ),
+            }
+        if current_revision != expected_revision:
+            # Something else wrote in between. Our write may or may not
+            # have landed first; cannot prove either way without a
+            # per-write marker.
+            return None
+        trail = metadata.get("progress_trail") or []
+        if not trail:
+            return {
+                "applied": False,
+                "evidence": "trail_empty_after_bumped_revision",
+            }
+        top = trail[-1]
+        if (
+            top.get("actor") == principal_name
+            and top.get("note") == expected_note
+        ):
+            return {
+                "applied": True,
+                "evidence": (
+                    f"revision_advanced:task={task_id} "
+                    f"revision={current_revision}"
+                ),
+            }
+        return None
+
+    return _probe
+
+
+def _probe_adopt_task_owner(task_manager: Any):
+    """Side-effect probe for adopt_task_owner."""
+
+    def _probe(payload: dict[str, Any], principal_name: str) -> dict[str, Any] | None:
+        try:
+            task_id = payload["task_id"]
+            caller_if_revision = int(payload["if_revision"])
+            new_owner = payload["new_owner"]
+        except (KeyError, TypeError, ValueError):
+            return None
+        task = task_manager.get_task(task_id)
+        if task is None:
+            return {
+                "applied": False,
+                "evidence": f"task_absent:{task_id}",
+            }
+        metadata = task.metadata or {}
+        try:
+            current_revision = int(metadata.get("revision", 1))
+        except (TypeError, ValueError):
+            return None
+        if current_revision == caller_if_revision:
+            return {
+                "applied": False,
+                "evidence": (
+                    f"revision_unchanged:task={task_id} "
+                    f"revision={current_revision}"
+                ),
+            }
+        if current_revision != caller_if_revision + 1:
+            return None
+        if metadata.get("owner") == new_owner:
+            return {
+                "applied": True,
+                "evidence": (
+                    f"owner_adopted:task={task_id} "
+                    f"revision={current_revision}"
+                ),
+            }
+        return None
+
+    return _probe
+
+
 def register_default_toolkits(
     registry,
     *,
@@ -654,6 +774,7 @@ def register_default_toolkits(
             required_permissions=("task_write",),
         ),
         _impl_update_task_progress(task_manager),
+        side_effect_probe=_probe_update_task_progress(task_manager),
     )
 
     registry.register_function_tool(
@@ -679,6 +800,7 @@ def register_default_toolkits(
             required_permissions=("task_admin",),
         ),
         _impl_adopt_task_owner(task_manager),
+        side_effect_probe=_probe_adopt_task_owner(task_manager),
     )
 
     if host.update_plan and callable(host_plan_sink):

@@ -84,14 +84,34 @@ class DispatchAuditEntry:
         ``tool_timeout`` (the worker is unreachable); True once
         ``ToolRegistry.reconcile_pending()`` has observed the Future
         complete (success or exception) and updated the record.
-      * ``side_effect_state`` — one of ``\"ok\"`` (completed normally;
-        no uncertainty), ``\"uncertain\"`` (``tool_timeout`` fired and
-        reconciliation has not yet confirmed the worker is done),
-        ``\"settled\"`` (reconciliation observed the worker return),
-        or ``\"settled_error\"`` (reconciliation observed the worker
-        raise). Callers performing writes MUST pass ``uncertain``
-        entries through ``reconcile_pending()`` before retrying — the
-        tool may have already applied its effect.
+      * ``side_effect_state`` — one of:
+          ``\"ok\"`` — completed normally; no uncertainty.
+          ``\"uncertain\"`` — ``tool_timeout`` fired and reconciliation
+            has not yet observed the worker complete.
+          ``\"settled\"`` — worker returned AND, for write-type tools,
+            a registered side-effect probe confirmed the write landed.
+            Read-only tools reach ``settled`` on worker completion alone
+            because there is nothing to verify. Safe to NOT retry.
+          ``\"settled_no_effect\"`` — worker returned but the probe
+            confirmed the write did NOT land. The caller may retry.
+          ``\"settled_unverified\"`` — worker returned, tool is
+            write-type, but no probe is registered (or the probe
+            returned an inconclusive result). The caller MUST verify
+            out-of-band before retrying — the registry refuses to
+            promise safety.
+          ``\"settled_partial_write\"`` — worker RAISED but the probe
+            confirmed the write landed first. The caller MUST NOT retry
+            (that would double-write); it must reconcile against the
+            effect and continue.
+          ``\"settled_error\"`` — worker raised and (for write-type
+            tools) the probe confirmed the write did NOT land. Safe to
+            retry.
+          ``\"settled_error_unverified\"`` — worker raised; tool is
+            write-type and either no probe is registered or the probe
+            was inconclusive. Caller MUST verify out-of-band before
+            retrying.
+        Callers performing writes MUST pass ``uncertain`` entries
+        through ``reconcile_pending()`` before retrying.
       * ``entry_id`` — monotonic integer stable across reconciliation
         rewrites; identifies the record even after retention eviction.
     """
@@ -106,6 +126,13 @@ class DispatchAuditEntry:
     worker_termination_confirmed: bool = True
     side_effect_state: str = "ok"
     entry_id: int = 0
+    # Side-effect probe evidence (populated by
+    # ``ToolRegistry.reconcile_pending`` when a probe runs). One-line
+    # human-readable summary that MUST NOT contain exception messages
+    # or caller-supplied payload data verbatim (the probe implementation
+    # is responsible for scrubbing those before returning). Capped at
+    # 256 characters.
+    probe_evidence: str | None = None
 
 
 @dataclass(frozen=True)

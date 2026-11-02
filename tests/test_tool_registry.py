@@ -1913,3 +1913,337 @@ class TestCloseDispatchRaceAndCleanCancel:
         assert entry.worker_termination_confirmed is False
         assert entry.entry_id in reg.pending_timeouts("o")
         reg.close()
+
+
+
+class TestWriteSideEffectVerification:
+    """R3 reviewer directive (round 3) — a completed worker does not prove
+    its write succeeded. reconcile_pending must consult a registered
+    side-effect probe for write-type tools and refuse to claim
+    ``settled`` without probe evidence.
+
+    Reuses the existing audit-registry harness and ToolDescriptor
+    conventions — no new fixture files.
+    """
+
+    def _build(self, *, probe=None, effects=("internal_write",)):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        descriptor = ToolDescriptor(
+            id="writer",
+            toolkit="t",
+            kind=ToolKind.FUNCTION,
+            description="d",
+            input_schema={"type": "object"},
+            owner="o",
+            effects=effects,
+            required_permissions=("task_write",),
+        )
+        kwargs = {}
+        if probe is not None:
+            kwargs["side_effect_probe"] = probe
+        import time as _time
+        reg.register_function_tool(
+            descriptor,
+            lambda inputs: (_time.sleep(0.5) or {"ok": True}),
+            **kwargs,
+        )
+        return reg
+
+    def _trigger_timeout(self, reg):
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "writer", {})
+
+    def test_write_tool_without_probe_is_settled_unverified(self):
+        """Reviewer: a write-type tool with no probe MUST NOT be labelled
+        \"settled\" when the worker completes. The registry refuses to
+        claim safety without evidence."""
+        import time
+        reg = self._build(probe=None)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].worker_termination_confirmed is True
+        # No probe evidence recorded.
+        assert updated[0].probe_evidence is None
+        reg.close()
+
+    def test_probe_confirming_write_landed_marks_settled(self):
+        import time
+        def probe(payload, principal):
+            return {"applied": True, "evidence": "revision_advanced:task=T1 revision=2"}
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled"
+        assert updated[0].worker_termination_confirmed is True
+        assert updated[0].probe_evidence == (
+            "revision_advanced:task=T1 revision=2"
+        )
+        reg.close()
+
+    def test_probe_denying_write_marks_settled_no_effect(self):
+        import time
+        def probe(payload, principal):
+            return {"applied": False, "evidence": "revision_unchanged:task=T1 revision=1"}
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_no_effect"
+        assert updated[0].probe_evidence == (
+            "revision_unchanged:task=T1 revision=1"
+        )
+        reg.close()
+
+    def test_probe_returning_none_marks_settled_unverified(self):
+        """A probe that cannot determine the outcome returns None — the
+        registry must refuse to claim settled."""
+        import time
+        def probe(payload, principal):
+            return None
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        reg.close()
+
+    def test_probe_that_raises_marks_settled_unverified(self):
+        """A probe that itself raises records the probe's error class but
+        does NOT advance the entry past settled_unverified."""
+        import time
+        def probe(payload, principal):
+            raise RuntimeError("probe exploded with secret: nope")
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_unverified"
+        assert updated[0].error_class == "RuntimeError"
+        # The exception message must not appear anywhere on the entry.
+        for value in updated[0].__dict__.values():
+            if isinstance(value, str):
+                assert "nope" not in value
+        reg.close()
+
+    def test_read_only_tool_still_settled_without_probe(self):
+        """Backward-compat: a tool whose effects list is only (\"read\",)
+        reaches ``settled`` on worker completion with no probe required
+        — reading has no side effect to verify."""
+        import time
+        reg = self._build(probe=None, effects=("read",))
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled"
+        reg.close()
+
+
+class TestWriteSideEffectVerificationOnError:
+    """Companion to TestWriteSideEffectVerification — same contract,
+    this time the worker RAISED instead of returning."""
+
+    def _build(self, *, probe=None, effects=("internal_write",)):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"task_write", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=0.1,
+            dispatch_workers=4,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        descriptor = ToolDescriptor(
+            id="writer_err",
+            toolkit="t",
+            kind=ToolKind.FUNCTION,
+            description="d",
+            input_schema={"type": "object"},
+            owner="o",
+            effects=effects,
+            required_permissions=("task_write",),
+        )
+        import time as _time
+        def _impl(inputs):
+            _time.sleep(0.5)
+            raise RuntimeError("worker exploded late (SECRET=xyz)")
+        kwargs = {}
+        if probe is not None:
+            kwargs["side_effect_probe"] = probe
+        reg.register_function_tool(descriptor, _impl, **kwargs)
+        return reg
+
+    def _trigger_timeout(self, reg):
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "writer_err", {})
+
+    def test_worker_raised_probe_says_landed_marks_partial_write(self):
+        """Half-finished write: effect landed, worker raised during
+        cleanup. DO NOT retry — must surface as settled_partial_write."""
+        import time
+        def probe(payload, principal):
+            return {"applied": True, "evidence": "revision_advanced"}
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_partial_write"
+        assert updated[0].error_class == "RuntimeError"
+        # Secret from exception message must NEVER leak.
+        for value in updated[0].__dict__.values():
+            if isinstance(value, str):
+                assert "SECRET" not in value and "xyz" not in value
+        reg.close()
+
+    def test_worker_raised_probe_says_not_landed_marks_settled_error(self):
+        import time
+        def probe(payload, principal):
+            return {"applied": False, "evidence": "revision_unchanged"}
+        reg = self._build(probe=probe)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_error"
+        assert updated[0].error_class == "RuntimeError"
+        reg.close()
+
+    def test_worker_raised_no_probe_marks_settled_error_unverified(self):
+        """A write-type tool with no probe can neither confirm nor deny
+        the half-write; reconciliation must refuse to label the entry
+        as safely retryable."""
+        import time
+        reg = self._build(probe=None)
+        self._trigger_timeout(reg)
+        time.sleep(0.9)
+        updated = reg.reconcile_pending("o")
+        assert len(updated) == 1
+        assert updated[0].side_effect_state == "settled_error_unverified"
+        assert updated[0].error_class == "RuntimeError"
+        reg.close()
+
+
+
+class TestDefaultProbesWiring:
+    """Verify register_default_toolkits wires probes for the two write-type
+    task-management tools and that each probe answers correctly against a
+    real TaskManager."""
+
+    def test_update_task_progress_probe_registered_and_detects_applied(self, tmp_path):
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        task = tm.create_task(metadata={"revision": 1, "stage": "plan", "owner": "alice"})
+        task_id = str(task.task_id)
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write", "audit_read"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        probe = reg._side_effect_probes.get("update_task_progress")
+        assert callable(probe), "probe must be registered for write-type tool"
+        # Simulate a successful write: dispatch normally, then query probe
+        # with the SAME payload the caller used.
+        payload = {
+            "task_id": task_id,
+            "progress_note": "verified-landing",
+            "if_revision": 1,
+        }
+        reg.dispatch("alice", "update_task_progress", payload)
+        result = probe(payload, "alice")
+        assert isinstance(result, dict)
+        assert result["applied"] is True
+        assert "revision_advanced" in result["evidence"]
+        assert "evidence" in result and "secret" not in result["evidence"].lower()
+
+    def test_update_task_progress_probe_detects_unchanged_revision(self, tmp_path):
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        task = tm.create_task(metadata={"revision": 1, "stage": "plan", "owner": "alice"})
+        task_id = str(task.task_id)
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_write", "audit_read"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        probe = reg._side_effect_probes["update_task_progress"]
+        # No write has happened yet — the probe should report applied=False.
+        result = probe(
+            {"task_id": task_id, "progress_note": "pretend", "if_revision": 1},
+            "alice",
+        )
+        assert result == {
+            "applied": False,
+            "evidence": f"revision_unchanged:task={task_id} revision=1",
+        }
+
+    def test_adopt_task_owner_probe_registered_and_detects_applied(self, tmp_path):
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        task = tm.create_task(metadata={"revision": 1, "stage": "plan"})
+        task_id = str(task.task_id)
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "admin": frozenset({"task_admin", "audit_read"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        probe = reg._side_effect_probes.get("adopt_task_owner")
+        assert callable(probe)
+        payload = {
+            "task_id": task_id,
+            "new_owner": "bob",
+            "if_revision": 1,
+        }
+        reg.dispatch("admin", "adopt_task_owner", payload)
+        result = probe(payload, "admin")
+        assert isinstance(result, dict) and result["applied"] is True
+        assert "owner_adopted" in result["evidence"]
+
+    def test_read_only_tool_has_no_probe(self, tmp_path):
+        """Read-only task-management tools do not need (and must not have)
+        a side-effect probe registered — reading has no side effect."""
+        from tools.task_management import TaskManager
+        snapshot = tmp_path / "tasks.json"
+        tm = TaskManager(storage_path=str(snapshot))
+        tm.create_task(metadata={"revision": 1, "stage": "plan", "owner": "alice"})
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={
+                "alice": frozenset({"task_read"}),
+            }),
+            trust_actor_strings=True,
+        )
+        register_default_toolkits(
+            reg, host=HostCapabilities(), task_manager=tm, repo_root=None,
+        )
+        assert "get_task_status" not in reg._side_effect_probes

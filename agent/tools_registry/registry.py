@@ -120,6 +120,18 @@ class ToolRegistry:
         self._tools: dict[str, ToolDescriptor] = {}
         self._impls: dict[str, FunctionImpl] = {}
         self._mcp_invokers: dict[str, Any] = {}
+        # Optional per-tool side-effect probe. A probe answers the
+        # question: "did the write actually land?" after a worker is
+        # observed to have completed following a tool_timeout. Signature:
+        #   probe(payload: dict, principal_name: str) -> {
+        #       "applied": bool,                   # did the write land?
+        #       "evidence": str,                   # one-line, no secrets
+        #   } | None  (None means "cannot determine")
+        # Probes may ALSO raise — exceptions are caught and recorded as
+        # "settled_unverified" without a messaging leak. Reviewer rule:
+        # a probe that cannot prove the write landed MUST NOT advance
+        # the entry past "settled_unverified".
+        self._side_effect_probes: dict[str, Callable[..., Any]] = {}
         self._input_byte_limit = int(input_byte_limit)
         self._default_timeout_s = float(default_timeout_s)
         # Structured audit log — one DispatchAuditEntry per dispatch
@@ -177,10 +189,33 @@ class ToolRegistry:
         self,
         descriptor: ToolDescriptor,
         implementation: FunctionImpl,
+        *,
+        side_effect_probe: Callable[..., Any] | None = None,
     ) -> None:
+        """Register a FUNCTION tool.
+
+        ``side_effect_probe`` is OPTIONAL and used only by
+        ``reconcile_pending`` after a ``tool_timeout``. The probe tells
+        the registry whether the write actually landed when the detached
+        worker finally completed. Signature:
+
+            probe(payload: dict, principal: str) ->
+                {"applied": bool, "evidence": str} | None
+
+        A probe that returns ``None`` or raises is treated as "cannot
+        determine" and the audit entry stays at ``settled_unverified`` —
+        i.e. the write MUST NOT be retried without out-of-band
+        verification.
+
+        Tools whose only effect is ``"read"`` do NOT need a probe — a
+        completed read-only worker has no side effect to verify, and
+        reconciliation treats it as ``settled`` directly.
+        """
         self._assert_registerable(descriptor, expected_kind=ToolKind.FUNCTION)
         self._tools[descriptor.id] = descriptor
         self._impls[descriptor.id] = implementation
+        if side_effect_probe is not None:
+            self._side_effect_probes[descriptor.id] = side_effect_probe
         self._bump_toolkit_count(descriptor)
 
     def register_host_native_tool(self, descriptor: ToolDescriptor) -> None:
@@ -602,6 +637,7 @@ class ToolRegistry:
                         "future": fut,
                         "tool_id": tool.id,
                         "principal": principal_name,
+                        "payload": dict(payload),
                         "deadline_s": float(timeout_s),
                         "submitted_at": time.time(),
                         "cancel_attempted": True,
@@ -703,29 +739,100 @@ class ToolRegistry:
         updated: list[DispatchAuditEntry] = []
         with self._audit_lock:
             pending_now = list(self._pending_timeouts.items())
+            # Collect probe calls to run outside the lock so a slow
+            # probe cannot block concurrent dispatches. We first drain
+            # done-futures and figure out the DRAFT state (settled vs
+            # settled_error) under the lock; the probe is then called
+            # outside; and the final state is written back under the
+            # lock below.
+            drained: list[tuple[int, dict[str, Any], BaseException | None]] = []
             for entry_id, meta in pending_now:
                 fut: Future[Any] = meta["future"]
                 if not fut.done():
                     continue
-                exc = fut.exception()
-                if exc is None:
-                    new_state = "settled"
-                    error_class = None
+                drained.append((entry_id, meta, fut.exception()))
+        # Run probes outside the lock.
+        probe_results: dict[int, tuple[str, str | None, str | None]] = {}
+        for entry_id, meta, exc in drained:
+            tool_id = meta["tool_id"]
+            principal_name = meta["principal"]
+            tool = self._tools.get(tool_id)
+            payload = meta.get("payload", {}) or {}
+            is_write = (
+                tool is not None
+                and any(e != "read" for e in tool.effects)
+            )
+            probe = self._side_effect_probes.get(tool_id)
+            probe_applied: bool | None = None
+            probe_evidence: str | None = None
+            probe_error_class: str | None = None
+            if is_write:
+                if probe is None:
+                    # No probe for a write-type tool — cannot prove the
+                    # write landed, cannot prove it didn\u2019t. Reviewer
+                    # directive: do NOT advance past settled_unverified.
+                    probe_applied = None
                 else:
-                    new_state = "settled_error"
-                    error_class = type(exc).__name__
-                # Locate the audit entry (may have been evicted). Audit is
-                # a deque; linear scan is acceptable at retention sizes.
+                    try:
+                        result = probe(payload, principal_name)
+                    except Exception as pe:  # noqa: BLE001
+                        probe_applied = None
+                        probe_error_class = type(pe).__name__
+                    else:
+                        if isinstance(result, dict) and "applied" in result:
+                            probe_applied = bool(result["applied"])
+                            ev = result.get("evidence")
+                            if isinstance(ev, str) and ev:
+                                probe_evidence = ev[:256]
+                        else:
+                            probe_applied = None  # unknown shape
+            # Decide final side_effect_state.
+            if exc is None:
+                # Worker returned.
+                if not is_write or probe_applied is True:
+                    final_state = "settled"
+                elif probe_applied is False:
+                    final_state = "settled_no_effect"
+                else:
+                    final_state = "settled_unverified"
+            else:
+                # Worker raised.
+                if not is_write or probe_applied is False:
+                    # Read-only tool, OR write-type tool whose write did
+                    # NOT land -- both safe to label settled_error.
+                    final_state = "settled_error"
+                elif probe_applied is True:
+                    # Half-finished write: effect landed, worker raised.
+                    # DO NOT retry -- explicit distinct state.
+                    final_state = "settled_partial_write"
+                else:
+                    final_state = "settled_error_unverified"
+            exc_error_class: str | None = (
+                type(exc).__name__ if exc is not None else None
+            )
+            error_class: str | None
+            # Prefer the probe's error class if the probe itself raised
+            # AND the worker did not. Otherwise keep the worker's.
+            if exc is None and probe_error_class is not None:
+                error_class = probe_error_class
+            else:
+                error_class = exc_error_class
+            probe_results[entry_id] = (final_state, error_class, probe_evidence)
+        # Write results back under the lock.
+        with self._audit_lock:
+            for entry_id, _meta, _exc in drained:
+                final_state, error_class, probe_evidence = probe_results[entry_id]
                 replaced = None
                 for idx, old in enumerate(self._audit):
                     if old.entry_id != entry_id:
                         continue
                     replaced = dataclasses.replace(
                         old,
-                        side_effect_state=new_state,
+                        side_effect_state=final_state,
                         worker_termination_confirmed=True,
                         error_class=error_class if error_class is not None
                         else old.error_class,
+                        probe_evidence=probe_evidence,
                     )
                     self._audit[idx] = replaced
                     break
