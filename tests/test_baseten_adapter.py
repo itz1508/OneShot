@@ -59,12 +59,25 @@ class _FakeOpenAI:
         )
 
 
+OPENAI_SDK_AVAILABLE = False
+try:
+    import openai as _openai_mod  # type: ignore[import-not-found]
+    OPENAI_SDK_AVAILABLE = True
+except ImportError:
+    _openai_mod = None  # type: ignore[assignment]
+
+
 @pytest.fixture
 def monkey_openai(monkeypatch):
-    """Monkeypatch ``openai.OpenAI`` with the fake client."""
-    import importlib
-    openai_mod = importlib.import_module("openai")
-    monkeypatch.setattr(openai_mod, "OpenAI", _FakeOpenAI, raising=True)
+    """Monkeypatch ``openai.OpenAI`` with the fake client.
+
+    Skips the test when the ``openai`` SDK is not installed (CI without
+    the ``[openai]`` extras). The adapter's own missing-SDK path is
+    covered separately by ``test_generate_refuses_without_openai_sdk``.
+    """
+    if not OPENAI_SDK_AVAILABLE:
+        pytest.skip("openai SDK not installed")
+    monkeypatch.setattr(_openai_mod, "OpenAI", _FakeOpenAI, raising=True)
     yield _FakeOpenAI
 
 
@@ -252,3 +265,27 @@ class TestRegistry:
         )
         inst = ProviderRegistry.create(cfg)
         assert isinstance(inst, BasetenAdapter)
+
+
+
+class TestMissingOpenAISDK:
+    def test_generate_refuses_when_openai_sdk_missing(self, monkeypatch, key_file):
+        """When the openai SDK is not importable, generate must raise
+        UnsupportedProviderError with the install hint; it must NOT
+        leak a bare ModuleNotFoundError upward."""
+        import builtins
+        real_import = builtins.__import__
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "openai":
+                raise ImportError("simulated: openai missing")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _fake_import)
+        cfg = ProviderConfig(
+            provider="baseten", model="m", credential_ref=key_file
+        )
+        adapter = BasetenAdapter(cfg)
+        req = UnifiedRequest(messages=[Message(role="user", content="hi")])
+        with pytest.raises(UnsupportedProviderError, match="openai"):
+            adapter.generate(req)
