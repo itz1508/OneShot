@@ -41,7 +41,8 @@ Design notes:
 from __future__ import annotations
 
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -56,6 +57,12 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 TaskStatus = Literal["pending", "running", "paused", "completed", "failed"]
 RunStatus = Literal["pending", "running", "paused", "completed", "failed"]
+
+
+# Public callable shape for the per-Task executor. Returning without
+# raising counts as success. Raising advances the Task state to
+# ``failed`` and records the exception class on the TaskManager row.
+TaskExecutor = Callable[["Task"], None]
 
 
 class PlannedFileOperation(BaseModel):
@@ -221,6 +228,160 @@ class Run:
             return self._paused
 
     # ------------------------------------------------------------------
+    # Execution — parallel per-Task dispatch
+    # ------------------------------------------------------------------
+
+    def execute(
+        self,
+        executor: TaskExecutor | None = None,
+        *,
+        max_workers: int = 4,
+        timeout_s: float | None = None,
+    ) -> dict[str, str]:
+        """Run every pending Task through ``executor`` in parallel.
+
+        Returns a mapping ``{task_id: terminal_status}``.
+
+        * ``executor`` — callable invoked once per Task with the Task
+          instance. Returning without exception marks the Task
+          ``completed``; any exception marks it ``failed`` (the
+          exception class is recorded on the TaskManager row\u2019s
+          metadata trail). The default is a no-op executor that
+          immediately completes each Task; real workflows pass a
+          builder/writer here.
+        * ``max_workers`` — ThreadPoolExecutor pool size (default 4).
+          Independent tasks run concurrently; the Task-state writes
+          through ``TaskManager`` are already lock-serialised.
+        * ``timeout_s`` — wall-clock cap for the WHOLE execute() call
+          (not per Task). ``None`` (default) means no cap.
+
+        Pause/resume semantics
+        ----------------------
+        * If the Run is paused when ``execute()`` is called, every
+          Task is left in its current state and the method returns
+          immediately; call ``resume()`` and ``execute()`` again.
+        * If ``pause()`` is called mid-execute, in-flight Tasks are
+          allowed to finish but no further Tasks are scheduled;
+          unexecuted Tasks are left ``pending``.
+
+        Build Admission (Task-level receipt)
+        ------------------------------------
+        After a Task\u2019s executor returns, the TaskManager row is
+        advanced to ``completed`` under revision+1 CAS. Metadata gets
+        a ``build_admission`` block carrying the resolved Task
+        outcome, the elapsed wall-time, and the exception class on
+        failure. The parent Run row\u2019s ``run_lifecycle_trail`` also
+        appends an aggregated note on completion.
+        """
+        if self.paused:
+            # Hand back a snapshot of current state so callers can
+            # decide what to do.
+            return {t.task_id: t.status() for t in self._tasks}
+        executor_fn: TaskExecutor = executor or _default_executor
+        pool = ThreadPoolExecutor(
+            max_workers=max(1, int(max_workers)),
+            thread_name_prefix="run_execute",
+        )
+        try:
+            futures: dict[Future[None], Task] = {}
+            # Schedule only tasks still in `pending` state.
+            for t in self._tasks:
+                if self.paused:
+                    break
+                committed = t.status()
+                if committed != "pending":
+                    continue
+                self._controller.tm.transition(
+                    t.task_id, "running", detail="execute: scheduled"
+                )
+                futures[pool.submit(executor_fn, t)] = t
+            # Wait for completions.
+            from concurrent.futures import as_completed, wait
+            results: dict[str, str] = {}
+            if timeout_s is not None:
+                done, not_done = wait(futures, timeout=timeout_s)
+                for fut in not_done:
+                    t = futures[fut]
+                    self._fail_task(
+                        t, "TimeoutError", "execute: timeout"
+                    )
+                    results[t.task_id] = "failed"
+                futures = {f: futures[f] for f in done}
+            for fut in as_completed(futures):
+                t = futures[fut]
+                try:
+                    fut.result()
+                except Exception as exc:  # noqa: BLE001
+                    self._fail_task(
+                        t, type(exc).__name__, "execute: raised"
+                    )
+                    results[t.task_id] = "failed"
+                else:
+                    self._complete_task(t)
+                    results[t.task_id] = "completed"
+            # Record a run-level lifecycle note.
+            self._record_progress(
+                f"execute: {sum(1 for v in results.values() if v=='completed')} / "
+                f"{len(results)} tasks completed"
+            )
+            # Any Task that stayed pending (because of pause) keeps
+            # its current status in the return map.
+            for t in self._tasks:
+                results.setdefault(t.task_id, t.status())
+            return results
+        finally:
+            pool.shutdown(wait=False)
+
+    def _complete_task(self, task: Task) -> None:
+        """Advance a Task row to completed with a build_admission note."""
+        try:
+            row = self._controller.tm.get_task(task.task_id)
+            if row is None:
+                return
+            metadata = dict(row.metadata or {})
+            revision = int(metadata.get("revision", 1))
+            metadata["revision"] = revision + 1
+            metadata["build_admission"] = {
+                "outcome": "completed",
+                "actor": "agent.orchestration",
+                "task_path": task.path,
+            }
+            self._controller.tm.set_task_metadata(
+                task.task_id, metadata, if_revision=revision
+            )
+            self._controller.tm.transition(
+                task.task_id, "completed", detail="execute: completed"
+            )
+        except Exception:  # noqa: BLE001
+            # Best-effort; a race on TaskManager will NOT fail execute().
+            return
+
+    def _fail_task(
+        self, task: Task, exc_class: str, detail: str
+    ) -> None:
+        try:
+            row = self._controller.tm.get_task(task.task_id)
+            if row is None:
+                return
+            metadata = dict(row.metadata or {})
+            revision = int(metadata.get("revision", 1))
+            metadata["revision"] = revision + 1
+            metadata["build_admission"] = {
+                "outcome": "failed",
+                "error_class": exc_class,
+                "actor": "agent.orchestration",
+                "task_path": task.path,
+            }
+            self._controller.tm.set_task_metadata(
+                task.task_id, metadata, if_revision=revision
+            )
+            self._controller.tm.transition(
+                task.task_id, "failed", detail=detail
+            )
+        except Exception:  # noqa: BLE001
+            return
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
@@ -355,6 +516,17 @@ def get_run(plan_id: str) -> Run | None:
     durable state lives on TaskManager; the Run handle is in-process)."""
     with _RUN_LOCK:
         return _RUNS.get(plan_id)
+
+
+def _default_executor(_task: Task) -> None:
+    """Default per-Task executor used when ``Run.execute()`` is called
+    without an explicit callable.
+
+    Returns immediately — the Task is marked ``completed``. Real
+    workflows pass a builder/writer here (e.g. one produced by
+    ``agent.builder_discovery``).
+    """
+    return None
 
 
 def _coerce_plan(

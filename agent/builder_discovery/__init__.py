@@ -1,0 +1,21 @@
+"""Builder Discovery subsystem.
+
+Builder Discovery is OPT-IN: it produces a ``RunPlan`` from a
+prompt-authoring prompt revision (or a declarative handoff) and
+hands it off to ``agent.start()`` for execution. The deterministic
+Research / Plan / Build code paths in ``agent.__main__`` are
+untouched; Builder Discovery is a parallel route for prompt-driven
+build sequences.
+"""
+
+from agent.builder_discovery.runner import (
+    BuilderDiscoveryRunner,
+    DiscoveryHandoff,
+    DiscoveryHandoffError,
+)
+
+__all__ = [
+    "BuilderDiscoveryRunner",
+    "DiscoveryHandoff",
+    "DiscoveryHandoffError",
+]
