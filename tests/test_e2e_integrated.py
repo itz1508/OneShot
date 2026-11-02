@@ -1,11 +1,11 @@
-"""Integrated E2E — stitches Builder Discovery -> Run -> Judge -> Completion.
+"""Integrated E2E — stitches Audit Discovery -> Run -> Judge -> Completion.
 
 This test exercises the full agent orchestration path end-to-end
 against a scripted Judge adapter (no live Baseten calls — the live
 path is already proven in tests/test_judge_live_baseten.py). The
 test asserts:
 
-  1. Builder Discovery accepts a handoff and produces a Run.
+  1. Audit Discovery accepts a handoff and produces a Run.
   2. Run.execute() drives tasks to completion in parallel.
   3. Build Admission metadata lands on each child Task's TaskManager
      row.
@@ -22,8 +22,8 @@ import time
 
 import pytest
 
-from agent.builder_discovery import (
-    BuilderDiscoveryRunner,
+from agent.audit_discovery import (
+    AuditDiscoveryRunner,
     DiscoveryHandoff,
 )
 from agent.evaluation import CompletionEvaluator
@@ -86,7 +86,7 @@ class TestIntegratedE2E:
     def test_full_discovery_execute_judge_completion(
         self, tm_snapshot, rubric, judge_config
     ):
-        # 1. Builder Discovery handoff.
+        # 1. Audit Discovery handoff.
         handoff = DiscoveryHandoff(
             plan_id="e2e-plan-01",
             objective="integrated e2e run",
@@ -96,7 +96,7 @@ class TestIntegratedE2E:
                 PlannedFileOperation(path="src/mod_c.py", operation="create"),
             ),
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(handoff, storage_path=tm_snapshot)
         assert run.plan_id == "e2e-plan-01"
         assert [t.path for t in run.tasks] == [
@@ -176,7 +176,7 @@ class TestIntegratedE2E:
                 PlannedFileOperation(path="y.py"),
             ),
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(handoff, storage_path=tm_snapshot)
         run.pause()
         results_paused = run.execute()
@@ -205,7 +205,7 @@ class TestIntegratedE2E:
                 PlannedFileOperation(path="bad.py"),
             ),
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(handoff, storage_path=tm_snapshot)
 
         def writer(task: Task) -> None:

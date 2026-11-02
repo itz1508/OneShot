@@ -1,4 +1,4 @@
-"""BuilderDiscoveryRunner tests — handoff validation + bridging to Run."""
+"""AuditDiscoveryRunner tests — handoff validation + bridging to Run."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.builder_discovery import (
-    BuilderDiscoveryRunner,
+from agent.audit_discovery import (
+    AuditDiscoveryRunner,
     DiscoveryHandoff,
     DiscoveryHandoffError,
 )
@@ -49,7 +49,7 @@ class TestStartFromHandoff:
                 PlannedFileOperation(path="y.py", operation="create"),
             ),
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(
             h, storage_path=str(tmp_path / "tasks.json")
         )
@@ -64,7 +64,7 @@ class TestStartFromHandoff:
             objective="run through",
             files=(PlannedFileOperation(path="a.py"),),
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(
             h, storage_path=str(tmp_path / "tasks.json")
         )
@@ -81,7 +81,7 @@ class TestPromptStoreBinding:
             files=(PlannedFileOperation(path="a.py"),),
             prompt_id="unknown-prompt",
         )
-        runner = BuilderDiscoveryRunner(prompt_store=store)
+        runner = AuditDiscoveryRunner(prompt_store=store)
         with pytest.raises(DiscoveryHandoffError, match="unknown_prompt"):
             runner.start_from_handoff(
                 h, storage_path=str(tmp_path / "tasks.json")
@@ -99,7 +99,7 @@ class TestPromptStoreBinding:
             prompt_id="builder-discovery",
             revision_digest="def456",
         )
-        runner = BuilderDiscoveryRunner(prompt_store=store)
+        runner = AuditDiscoveryRunner(prompt_store=store)
         with pytest.raises(DiscoveryHandoffError, match="digest_mismatch"):
             runner.start_from_handoff(
                 h, storage_path=str(tmp_path / "tasks.json")
@@ -117,7 +117,7 @@ class TestPromptStoreBinding:
             prompt_id="builder-discovery",
             revision_digest="abc123",
         )
-        runner = BuilderDiscoveryRunner(prompt_store=store)
+        runner = AuditDiscoveryRunner(prompt_store=store)
         run = runner.start_from_handoff(
             h, storage_path=str(tmp_path / "tasks.json")
         )
@@ -132,7 +132,7 @@ class TestPromptStoreBinding:
             files=(PlannedFileOperation(path="a.py"),),
             prompt_id="builder-discovery",
         )
-        runner = BuilderDiscoveryRunner()
+        runner = AuditDiscoveryRunner()
         run = runner.start_from_handoff(
             h, storage_path=str(tmp_path / "tasks.json")
         )

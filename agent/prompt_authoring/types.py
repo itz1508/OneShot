@@ -33,8 +33,9 @@ class Stage(str, Enum):
     """Stages Prompt Authoring may generate prompts for.
 
     Research / plan / build are the three OneShot workflow stages.
-    `discovery` is the Builder-Discovery read-only role. `handoff`
-    covers the Handoff Evaluator. `provider_adapter` covers prompts
+    `discovery` denotes the Audit Discovery read-only role.
+    Its serialized stage name is stable. `handoff` covers the Handoff Evaluator.
+    `provider_adapter` covers prompts
     that live inside a provider adapter module (translation prompts).
     """
 
@@ -50,7 +51,7 @@ class ToolPermission(str, Enum):
     """Closed vocabulary for the `tool_permissions` field.
 
     A PromptDefinition DECLARES which capabilities its stage requires. The
-    HOST GRANTS (or refuses) each at runtime via the Builder Discovery runner
+    HOST GRANTS (or refuses) each at runtime via the Audit Discovery runner
     (M6). The two are deliberately separate: a prompt cannot grant itself
     anything, and an un-granted request fails fast at the runner boundary.
 
@@ -104,7 +105,7 @@ class OwnerRef(BaseModel):
     """Who owns this prompt revision.
 
     `kind` matches the four ownership boundaries from the spec:
-    `prompt_authoring`, `main_agent`, `builder_discovery`,
+    `prompt_authoring`, `main_agent`, `audit_discovery`,
     `provider_adapter`, `planner`. The identifier is free-form
     (team-slug or user handle) and is NOT a credential.
     """

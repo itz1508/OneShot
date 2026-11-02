@@ -524,7 +524,7 @@ def _default_executor(_task: Task) -> None:
 
     Returns immediately — the Task is marked ``completed``. Real
     workflows pass a builder/writer here (e.g. one produced by
-    ``agent.builder_discovery``).
+    ``agent.audit_discovery``).
     """
     return None
 

@@ -1,6 +1,6 @@
 """Completion evaluation of a finished workflow Run.
 
-Reviewer directive: "Complete Builder Discovery, parallel file-task
+Reviewer directive: "Complete Audit Discovery, parallel file-task
 execution, Build Admission, and completion evaluation." This file is
 the last of those four. It composes the already-shipped primitives:
 
