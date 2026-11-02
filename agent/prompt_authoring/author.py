@@ -99,6 +99,10 @@ class PromptAuthor:
             "output_contract": dict(spec.output_contract),
             "evaluation_rules": list(spec.evaluation_rules),
             "recovery_behavior": spec.recovery_behavior,
+            # M2: declared permissions flow from spec -> definition; included
+            # in the canonical_content_digest so a permission change creates a
+            # new content_digest and therefore a new revision.
+            "tool_permissions": [tp.value for tp in spec.tool_permissions],
             "supersedes": None,
         }
         digest = canonical_content_digest(payload)
@@ -115,6 +119,7 @@ class PromptAuthor:
             evaluation_rules=list(spec.evaluation_rules),
             recovery_behavior=spec.recovery_behavior,
             fixture_refs=list(spec.fixture_refs),
+            tool_permissions=list(spec.tool_permissions),
             evaluation_receipt_ref=None,
             supersedes=None,
             status=PromptStatus.UNEVALUATED,
@@ -144,9 +149,14 @@ class PromptAuthor:
                 f"({prompt.prompt_id}@{prompt.revision}, status={prompt.status.value}). "
                 "Use PromptAuthor.supersede(...) to produce a new revision."
             )
+        # M1 corrective: revise()-line revisions must carry a back-reference
+        # so the accepted_regression axis does not reject them. The DIFFERENCE
+        # between revise and supersede is a STATUS-GATE distinction (revise
+        # refuses ACTIVE; supersede requires EVALUATED/ACTIVE), not a lineage
+        # distinction. ALL revisions >= 2 carry the back-reference, uniformly.
         return self._next_revision(
             prompt,
-            supersedes=None,
+            supersedes=f"{prompt.prompt_id}@{prompt.revision}",
             stable_instructions=stable_instructions,
             output_contract=output_contract,
             evaluation_rules=evaluation_rules,
@@ -274,7 +284,8 @@ class PromptAuthor:
             "output_contract": new_contract,
             "evaluation_rules": new_rules,
             "recovery_behavior": new_recovery,
-            "supersedes": supersedes,
+            "tool_permissions": [tp.value for tp in prompt.tool_permissions],
+        "supersedes": supersedes,
         }
         digest = canonical_content_digest(payload)
         return PromptDefinition(
@@ -291,6 +302,7 @@ class PromptAuthor:
             recovery_behavior=new_recovery,
             fixture_refs=list(prompt.fixture_refs),
             evaluation_receipt_ref=None,
+            tool_permissions=list(prompt.tool_permissions),
             supersedes=supersedes,
             status=initial_status,
         )

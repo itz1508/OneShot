@@ -13,7 +13,14 @@ import json
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from agent.providers.types import ProviderCapabilities
 
@@ -37,6 +44,31 @@ class Stage(str, Enum):
     DISCOVERY = "discovery"
     HANDOFF = "handoff"
     PROVIDER_ADAPTER = "provider_adapter"
+
+
+class ToolPermission(str, Enum):
+    """Closed vocabulary for the `tool_permissions` field.
+
+    A PromptDefinition DECLARES which capabilities its stage requires. The
+    HOST GRANTS (or refuses) each at runtime via the Builder Discovery runner
+    (M6). The two are deliberately separate: a prompt cannot grant itself
+    anything, and an un-granted request fails fast at the runner boundary.
+
+    The vocabulary is append-only. Adding a new permission bumps the digest
+    of every prompt that declares it, which is the intended behaviour — a
+    permission-vocabulary bump is a security-relevant change.
+    """
+
+    REPOSITORY_READ = "repository_read"
+    TASK_READ = "task_read"
+    TASK_WRITE = "task_write"
+    TASK_ADMIN = "task_admin"
+    CODE_SEARCH = "code_search"
+    OFFICIAL_DOCUMENTATION = "official_documentation"
+    READ_ONLY = "read_only"
+    FILESYSTEM_WRITE = "filesystem_write"
+    NETWORK = "network"
+    MCP = "mcp"
 
 
 class PromptStatus(str, Enum):
@@ -124,6 +156,9 @@ class PromptSpec(BaseModel):
     evaluation_rules: list[str] = Field(default_factory=list)
     recovery_behavior: str = Field(min_length=1)
     fixture_refs: list[str] = Field(default_factory=list)
+    # M2: declared tool permissions. The prompt's REQUEST, not the host's GRANT.
+    # Validated against ToolPermission; included in canonical_content_digest.
+    tool_permissions: list[ToolPermission] = Field(default_factory=list)
 
     @field_validator("output_contract")
     @classmethod
@@ -154,7 +189,7 @@ class PromptDefinition(BaseModel):
     digest stable.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     prompt_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_\-]*$")
     revision: int = Field(ge=1)
@@ -171,6 +206,8 @@ class PromptDefinition(BaseModel):
     recovery_behavior: str = Field(min_length=1)
 
     fixture_refs: list[str] = Field(default_factory=list)
+    # M2: declared tool permissions, carried verbatim from PromptSpec.
+    tool_permissions: list[ToolPermission] = Field(default_factory=list)
     evaluation_receipt_ref: str | None = None
 
     supersedes: str | None = None
@@ -221,6 +258,58 @@ class PromptDefinition(BaseModel):
             )
         return self
 
+    @field_serializer(
+        "runtime_inputs", "stable_instructions", "evaluation_rules", "fixture_refs",
+        "tool_permissions",
+        when_used="always",
+    )
+    def _serialize_tuple_as_list(self, value):
+        # Containers are stored as tuples (see deep_freeze_containers below) but
+        # the on-the-wire schema is a JSON array; emit a plain list so downstream
+        # consumers do not see a Python-specific tuple shape.
+        return list(value)
+
+    @field_serializer("output_contract", when_used="always")
+    def _serialize_mappingproxy_as_dict(self, value):
+        # output_contract is stored as types.MappingProxyType after deep-freeze.
+        # Emit a plain dict for serialisation; the stored instance remains immutable.
+        return dict(value)
+
+    @model_validator(mode="after")
+    def deep_freeze_containers(self) -> PromptDefinition:
+        """Convert nested lists/dicts to immutable twins (M1 corrective).
+
+        `frozen=True` on `model_config` only blocks TOP-LEVEL field reassignment.
+        Nested lists and dicts remain mutable. The reviewer required that an
+        accepted snapshot cannot change without creating a new revision, so we
+        swap each mutable container for its immutable twin AFTER validation:
+            list[...]  -> tuple[...]
+            dict       -> types.MappingProxyType
+        Pydantic serialises tuples as JSON arrays and MappingProxyType as JSON
+        objects, so the on-the-wire shape is unchanged. The attribute setter is
+        already blocked by `frozen=True`; the swap below closes the
+        `obj.collection.append(...)` and `obj.mapping["k"] = v` escape hatches.
+        """
+        import types as _types
+        # Bypass frozen's attribute-set lock via object.__setattr__; the model
+        # validator is still inside Pydantic's post-init window.
+        _set = object.__setattr__
+        if isinstance(self.runtime_inputs, list):
+            _set(self, "runtime_inputs", tuple(self.runtime_inputs))
+        if isinstance(self.stable_instructions, list):
+            _set(self, "stable_instructions", tuple(self.stable_instructions))
+        if isinstance(self.evaluation_rules, list):
+            _set(self, "evaluation_rules", tuple(self.evaluation_rules))
+        if isinstance(self.fixture_refs, list):
+            _set(self, "fixture_refs", tuple(self.fixture_refs))
+        if isinstance(self.tool_permissions, list):
+            _set(self, "tool_permissions", tuple(self.tool_permissions))
+        if isinstance(self.output_contract, dict) and not isinstance(
+            self.output_contract, _types.MappingProxyType
+        ):
+            _set(self, "output_contract", _types.MappingProxyType(dict(self.output_contract)))
+        return self
+
 
 # ---------------------------------------------------------------------------
 # Canonical content digest
@@ -238,22 +327,26 @@ _STABLE_FIELDS = (
     "output_contract",
     "evaluation_rules",
     "recovery_behavior",
+    # M2: tool_permissions is part of the digest — a permission change creates
+    # a new revision. Reviewer explicitly rejected leaving it outside.
+    "tool_permissions",
     "supersedes",
 )
 
 
 def _coerce_json_safe(value: Any) -> Any:
-    """Convert Pydantic models / enums to JSON-safe primitives."""
+    """Convert Pydantic models / enums / immutable twins to JSON-safe primitives."""
+    import types as _types
     from enum import Enum as _Enum
 
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     if isinstance(value, _Enum):
         return value.value
-    if isinstance(value, list):
+    if isinstance(value, (list, tuple)):
         return [_coerce_json_safe(v) for v in value]
-    if isinstance(value, tuple):
-        return [_coerce_json_safe(v) for v in value]
+    if isinstance(value, _types.MappingProxyType):
+        return {k: _coerce_json_safe(v) for k, v in value.items()}
     if isinstance(value, dict):
         return {k: _coerce_json_safe(v) for k, v in value.items()}
     return value
