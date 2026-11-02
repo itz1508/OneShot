@@ -50,7 +50,7 @@ openai = ["openai>=1.0"]
 anthropic = ["anthropic>=0.25"]
 
 [project.scripts]
-oneshot = "agent.main:main"
+oneshot = "agent.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agent", "tools", "bin"]

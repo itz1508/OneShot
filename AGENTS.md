@@ -36,17 +36,17 @@ Practical repository instructions for coding agents. This file governs **how to 
 | [`agent/contracts/plan.yaml`](agent/contracts/plan.yaml) | Plan: `research_input`, `implementation`, `gap_analysis`, `fixture_validation_chaos`, `handoff` | [Build record](agent/contracts/build.yaml) after Scanner/recheck and pre-Build validation |
 | [`agent/contracts/build.yaml`](agent/contracts/build.yaml) | Build: `plan_input`, `execution`, `implementation_validation`, `post_build_e2e`, `outcome` | Actual host receipts |
 | [`tests/test_workflow_contracts.py`](tests/test_workflow_contracts.py) | Contract identity, stale revision, Scanner/Gap Fix, fixture, E2E and evidence-reference **unit** tests | **not** connected-host E2E |
-| [`tools/README.md`](tools/README.md) | Tool inventory and design principles | [agent/main.py](agent/main.py) for controller integration |
+| [`tools/README.md`](tools/README.md) | Tool inventory and design principles | [agent/__main__.py](agent/__main__.py) for controller integration |
 
 ### Route the question to the owning source
 
 | Agent needs to know | Start reading | Then inspect |
 | --- | --- | --- |
-| Accepted assignment, milestone, or desired user result | [README.md](README.md) | [agent/main.py](agent/main.py) and current user instruction |
+| Accepted assignment, milestone, or desired user result | [README.md](README.md) | [agent/__main__.py](agent/__main__.py) and current user instruction |
 | Current source root, dirty worktree, host tool / Scanner availability | `git status --short` | [Tools README](tools/README.md) and physically discovered source |
 | Research fields, required information, evidence and handoff | [Research YAML](agent/contracts/research.yaml) | [Contract guide](agent/contracts/README.md) |
-| Plan revision, Scanner findings, universal Gap Fix, pre-Build fixtures/chaos | [Plan YAML](agent/contracts/plan.yaml) | [agent/main.py](agent/main.py) and actual Scanner receipts |
-| Build plan-pinning, command receipts, real E2E, recovery, outcome | [Build YAML](agent/contracts/build.yaml) | [agent/main.py](agent/main.py) and actual host evidence |
+| Plan revision, Scanner findings, universal Gap Fix, pre-Build fixtures/chaos | [Plan YAML](agent/contracts/plan.yaml) | [agent/__main__.py](agent/__main__.py) and actual Scanner receipts |
+| Build plan-pinning, command receipts, real E2E, recovery, outcome | [Build YAML](agent/contracts/build.yaml) | [agent/__main__.py](agent/__main__.py) and actual host evidence |
 | Schema/invariant bug or stage-specific handoff validation | [Pydantic models](agent/contracts/models.py) | [Contract tests](tests/test_workflow_contracts.py) |
 | Security or ignored local outputs | [`.gitignore`](.gitignore) | Physical worktree, host permissions; never commit credentials |
 
@@ -54,7 +54,7 @@ Practical repository instructions for coding agents. This file governs **how to 
 
 All M0–M8 milestones are implemented and verified; eleven G01–G11 gap closures and five S1–S5 connected E2E scenarios sit on top of them. On the current HEAD: **374 passed, 55 skipped** (429 collected). See `README.md` for the scenario and gap-closure matrix.
 
-- `agent/main.py` — OneShotController with stage routing, Scanner invocation, fixture validation, checkpoint/resume.
+- `agent/__main__.py` — OneShotController with stage routing, Scanner invocation, fixture validation, checkpoint/resume.
 - `agent/adapters/` — Scanner adapters: `repository_inventory.py`, `source_comparison.py`, `content_integrity.py`, `evidence_locator.py`, `trace_projection.py`.
 - `agent/reference/` — Stage-specific guidance: `research_guidance.md`, `plan_guidance.md`, `build_guidance.md`.
 - `agent/contracts/` — Contract YAMLs, Pydantic validators (`models.py`), `README.md`.
@@ -259,7 +259,7 @@ response = client.generate(
 Or on the controller:
 
 ```python
-from main import OneShotController
+from agent.__main__ import OneShotController
 from agent.providers import ProviderConfig
 
 ctrl = OneShotController(

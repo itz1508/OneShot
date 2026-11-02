@@ -4,7 +4,7 @@
 Reusable primitive: `SearchSources(repo_path)` enumerates every tracked
 file at HEAD, filters by extension or glob, and reads file info (type,
 size, line count, 200-char content summary). Used by
-`agent.main.OneShotController.research_plan` to build the SHA-256
+`agent.__main__.OneShotController.research_plan` to build the SHA-256
 evidence index at Research stage entry, and by the baseline
 `tests/test_research_plan_build.py::TestSearchSources` suite.
 
