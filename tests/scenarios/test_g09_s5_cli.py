@@ -124,7 +124,7 @@ class G09S5SameTaskCLITest(unittest.TestCase):
             )
             run_bad = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "run",
+                    sys.executable, "-m", "agent", "run",
                     "--request-file", str(request_file),
                     "--storage", str(storage),
                     "--repo-root", str(_REPO),
@@ -147,7 +147,7 @@ class G09S5SameTaskCLITest(unittest.TestCase):
             )
             run_good = subprocess.run(
                 [
-                    sys.executable, "-m", "agent.main", "continue",
+                    sys.executable, "-m", "agent", "continue",
                     "--task-id", tid,
                     "--request-file", str(request_file),
                     "--storage", str(storage),
