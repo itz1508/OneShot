@@ -30,11 +30,16 @@ Ownership boundaries:
 """
 from __future__ import annotations
 
+import json
+import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as _FutureTimeout
 from typing import Any
 
 from agent.prompt_authoring.store import Principal
 from agent.tools_registry.types import (
+    DispatchAuditEntry,
     EmptyGrant,
     PermissionGrant,
     ToolDescriptor,
@@ -73,6 +78,8 @@ class ToolRegistry:
         *,
         permission_grant: PermissionGrant | None = None,
         trust_actor_strings: bool = False,
+        input_byte_limit: int = 256 * 1024,
+        default_timeout_s: float = 30.0,
     ) -> None:
         """Build a registry.
 
@@ -83,11 +90,24 @@ class ToolRegistry:
           tests and single-process trusted sessions. Production deployments
           MUST pass verified Principal objects (M1 contract) and keep this
           at the default False.
+        * ``input_byte_limit`` — refuse dispatch inputs whose canonical JSON
+          serialisation exceeds this many bytes. Protects against DoS
+          through oversized payloads; set to ``0`` to disable.
+        * ``default_timeout_s`` — hard wall-clock cap for a single dispatch
+          call. Function tools run under a ThreadPoolExecutor with this
+          timeout; MCP tools go through the same gate. Set to ``0`` to
+          disable (not recommended).
         """
         self._toolkits: dict[str, ToolkitDescriptor] = {}
         self._tools: dict[str, ToolDescriptor] = {}
         self._impls: dict[str, FunctionImpl] = {}
         self._mcp_invokers: dict[str, Any] = {}
+        self._input_byte_limit = int(input_byte_limit)
+        self._default_timeout_s = float(default_timeout_s)
+        # Structured audit log — one DispatchAuditEntry per dispatch
+        # attempt. Append-only in-process; durable persistence is
+        # intentionally out of scope here (TaskManager owns durable state).
+        self._audit: list[DispatchAuditEntry] = []
         # Per-registry provenance marker. Only IdentityProviders obtained via
         # self.identity_provider(credentials) bake this token into their
         # Principals; _resolve_principal rejects verified Principals whose
@@ -345,56 +365,150 @@ class ToolRegistry:
         caller: Principal | str,
         tool_id: str,
         inputs: dict[str, Any] | None = None,
+        *,
+        timeout_s: float | None = None,
     ) -> Any:
         """Execute a registered Function or MCP tool.
 
-        Fails closed with `ToolRegistryError` for:
+        Fails closed with ``ToolRegistryError`` for:
           * tool_id the caller cannot see (visibility == dispatchability).
-          * `available=False` tools.
-          * inputs that fail the tool's input_schema.
+          * ``available=False`` tools.
+          * inputs whose canonical JSON exceeds the registry's
+            ``input_byte_limit`` (``input_too_large``).
+          * inputs that fail the tool's ``input_schema``.
           * HOST_NATIVE tools (the host owns their execution; the registry
             discovers them only).
-          * missing MCP connector (should not happen if registration path
-            was used, but guarded nonetheless).
+          * a tool that exceeds the per-call ``timeout_s`` (``tool_timeout``).
 
-        The dispatcher validates inputs against `input_schema` using
-        `jsonschema` when available; otherwise it falls back to a
-        required-key subset check (mirroring BehaviorEvaluator's
-        degrade-gracefully pattern).
+        The dispatcher writes one ``DispatchAuditEntry`` per attempt to its
+        in-process audit log (readable via ``audit_log()``). Error entries
+        name the exception class but never the exception message, which may
+        carry sensitive data.
         """
-        principal_name = self._resolve_principal(caller)
-        tool = self._tools.get(tool_id)
-        granted = self._grant.granted(principal_name)
-        if tool is None or not self._caller_sees_tool(tool, granted):
-            raise ToolRegistryError(
-                f"unknown_tool: {tool_id!r} is not registered or not permitted "
-                f"for principal {principal_name!r}."
-            )
+        start = time.monotonic()
         payload = inputs or {}
-        self._validate_inputs(tool, payload)
-        if tool.kind == ToolKind.FUNCTION:
-            impl = self._impls[tool.id]
-            # M3-addon reviewer directive (C2): a Function Tool may need the
-            # verified caller identity to enforce ownership. Impls that opt in
-            # by setting `_principal_aware = True` receive (inputs, principal_name)
-            # — legacy impls keep the single-argument contract.
-            # Narrow via Any so mypy accepts the two-signature contract.
-            impl_any: Any = impl
-            if getattr(impl, "_principal_aware", False):
-                return impl_any(payload, principal_name)
-            return impl_any(payload)
-        if tool.kind == ToolKind.MCP:
-            connector = self._mcp_invokers.get(tool.id)
-            if connector is None:
-                raise ToolRegistryError(
-                    f"missing_mcp_connector: {tool.id!r}"
+        error_class: str | None = None
+        status = "ok"
+        principal_name = "<unresolved>"
+        payload_bytes = 0
+        try:
+            principal_name = self._resolve_principal(caller)
+            try:
+                payload_bytes = len(
+                    json.dumps(payload, sort_keys=True, separators=(",", ":"))
+                    .encode("utf-8")
                 )
-            return connector.invoke(tool.id, payload)
-        # HOST_NATIVE and anything else: discovery only.
-        raise ToolRegistryError(
-            f"host_native_dispatch: {tool.id!r} is host-native; dispatch is "
-            "owned by the host, not the registry."
-        )
+            except Exception:  # noqa: BLE001 - payload may be non-JSON-ish
+                payload_bytes = len(repr(payload).encode("utf-8", errors="replace"))
+            if self._input_byte_limit and payload_bytes > self._input_byte_limit:
+                status = "input_too_large"
+                raise ToolRegistryError(
+                    f"input_too_large: payload is {payload_bytes} bytes; "
+                    f"limit is {self._input_byte_limit}."
+                )
+            tool = self._tools.get(tool_id)
+            granted = self._grant.granted(principal_name)
+            if tool is None or not self._caller_sees_tool(tool, granted):
+                status = "unknown_tool"
+                raise ToolRegistryError(
+                    f"unknown_tool: {tool_id!r} is not registered or not permitted "
+                    f"for principal {principal_name!r}."
+                )
+            self._validate_inputs(tool, payload)
+            effective_timeout = (
+                float(timeout_s) if timeout_s is not None else self._default_timeout_s
+            )
+            return self._invoke_with_timeout(
+                tool, payload, principal_name, effective_timeout
+            )
+        except ToolRegistryError as exc:
+            if status == "ok":
+                msg = str(exc)
+                status = msg.split(":", 1)[0] if ":" in msg else "invalid_input"
+            raise
+        except Exception as exc:  # noqa: BLE001 - re-raise after audit
+            error_class = type(exc).__name__
+            if status == "ok":
+                status = "error"
+            raise
+        finally:
+            self._audit.append(
+                DispatchAuditEntry(
+                    at=time.time(),
+                    principal=principal_name,
+                    tool_id=tool_id,
+                    status=status,
+                    duration_ms=round((time.monotonic() - start) * 1000, 3),
+                    error_class=error_class,
+                    input_bytes=payload_bytes,
+                )
+            )
+
+    def _invoke_with_timeout(
+        self,
+        tool: ToolDescriptor,
+        payload: dict[str, Any],
+        principal_name: str,
+        timeout_s: float,
+    ) -> Any:
+        """Run a FUNCTION or MCP tool with a wall-clock timeout.
+
+        Timeout is enforced via a ThreadPoolExecutor future. If the tool
+        does not return within ``timeout_s`` seconds, a ``ToolRegistryError``
+        with ``tool_timeout`` is raised. The worker thread is NOT killed —
+        Python has no safe thread cancellation — so a slow tool leaks the
+        thread until it eventually returns. Callers should treat the
+        timeout as a resource leak and plan accordingly.
+        """
+        def _run() -> Any:
+            if tool.kind == ToolKind.FUNCTION:
+                impl = self._impls[tool.id]
+                impl_any: Any = impl
+                if getattr(impl, "_principal_aware", False):
+                    return impl_any(payload, principal_name)
+                return impl_any(payload)
+            if tool.kind == ToolKind.MCP:
+                connector = self._mcp_invokers.get(tool.id)
+                if connector is None:
+                    raise ToolRegistryError(
+                        f"missing_mcp_connector: {tool.id!r}"
+                    )
+                return connector.invoke(tool.id, payload)
+            raise ToolRegistryError(
+                f"host_native_dispatch: {tool.id!r} is host-native; dispatch is "
+                "owned by the host, not the registry."
+            )
+
+        if timeout_s <= 0:
+            return _run()
+        with ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="tool_dispatch"
+        ) as pool:
+            fut = pool.submit(_run)
+            try:
+                return fut.result(timeout=timeout_s)
+            except _FutureTimeout as exc:
+                raise ToolRegistryError(
+                    f"tool_timeout: {tool.id!r} did not return within "
+                    f"{timeout_s:g}s"
+                ) from exc
+
+    def audit_log(
+        self,
+        *,
+        principal: str | None = None,
+        tool_id: str | None = None,
+        status: str | None = None,
+    ) -> list[DispatchAuditEntry]:
+        """Return a filtered view of the in-process dispatch audit log."""
+        out = list(self._audit)
+        if principal is not None:
+            out = [e for e in out if e.principal == principal]
+        if tool_id is not None:
+            out = [e for e in out if e.tool_id == tool_id]
+        if status is not None:
+            out = [e for e in out if e.status == status]
+        return out
 
     def _validate_inputs(
         self, tool: ToolDescriptor, inputs: dict[str, Any]

@@ -36,6 +36,8 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "mypy>=1.10",
+    # Grammar / typo gate; see `make spell` and the configuration below.
+    "codespell>=2.3",
 ]
 # Provider adapter extras. OneShot core carries ZERO vendor SDKs; the
 # default `echo` adapter needs none. Install the extras below only if
@@ -76,3 +78,9 @@ python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
+
+[tool.codespell]
+# Skip binary + generated + lock-ish artefacts.
+skip = ".git,__pycache__,*.lock,*.pyc,*.pyo,*.svg,*.png,/work,.ruff_cache,.mypy_cache"
+# Project-specific terms the dictionary flags as typos but are intentional.
+ignore-words-list = "CAS,caf,re-use,fo,ba"

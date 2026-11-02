@@ -1,5 +1,5 @@
 # OneShot Makefile
-.PHONY: test lint format typecheck clean install dev-install
+.PHONY: test lint format typecheck spell clean install dev-install
 
 PYTHON ?= python3
 PIP ?= pip
@@ -27,6 +27,10 @@ format:
 
 typecheck:
 	$(PYTHON) -m mypy agent/ tools/
+
+spell:
+	$(PYTHON) -m codespell \
+		agent/ tools/ tests/ bin/ README.md AGENTS.md pyproject.toml
 
 clean:
 	rm -rf __pycache__ .pytest_cache .ruff_cache .mypy_cache

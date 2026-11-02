@@ -267,8 +267,11 @@ def _glob_matches(path: str, pattern: str) -> bool:
 
 
 def _mark_principal_aware(fn: Any) -> Any:
-    """Flag a Function Tool impl as principal-aware without triggering mypy's
-    attr-defined check on narrowly-typed Callables.
+    """Flag a Function Tool impl as principal-aware.
+
+    Wraps the attribute set so mypy stops narrowing the callable type;
+    without this helper the ``fn._principal_aware = True`` write triggers
+    ``[attr-defined]`` on Callables with explicit parameter types.
     """
     fn._principal_aware = True
     return fn

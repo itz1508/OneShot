@@ -60,6 +60,27 @@ class ToolRegistryError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class DispatchAuditEntry:
+    """One structured record per `ToolRegistry.dispatch` attempt.
+
+    Written whether or not dispatch succeeded; stored in-process on the
+    registry. ``status`` is one of
+    ``\"ok\"`` | ``\"invalid_input\"`` | ``\"unknown_tool\"`` |
+    ``\"not_available\"`` | ``\"error\"`` | ``\"timeout\"`` |
+    ``\"input_too_large\"``. The ``error_class`` field names the exception
+    type (never the message, which may contain sensitive data).
+    """
+
+    at: float
+    principal: str
+    tool_id: str
+    status: str
+    duration_ms: float
+    error_class: str | None = None
+    input_bytes: int = 0
+
+
+@dataclass(frozen=True)
 class ToolkitDescriptor:
     """Discovery descriptor for one toolkit (collection of related tools)."""
 

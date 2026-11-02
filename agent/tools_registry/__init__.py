@@ -16,6 +16,7 @@ Reviewer scope (R3 addon):
 
 from agent.tools_registry.registry import ToolRegistry
 from agent.tools_registry.types import (
+    DispatchAuditEntry,
     HostCapabilities,
     PermissionGrant,
     ToolDescriptor,
@@ -25,6 +26,7 @@ from agent.tools_registry.types import (
 )
 
 __all__ = [
+    "DispatchAuditEntry",
     "HostCapabilities",
     "PermissionGrant",
     "ToolDescriptor",

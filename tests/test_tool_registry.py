@@ -1215,3 +1215,188 @@ class TestMCPEffectsAndConnectorPerms:
                 ),
                 lambda inputs: {},
             )
+
+
+# ---------------------------------------------------------------------------
+# R3 best-practice follow-up — audit log + input cap + timeout
+# ---------------------------------------------------------------------------
+
+
+class TestAuditLog:
+    def _make(self):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            trust_actor_strings=True,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="x", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={
+                    "type": "object",
+                    "properties": {"flag": {"type": "boolean"}},
+                },
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: {"flag": bool(inputs.get("flag", False))},
+        )
+        return reg
+
+    def test_successful_dispatch_recorded(self):
+        reg = self._make()
+        reg.dispatch("o", "x", {"flag": True})
+        log = reg.audit_log()
+        assert len(log) == 1
+        entry = log[0]
+        assert entry.status == "ok"
+        assert entry.principal == "o"
+        assert entry.tool_id == "x"
+        assert entry.error_class is None
+        assert entry.input_bytes > 0
+        assert entry.duration_ms >= 0
+
+    def test_unknown_tool_recorded(self):
+        reg = self._make()
+        with pytest.raises(ToolRegistryError, match="unknown_tool"):
+            reg.dispatch("o", "nope", {})
+        log = reg.audit_log()
+        assert log[-1].status == "unknown_tool"
+        assert log[-1].error_class is None
+
+    def test_invalid_input_recorded(self):
+        reg = self._make()
+        with pytest.raises(ToolRegistryError, match="invalid_input"):
+            reg.dispatch("o", "x", {"flag": "not-a-bool"})
+        log = reg.audit_log()
+        assert log[-1].status == "invalid_input"
+
+    def test_impl_exception_recorded(self):
+        reg = self._make()
+        # Replace the impl with one that raises a PermissionError at call time.
+        reg._impls["x"] = lambda inputs: (_ for _ in ()).throw(
+            PermissionError("boom")
+        )
+        with pytest.raises(PermissionError, match="boom"):
+            reg.dispatch("o", "x", {})
+        log = reg.audit_log()
+        assert log[-1].status == "error"
+        assert log[-1].error_class == "PermissionError"
+
+    def test_audit_log_filter(self):
+        reg = self._make()
+        reg.dispatch("o", "x", {})
+        with pytest.raises(ToolRegistryError):
+            reg.dispatch("o", "missing", {})
+        oks = reg.audit_log(status="ok")
+        err = reg.audit_log(status="unknown_tool")
+        assert len(oks) == 1
+        assert len(err) == 1
+        assert reg.audit_log(tool_id="x") == oks
+        assert reg.audit_log(principal="not-o") == []
+
+
+class TestInputByteCap:
+    def test_oversize_payload_refused(self):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            trust_actor_strings=True,
+            input_byte_limit=512,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="x", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: {"ok": True},
+        )
+        big = {"blob": "A" * 5_000}
+        with pytest.raises(ToolRegistryError, match="input_too_large"):
+            reg.dispatch("o", "x", big)
+        log = reg.audit_log()
+        assert log[-1].status == "input_too_large"
+
+    def test_cap_zero_disables(self):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            trust_actor_strings=True,
+            input_byte_limit=0,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="x", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: {"ok": True},
+        )
+        # No cap -> huge payloads pass.
+        reg.dispatch("o", "x", {"blob": "A" * 100_000})
+
+
+class TestDispatchTimeout:
+    def _reg(self, timeout_s):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(permissions={"o": frozenset({"read_only"})}),
+            trust_actor_strings=True,
+            default_timeout_s=timeout_s,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        return reg
+
+    def test_slow_tool_times_out(self):
+        import time
+        reg = self._reg(0.15)
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="slow", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: (time.sleep(2.0) or {"ok": True}),
+        )
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {})
+        log = reg.audit_log()
+        assert log[-1].status == "tool_timeout"
+
+    def test_per_call_override(self):
+        import time
+        reg = self._reg(5.0)  # generous default
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="slow", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: (time.sleep(1.5) or {"ok": True}),
+        )
+        # Per-call override shrinks it.
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "slow", {}, timeout_s=0.1)
+
+    def test_timeout_zero_disables(self):
+        reg = self._reg(0.0)
+        reg.register_function_tool(
+            ToolDescriptor(
+                id="fast", toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            lambda inputs: {"ok": True},
+        )
+        assert reg.dispatch("o", "fast", {}) == {"ok": True}
