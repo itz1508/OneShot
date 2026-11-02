@@ -1692,3 +1692,224 @@ class TestAuditRetentionAndAccessControl:
         reg.close()
         with pytest.raises(ToolRegistryError, match="registry_closed"):
             reg.dispatch("o", "x", {})
+
+
+
+class TestCloseDispatchRaceAndCleanCancel:
+    """R3 reviewer corrections (round 2) — two cases on commit c09d918.
+
+    Case 1: close() and dispatch() must not race. A dispatch that passes
+    the top-of-method _closed check must either successfully submit before
+    the executor shutdown, or raise ToolRegistryError('registry_closed')
+    — never the raw RuntimeError('cannot schedule new futures after
+    shutdown') leaked from the executor.
+
+    Case 2: tool_timeout where Future.cancel() returns True (worker was
+    still queued and never ran) must be classified as side_effect_state
+    'settled' with worker_termination_confirmed=True — the worker is
+    guaranteed never to execute, so there are no uncertain side effects
+    and no reconcile_pending call is required.
+    """
+
+    def _reg(self, timeout_s=0.1, workers=4):
+        return self._build(timeout_s=timeout_s, workers=workers)
+
+    @staticmethod
+    def _build(timeout_s=0.1, workers=4):
+        reg = ToolRegistry(
+            permission_grant=StaticGrant(
+                permissions={"o": frozenset({"read_only", "audit_read"})}
+            ),
+            trust_actor_strings=True,
+            default_timeout_s=timeout_s,
+            dispatch_workers=workers,
+        )
+        reg.register_toolkit(ToolkitDescriptor(id="t", description="d"))
+        return reg
+
+    def _register(self, reg, impl, *, tool_id="x"):
+        reg.register_function_tool(
+            ToolDescriptor(
+                id=tool_id, toolkit="t", kind=ToolKind.FUNCTION,
+                description="d",
+                input_schema={"type": "object"},
+                owner="o",
+                required_permissions=("read_only",),
+            ),
+            impl,
+        )
+
+    # ---- Case 1: close()/dispatch() race -------------------------------
+
+    def test_close_during_dispatch_submit_raises_registry_closed(self):
+        """Reviewer: a close() firing between the dispatch-level _closed
+        check and ThreadPoolExecutor.submit must surface
+        ToolRegistryError('registry_closed'), NOT a leaked
+        RuntimeError from the shut-down executor."""
+        import threading
+        import time
+        reg = self._reg(timeout_s=5.0, workers=1)
+        self._register(reg, lambda inputs: {"ok": True})
+
+        # Prime the single worker so the next dispatch has to queue.
+        gate = threading.Event()
+        self._register(
+            reg,
+            lambda inputs: (gate.wait() or {"blocked": True}),
+            tool_id="blocker",
+        )
+        blocker_done = threading.Event()
+        def _blocker():
+            try:
+                reg.dispatch("o", "blocker", {})
+            finally:
+                blocker_done.set()
+        tb = threading.Thread(target=_blocker)
+        tb.start()
+        # Give the blocker time to start executing on the sole worker.
+        time.sleep(0.1)
+
+        # Now call close() concurrently with a fresh dispatch. We can't
+        # perfectly force the race, so run several iterations and assert
+        # that whichever outcome happens is a graceful one — never a
+        # bare RuntimeError.
+        caught = []
+        def _closer():
+            # Small delay so the dispatch has a chance to race.
+            time.sleep(0.01)
+            reg.close()
+        for _ in range(20):
+            tc = threading.Thread(target=_closer)
+            tc.start()
+            try:
+                reg.dispatch("o", "x", {}, timeout_s=0.05)
+            except ToolRegistryError as exc:
+                caught.append(str(exc))
+            except Exception as exc:  # noqa: BLE001
+                tc.join()
+                raise AssertionError(
+                    f"dispatch leaked non-ToolRegistryError: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+            tc.join()
+            if reg._closed:
+                break
+
+        # Release the blocker so the thread can finish.
+        gate.set()
+        tb.join(timeout=5)
+
+        # Every post-close dispatch must have been reported as
+        # registry_closed OR tool_timeout; we never want a raw
+        # RuntimeError or anything else.
+        for msg in caught:
+            assert (
+                msg.startswith("registry_closed")
+                or msg.startswith("tool_timeout")
+                or msg.startswith("unknown_tool")
+            ), f"unexpected error message: {msg!r}"
+        # The registry is now closed.
+        assert reg._closed is True
+
+    def test_dispatch_after_close_always_registry_closed(self):
+        """After close() returns, every subsequent dispatch must raise
+        registry_closed with a safe ToolRegistryError. Deterministic
+        companion to the race test."""
+        reg = self._reg(timeout_s=5.0, workers=1)
+        self._register(reg, lambda inputs: {"ok": True})
+        reg.close()
+        for _ in range(5):
+            with pytest.raises(ToolRegistryError, match="registry_closed"):
+                reg.dispatch("o", "x", {})
+
+    # ---- Case 2: fut.cancel() succeeded path --------------------------
+
+    def test_cancelled_before_start_is_settled_not_uncertain(self):
+        """Reviewer: when the Future is cancelled cleanly before the
+        worker runs, side_effect_state must be 'settled' (never-ran) and
+        worker_termination_confirmed must be True. The entry must NOT
+        appear in _pending_timeouts and reconcile_pending must have
+        nothing to do."""
+        import threading
+        import time
+
+        # One worker, saturate it with a blocker that holds the pool.
+        reg = self._reg(timeout_s=5.0, workers=1)
+        gate = threading.Event()
+        self._register(
+            reg,
+            lambda inputs: (gate.wait() or {"blocked": True}),
+            tool_id="blocker",
+        )
+        self._register(
+            reg,
+            lambda inputs: {"ok": True},
+            tool_id="x",
+        )
+        blocker_done = threading.Event()
+        def _blocker():
+            try:
+                reg.dispatch("o", "blocker", {})
+            finally:
+                blocker_done.set()
+        tb = threading.Thread(target=_blocker)
+        tb.start()
+        time.sleep(0.1)  # let blocker enter the worker
+
+        # Now dispatch x with a tiny timeout. The single worker is busy;
+        # x stays queued, times out, and fut.cancel() succeeds.
+        t0 = time.monotonic()
+        with pytest.raises(ToolRegistryError, match="tool_timeout") as excinfo:
+            reg.dispatch("o", "x", {}, timeout_s=0.05)
+        elapsed = time.monotonic() - t0
+        # Caller returned at the deadline.
+        assert elapsed < 0.5
+
+        # Error message must distinguish the clean-cancel case.
+        assert "cancelled before starting" in str(excinfo.value)
+
+        # Audit entry: side_effect_state='settled', confirmed=True.
+        log = reg.audit_log("o")
+        x_entries = [e for e in log if e.tool_id == "x"]
+        assert len(x_entries) == 1
+        entry = x_entries[0]
+        assert entry.status == "tool_timeout"
+        assert entry.side_effect_state == "settled", (
+            f"expected 'settled' for cleanly-cancelled worker, "
+            f"got {entry.side_effect_state!r}"
+        )
+        assert entry.worker_termination_confirmed is True
+
+        # No entry queued for reconcile_pending — the cleanly-cancelled
+        # Future had no side effects to reconcile.
+        assert entry.entry_id not in reg.pending_timeouts("o")
+        assert reg.pending_timeouts("o") == []
+        assert reg.reconcile_pending("o") == []
+
+        # Release the blocker; teardown.
+        gate.set()
+        tb.join(timeout=5)
+        reg.close()
+
+    def test_detached_worker_still_uncertain_and_tracked(self):
+        """Regression companion to the clean-cancel test: when the
+        worker DOES start before the timeout fires (fut.cancel() returns
+        False), the audit entry stays 'uncertain' and the entry_id is
+        tracked for reconcile_pending — the previous behaviour is
+        preserved for the ordinary detached-worker case."""
+        import time
+        reg = self._reg(timeout_s=0.1, workers=4)
+        # Worker starts immediately and runs past the deadline.
+        self._register(
+            reg,
+            lambda inputs: (time.sleep(0.6) or {"late": True}),
+        )
+        with pytest.raises(ToolRegistryError, match="tool_timeout"):
+            reg.dispatch("o", "x", {})
+        log = reg.audit_log("o")
+        entry = log[-1]
+        assert entry.status == "tool_timeout"
+        assert entry.side_effect_state == "uncertain"
+        assert entry.worker_termination_confirmed is False
+        assert entry.entry_id in reg.pending_timeouts("o")
+        reg.close()

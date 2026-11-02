@@ -145,6 +145,13 @@ class ToolRegistry:
             max_workers=workers, thread_name_prefix="tool_dispatch"
         )
         self._closed = False
+        # Guards the (``_closed`` check -> ``_executor.submit``) critical
+        # section against a concurrent ``close()``. A dispatch that races
+        # past the top-of-method ``_closed`` check could otherwise call
+        # ``submit`` on an already shut-down executor and surface a raw
+        # ``RuntimeError('cannot schedule new futures after shutdown')``
+        # instead of our ``ToolRegistryError('registry_closed: ...')``.
+        self._state_lock = threading.Lock()
         # Per-registry provenance marker. Only IdentityProviders obtained via
         # self.identity_provider(credentials) bake this token into their
         # Principals; _resolve_principal rejects verified Principals whose
@@ -474,10 +481,19 @@ class ToolRegistry:
             if status == "ok":
                 msg = str(exc)
                 status = msg.split(":", 1)[0] if ":" in msg else "invalid_input"
-            # tool_timeout -> uncertain side effects.
+            # tool_timeout classification:
+            #   * worker cancelled before starting -> settled, confirmed
+            #     (no side effects possible; no reconcile needed).
+            #   * worker detached (cancel returned False) -> uncertain,
+            #     not confirmed (reconcile_pending required before retry).
             if status == "tool_timeout":
-                side_effect_state = "uncertain"
-                worker_termination_confirmed = False
+                cancelled_cleanly = getattr(exc, "_cancelled_cleanly", False)
+                if cancelled_cleanly:
+                    side_effect_state = "settled"
+                    worker_termination_confirmed = True
+                else:
+                    side_effect_state = "uncertain"
+                    worker_termination_confirmed = False
             raise
         except Exception as exc:  # noqa: BLE001 - re-raise after audit
             error_class = type(exc).__name__
@@ -546,30 +562,52 @@ class ToolRegistry:
 
         if timeout_s <= 0:
             return _run()
-        fut: Future[Any] = self._executor.submit(_run)
+        # Fix: submit under _state_lock so a concurrent close() cannot
+        # race between our top-of-method _closed check and
+        # ThreadPoolExecutor.submit — the executor would otherwise raise
+        # RuntimeError('cannot schedule new futures after shutdown').
+        with self._state_lock:
+            if self._closed:
+                raise ToolRegistryError(
+                    "registry_closed: dispatch during/after close()"
+                )
+            fut: Future[Any] = self._executor.submit(_run)
         try:
             return fut.result(timeout=timeout_s)
         except _FutureTimeout as exc:
-            # Record the still-running Future for later reconciliation.
-            # We attempt a soft cancel first — it only succeeds if the
-            # worker never started — but mostly we accept that the
-            # worker is detached.
-            cancelled = fut.cancel()
-            with self._audit_lock:
-                self._pending_timeouts[entry_id] = {
-                    "future": fut,
-                    "tool_id": tool.id,
-                    "principal": principal_name,
-                    "deadline_s": float(timeout_s),
-                    "submitted_at": time.time(),
-                    "cancel_attempted": True,
-                    "cancel_succeeded": cancelled,
-                }
-            raise ToolRegistryError(
+            # Attempt a soft cancel. Future.cancel() returns True only
+            # when the Future had NOT started yet (still queued) — in
+            # that case the worker is guaranteed never to run and the
+            # dispatch has NO uncertain side effects. We settle the audit
+            # entry immediately and skip _pending_timeouts.
+            cancelled_cleanly = fut.cancel()
+            timeout_err = ToolRegistryError(
                 f"tool_timeout: {tool.id!r} did not return within "
-                f"{timeout_s:g}s. Worker is detached; call "
-                "ToolRegistry.reconcile_pending() before retrying any write."
-            ) from exc
+                f"{timeout_s:g}s. "
+                + (
+                    "Worker was cancelled before starting; no side effects."
+                    if cancelled_cleanly
+                    else "Worker is detached; call "
+                    "ToolRegistry.reconcile_pending() before retrying any write."
+                )
+            )
+            # Private signalling attribute read by dispatch() to classify
+            # the audit entry correctly. ToolRegistryError stays the sole
+            # public error type; the attribute is implementation detail.
+            timeout_err._cancelled_cleanly = cancelled_cleanly  # type: ignore[attr-defined]
+            if not cancelled_cleanly:
+                # Worker is detached; track for reconcile_pending().
+                with self._audit_lock:
+                    self._pending_timeouts[entry_id] = {
+                        "future": fut,
+                        "tool_id": tool.id,
+                        "principal": principal_name,
+                        "deadline_s": float(timeout_s),
+                        "submitted_at": time.time(),
+                        "cancel_attempted": True,
+                        "cancel_succeeded": False,
+                    }
+            raise timeout_err from exc
 
     def audit_log(
         self,
@@ -728,10 +766,18 @@ class ToolRegistry:
         interpreter exits (or the process is terminated). Call
         ``reconcile_pending()`` before ``close()`` if you want to settle
         the audit log first.
+
+        Thread-safety: ``_closed`` flips under ``_state_lock`` so that any
+        dispatch that observes ``_closed is False`` under the lock has
+        ALREADY submitted its future before ``shutdown`` runs. Dispatches
+        starting after that point observe ``_closed is True`` under the
+        same lock and raise ``registry_closed`` instead of touching the
+        executor.
         """
-        if self._closed:
-            return
-        self._closed = True
+        with self._state_lock:
+            if self._closed:
+                return
+            self._closed = True
         self._executor.shutdown(wait=False)
 
     def __enter__(self) -> ToolRegistry:
