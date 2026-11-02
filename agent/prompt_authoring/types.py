@@ -51,7 +51,7 @@ class ToolPermission(str, Enum):
     """Closed vocabulary for the `tool_permissions` field.
 
     A PromptDefinition DECLARES which capabilities its stage requires. The
-    HOST GRANTS (or refuses) each at runtime via the Builder Discovery runner
+    HOST GRANTS (or refuses) each at runtime via the Audit Discovery runner
     (M6). The two are deliberately separate: a prompt cannot grant itself
     anything, and an un-granted request fails fast at the runner boundary.
 

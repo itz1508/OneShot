@@ -79,7 +79,7 @@ class ScriptedJudgeAdapter:
 @pytest.fixture
 def rubric():
     return EvaluationRubric(
-        name="builder_discovery_quality",
+        name="audit_discovery_quality",
         criteria=("io_contract_compliance", "evidence_fidelity"),
     )
 

@@ -882,17 +882,17 @@ class TestM1IntegrityClosure:
 class TestM2MarkdownLoader:
     """R3 M2: safe Markdown integration + digested permissions."""
 
-    def _path(self, name: str = "builder_discovery.md") -> str:
+    def _path(self, name: str = "audit_discovery.md") -> str:
         import os
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(here, "agent", "prompt_authoring", "prompts", name)
 
-    def test_load_builder_discovery(self):
+    def test_load_audit_discovery(self):
         from agent.prompt_authoring import load_markdown_prompt
         spec = load_markdown_prompt(self._path())
-        assert spec.prompt_id == "builder-discovery"
+        assert spec.prompt_id == "audit-discovery"
         assert spec.stage == Stage.DISCOVERY
-        assert spec.owner.kind == "builder_discovery"
+        assert spec.owner.kind == "audit_discovery"
         assert {ri.name for ri in spec.runtime_inputs} == {
             "USER_INTENT", "RESEARCH", "REPOSITORY_CONTEXT", "DISCOVERY_TEMPLATE",
         }

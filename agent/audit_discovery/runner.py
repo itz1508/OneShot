@@ -1,4 +1,4 @@
-"""Builder Discovery runner.
+"""Audit Discovery runner.
 
 The runner's job is narrow:
 
@@ -13,7 +13,7 @@ The runner's job is narrow:
 
 Design pins:
 
-* Builder Discovery NEVER mutates ``TaskManager`` directly \\u2014 it
+* Audit Discovery NEVER mutates ``TaskManager`` directly \\u2014 it
   delegates to ``agent.start()`` which owns the state writes.
 * The runner does not perform any file I/O. Deterministic Research /
   Plan / Build code paths stay untouched.
@@ -39,7 +39,7 @@ class DiscoveryHandoffError(ValueError):
 
 
 class DiscoveryHandoff(BaseModel):
-    """Frozen description of what Builder Discovery hands to Build.
+    """Frozen description of what Audit Discovery hands to Build.
 
     Mirrors the shape of a ``RunPlan`` but captures the discovery
     provenance (``prompt_id``, ``revision_digest``) so Build receipts
@@ -78,12 +78,12 @@ class DiscoveryHandoff(BaseModel):
         return files
 
 
-class BuilderDiscoveryRunner:
+class AuditDiscoveryRunner:
     """Opt-in bridge from a DiscoveryHandoff to an executable Run.
 
     Usage::
 
-        runner = BuilderDiscoveryRunner(controller=my_oneshot_controller)
+        runner = AuditDiscoveryRunner(controller=my_oneshot_controller)
         run = runner.start_from_handoff(handoff)
         results = run.execute(executor=my_writer)
     """
@@ -155,7 +155,7 @@ class BuilderDiscoveryRunner:
 
 
 __all__ = [
-    "BuilderDiscoveryRunner",
+    "AuditDiscoveryRunner",
     "DiscoveryHandoff",
     "DiscoveryHandoffError",
 ]
