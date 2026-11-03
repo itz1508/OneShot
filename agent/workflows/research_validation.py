@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -115,10 +116,8 @@ def inspect_persisted_research(
             observed[kind] = {"path": str(path), "sha256": sha256(raw), "bytes": len(raw)}
     record: ResearchRecord | None = None
     if "record" in observed:
-        try:
+        with suppress(ValueError, UnicodeError):
             record = ResearchRecord.model_validate_json(paths["record"].read_bytes())
-        except (ValueError, UnicodeError):
-            pass
 
     receipts: dict[str, CheckReceipt] = {}
 

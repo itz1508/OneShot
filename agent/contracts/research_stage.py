@@ -301,11 +301,10 @@ class HelpTaskRecord(ContractModel):
                     f"{self.help_task_id} requires result assessment."
                 )
 
-        if self.status is HelpTaskStatus.FAILED:
-            if not self.actual_error:
-                raise ValueError(
-                    f"{self.help_task_id} requires the actual error."
-                )
+        if self.status is HelpTaskStatus.FAILED and not self.actual_error:
+            raise ValueError(
+                f"{self.help_task_id} requires the actual error."
+            )
 
         return self
 
