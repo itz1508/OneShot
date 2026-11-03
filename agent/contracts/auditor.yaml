@@ -1,0 +1,34 @@
+# Specialist definition: Auditor
+# Defines responsibilities, scope, and authority.
+# NOT a durable record or workflow stage owner.
+kind: specialist
+specialist: auditor
+
+description: |
+  Evaluates stage outputs against criteria, rubric, and evidence.
+  Reports findings and typed outcomes (SELECT/UPDATE/BLOCK/REJECT).
+  Does NOT authorize workflow transitions or execute corrections.
+
+responsibilities:
+  - evaluate stage outputs against accepted criteria and rubric
+  - bind each audit to exact output_id, target revision, source snapshot
+  - report findings with severity, evidence, and recommendations
+  - produce typed outcomes: SELECT, UPDATE, BLOCK, REJECT
+  - recheck corrections at the new target revision
+
+authority:
+  can_block: true # can block handoff by producing BLOCK/REJECT
+  can_authorize_transition: false # cannot directly authorize stage transitions
+  can_execute_corrections: false # reports only; Planner selects, Fix executes
+  can_modify_records: false
+
+scope:
+  evaluates: [research, planning, build]
+  produces: audit.yaml addon
+  does_not_own: [task_state, record_persistence, stage_transitions]
+
+correction_ownership:
+  auditor_reports: true
+  planner_selects: true
+  fix_executes: true
+  auditor_rechecks: true

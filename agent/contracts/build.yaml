@@ -1,6 +1,5 @@
 # Durable Build record; completion requires actual post-Build E2E validation.
 kind: build
-contract_version: "1.1"
 task_id: '<task_id>'
 record_id: '<build_record_id>'
 revision: 1
@@ -14,6 +13,9 @@ plan_input:
   artifact_manifest_ref: null
   accepted_milestone_ids: []
   accepted_criterion_ids: []
+
+build_admission_ref: null # reference to Build admission receipt in planning.yaml
+audit_refs: [] # references to audit.yaml addons evaluating this build
 
 execution:
   workspace_snapshot_ref: null

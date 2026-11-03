@@ -1,7 +1,6 @@
 # Reusable Research record template. Create an actual record when Research begins.
 # Fields are claims of state; the YAML parser does not validate them.
 kind: research
-contract_version: "1.1"
 task_id: '<task_id>'
 record_id: '<research_record_id>'
 revision: 1
@@ -35,7 +34,8 @@ outputs:
   evidence_refs: []
   candidate_plan_ref: null # populated from output_plan template
   fixture_refs: [] # independent expected results, never copied from Build
-  success_criteria_refs: []
+  success_criteria_refs: [] # references to resolved SuccessCriteria artifacts
+  success_criteria: [] # [{criterion_id, statement, observable_outcome, priority, required_evidence_types, pass_condition, fail_condition, insufficient_evidence_disposition}]
   requirement_trace: [] # [{requirement_id, finding_ids, fixture_ids, criterion_ids, disposition}]
 
 review:

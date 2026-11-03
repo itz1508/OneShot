@@ -1,0 +1,46 @@
+# Specialist definition: Builder
+# Defines responsibilities, scope, and authority.
+# NOT a durable record or workflow stage owner.
+kind: specialist
+specialist: builder
+
+description: |
+  Executes the accepted Planning record through authorized tools.
+  Records actual operations, failures, changed files, and evidence in build.yaml.
+  Provides execution evidence but does NOT independently verify completion.
+  Independent E2E verification is required from the Auditor or host.
+
+responsibilities:
+  - execute build steps authorized by Build admission receipt
+  - validate tool requests against admitted Plan (tool identity, paths, preconditions)
+  - record command receipts, changed files, and artifacts
+  - run implementation validation checks against criteria
+  - run post-Build E2E through the real built entrypoint
+  - provide execution evidence for independent verification
+
+authority:
+  can_block: true # can block completion on failure
+  can_authorize_transition: false # completion requires independent verification
+  can_execute_corrections: false # executes build steps, not gap-fix corrections
+  can_modify_records: true # build.yaml is owned by Builder
+
+scope:
+  produces: build.yaml
+  consumes: [planning.yaml, audit.yaml]
+  does_not_own: [task_state, audit_evaluation, planning_decisions]
+
+tool_execution:
+  authorized_tools: [apply_patch, shell, update_plan]
+  validates_against: build_admission receipt in planning.yaml
+  records_receipts_in: build.yaml
+  does_not_own_tool_layer: true
+
+tool_contract:
+  # Tool execution validates these fields before executing any tool call
+  tool_identity: true # registered tool ID, version, input schema
+  authorization: true # host-verified Build admission receipt
+  preconditions: true # expected revision, allowed paths, before-file hashes
+  execution: true # call ID, arguments, environment, timeout, resource limits
+  result: true # success/failure, exit code, output refs, after-file hashes
+  recovery: true # action ID, partial effects, retry disposition
+  observability: true # timestamp, latency, structured error, receipt reference

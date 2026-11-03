@@ -1,0 +1,42 @@
+# Reusable Audit evaluation addon — bound to exact output identity.
+# NOT a workflow stage. Does NOT authorize transitions.
+# Attached to any stage output for independent evaluation.
+kind: audit
+task_id: '<task_id>'
+audit_id: '<audit_id>'
+audit_revision: 1
+status: not_checked # not_checked | in_progress | complete | blocked
+updated_at: null
+
+# Exact target identity — what this audit evaluates
+target:
+  output_id: '<output_id>' # session-linked output identity
+  source_output_id: '<source_output_id>' # upstream output this derives from
+  input_id: '<input_id>' # accepted Input revision
+  target_kind: '<research|planning|build>' # kind of record being audited
+  target_record_id: '<record_id>'
+  target_revision: null
+  source_snapshot_ref: null # workspace/git snapshot at audit time
+
+# Evaluation rubric
+rubric:
+  version: '1.0'
+  checks: [] # [{check_id, description, weight, required: true|false, evidence_type}]
+  score_range: {min: 0, max: 100}
+  selection_threshold: null # minimum score for SELECT; never overrides a blocker
+  required_checks: [] # check_ids that must pass for any positive outcome
+
+# Findings from the audit
+findings: [] # [{id, check_id, severity: blocker|major|minor, description, evidence_refs, recommendation, status}]
+
+# Typed outcomes — audit reports, does NOT authorize transitions
+outcome: null # SELECT | UPDATE | BLOCK | REJECT
+outcome_reason: null
+outcome_score: null # numerical score within rubric range
+
+# Receipts and provenance
+receipts: [] # [{ref, type, sha256, at}]
+auditor_ref: null # who/what performed the audit
+audit_receipt_ref: null
+
+progress_log: []

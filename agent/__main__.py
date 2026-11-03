@@ -74,6 +74,15 @@ try:
     from models import (
         validate_pipeline as _validate_pipeline_pyd,
     )
+    from models import (
+        validate_success_criteria_artifact as _validate_sc,
+    )
+    from models import (
+        PlanningRecord as _PlanningModel,
+    )
+    from models import (
+        AuditRecord as _AuditModel,
+    )
 
     _PYDANTIC_AVAILABLE = True
 except ImportError:
@@ -862,34 +871,76 @@ class OneShotController:
             "evidence_refs": ["AGENTS.md"],
             "candidate_plan_ref": "agent/contracts/research.yaml",
             "fixture_refs": ["bin/context_counter.py"],
-            "success_criteria_refs": ["agent/contracts/build.yaml"],
+            "success_criteria_refs": [],
+            "success_criteria": [
+                {
+                    "criterion_id": "c1",
+                    "statement": "Workflow transitions through all stages",
+                    "observable_outcome": "Research, Plan, Build all reach complete status",
+                    "priority": "must",
+                    "required_evidence_types": ["stage_receipt"],
+                    "pass_condition": "all stages complete",
+                    "fail_condition": "any stage blocked",
+                    "insufficient_evidence_disposition": "block",
+                },
+                {
+                    "criterion_id": "c2",
+                    "statement": "All records validate with zero errors",
+                    "observable_outcome": "validate_pipeline returns empty error list",
+                    "priority": "must",
+                    "required_evidence_types": ["validation_receipt"],
+                    "pass_condition": "0 errors",
+                    "fail_condition": "any errors",
+                    "insufficient_evidence_disposition": "block",
+                },
+                {
+                    "criterion_id": "c3",
+                    "statement": "E2E test produces expected counts",
+                    "observable_outcome": "context_counter outputs correct count",
+                    "priority": "must",
+                    "required_evidence_types": ["e2e_output"],
+                    "pass_condition": "counts match",
+                    "fail_condition": "counts mismatch",
+                    "insufficient_evidence_disposition": "block",
+                },
+                {
+                    "criterion_id": "c4",
+                    "statement": "No duplicate IDs across records",
+                    "observable_outcome": "All ID collections unique",
+                    "priority": "must",
+                    "required_evidence_types": ["dedup_check"],
+                    "pass_condition": "no dupes",
+                    "fail_condition": "dupes found",
+                    "insufficient_evidence_disposition": "block",
+                },
+            ],
             "requirement_trace": [
                 {
                     "requirement_id": "R1",
                     "finding_ids": ["F2"],
                     "fixture_ids": ["bin/context_counter.py"],
-                    "criterion_ids": ["agent/contracts/build.yaml"],
+                    "criterion_ids": ["c1"],
                     "disposition": "covered",
                 },
                 {
                     "requirement_id": "R2",
                     "finding_ids": ["F1"],
                     "fixture_ids": ["bin/context_counter.py"],
-                    "criterion_ids": ["agent/contracts/build.yaml"],
+                    "criterion_ids": ["c2"],
                     "disposition": "covered",
                 },
                 {
                     "requirement_id": "R3",
                     "finding_ids": ["F1"],
                     "fixture_ids": ["bin/context_counter.py"],
-                    "criterion_ids": ["agent/contracts/build.yaml"],
+                    "criterion_ids": ["c3"],
                     "disposition": "covered",
                 },
                 {
                     "requirement_id": "R4",
                     "finding_ids": ["F2"],
                     "fixture_ids": ["bin/context_counter.py"],
-                    "criterion_ids": ["agent/contracts/build.yaml"],
+                    "criterion_ids": ["c4"],
                     "disposition": "covered",
                 },
             ],
@@ -948,6 +999,14 @@ class OneShotController:
 
         errors = []
         errors.extend(_pydantic_errors(research, _ResearchModel, "research"))
+        # Validate inline SuccessCriteria definitions before handoff
+        _sc_inline = research.get("outputs", {}).get("success_criteria", [])
+        for _sc in _sc_inline:
+            if isinstance(_sc, dict):
+                if not _sc.get("criterion_id"):
+                    errors.append("research.criteria: missing criterion_id")
+                if not _sc.get("statement"):
+                    errors.append(f"research.criteria: missing statement for {_sc.get('criterion_id', '?')}")
         if errors:
             return {"record": research, "errors": errors, "evidence_index": ev_idx}
         research["status"] = "complete"
@@ -991,6 +1050,7 @@ class OneShotController:
             "record_revision": research["revision"],
             "artifact_manifest_ref": research["handoff"]["artifact_manifest_ref"],
             "accepted_requirement_ids": ["R1", "R2", "R3", "R4"],
+            "accepted_criterion_ids": ["c1", "c2", "c3", "c4"],
         }
         plan["purpose"] = {
             "user_outcome": research["purpose"]["user_outcome"],
@@ -1566,6 +1626,20 @@ class OneShotController:
 
         errors = []
         errors.extend(_pydantic_errors(plan, _PlanModel, "plan"))
+        # If PlanRecord fails (e.g. kind:planning), try PlanningRecord
+        if errors and _PYDANTIC_AVAILABLE:
+            try:
+                _PlanningModel.model_validate(plan)
+                errors = []  # PlanningRecord accepted
+            except Exception:
+                pass  # Keep original PlanRecord errors
+        # Criterion propagation: verify accepted_criterion_ids match Research
+        _plan_accepted_cids = set((plan.get("research_input") or {}).get("accepted_criterion_ids") or [])
+        _research_cids = {sc.get("criterion_id") for sc in (research.get("outputs") or {}).get("success_criteria") or [] if isinstance(sc, dict) and "criterion_id" in sc}
+        if _research_cids and _plan_accepted_cids:
+            _missing_cids = _research_cids - _plan_accepted_cids
+            if _missing_cids:
+                errors.append(f"plan: missing criterion IDs from Research: {sorted(_missing_cids)}")
         if not errors:
             plan["status"] = "complete"
             plan["handoff"]["ready"] = True
@@ -1640,6 +1714,8 @@ class OneShotController:
                 "revision": 1,
                 "status": "in_progress",
                 "updated_at": now,
+                "build_admission_ref": "plan-001",
+                "audit_refs": [],
             }
         )
         _plan_milestones = (plan.get("implementation") or {}).get("milestones") or []

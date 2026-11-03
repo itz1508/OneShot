@@ -1,0 +1,82 @@
+# Durable Planning record: TODOs, criterion propagation, Scanner Gap Analysis, Gap Fix, Fixture/Chaos.
+# Migrated from plan.yaml. Legacy kind: plan records are read-compatible.
+kind: planning
+task_id: '<task_id>'
+record_id: '<planning_record_id>'
+revision: 1
+status: draft # draft | in_progress | blocked | failed | complete
+updated_at: null
+
+research_input:
+  record_ref: '<research_record_ref>'
+  record_id: '<research_record_id>'
+  record_revision: null
+  artifact_manifest_ref: null
+  accepted_requirement_ids: []
+  accepted_criterion_ids: [] # criterion IDs propagated from Research SuccessCriteria
+
+todos: [] # [{todo_id, requirement_ids, action, target_paths, depends_on, criterion_ids, validation: {method, expected}}]
+
+purpose:
+  user_outcome: '<observable_user_outcome>'
+  acceptance_criteria: [] # [{id, requirement_id, expected_result, oracle_ref}]
+  assumptions: [] # [{id, statement, justification_ref}]
+  constraints: []
+
+implementation:
+  proposed_final_tree_ref: null
+  file_actions: [] # [{area, current_path, target_path, action, evidence_refs, outcome}]
+  milestones: [] # [{id, goal, files, steps, commands, expected_observations, status}]
+  dependencies: [] # [{milestone_id, depends_on_ids}]
+  command_environment_ref: null
+  rollback_or_recovery: null
+
+# Scanner is the existing System tool. The Planner interprets findings and fixes
+# ALL actionable gaps; never create another scanner or gap-fix service.
+gap_analysis:
+  status: not_checked # not_checked | findings_open | recheck_required | resolved | blocked
+  scanner_calls: [] # [{at, tool_ref, scope_ref, input_revision, findings_ref, receipt_ref, outcome}]
+  findings: [] # [{id, type, severity, evidence_refs, root_cause, owner, action, status, fix_receipt_ref, recheck_ref, disposition_reason, approval_ref}]
+  unresolved_critical_ids: []
+  last_recheck_ref: null
+
+fixture_validation_chaos:
+  status: not_checked # not_checked | failed | passed | blocked
+  fixture_refs: []
+  oracle_evidence_refs: []
+  chaos_applicability: not_checked # not_checked | required | not_applicable
+  chaos_case_refs: []
+  chaos_exclusion_reason: null
+  prebuild_validation_receipt_refs: []
+  coverage_gaps: [] # [{id, severity, blocking, reason, disposition}]
+
+build_admission:
+  receipt_ref: null
+  accepted_plan_revision: null
+  audit_disposition: null # SELECT | UPDATE | BLOCK | REJECT
+  fixture_chaos_status: null
+  unresolved_blockers: []
+  authorized_tools: [] # [{tool_id, version, allowed_paths}]
+  accepted_criterion_ids: []
+  admission_receipt_ref: null
+
+claim_decisions: [] # [{id, source_finding_id, applicability: USE|DO_NOT_USE|VALIDATE_FIRST, reason, evidence_refs, affected_step_ids, revision, recorded_at}]
+
+progress_log: []
+decision_log: []
+checkpoint:
+  last_completed_step: null
+  next_step: null
+  action_id: null
+  action_state: none
+  action_receipt_ref: null
+  retry_disposition: not_applicable
+  source_snapshot_ref: null
+  resume_notes: null
+
+handoff:
+  to: build
+  ready: false
+  plan_artifact_ref: null
+  artifact_manifest_ref: null
+  validation_receipt_ref: null

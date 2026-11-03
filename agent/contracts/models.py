@@ -25,6 +25,8 @@ validate_pipeline() for cross-record and evidence checks.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
@@ -37,6 +39,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 # ---------------------------------------------------------------------------
 
 EvidenceCheck = Callable[[str], bool]
+
+_SHA256_RE = r"^[0-9a-f]{64}$"
 
 
 class RecordStatus(str, Enum):
@@ -178,6 +182,158 @@ class Handoff(BaseModel):
     artifact_manifest_ref: str | None = None
     validation_receipt_ref: str | None = None
     # Additional handoff fields per stage (extra="allow" captures them)
+
+
+# ---------------------------------------------------------------------------
+# Success Criteria models — referenced by Research, Plan, and Build
+# ---------------------------------------------------------------------------
+
+
+class EvidenceType(str, Enum):
+    """Typed evidence categories for Research success criteria."""
+
+    SOURCE_DOCUMENT = "source_document"
+    SOURCE_EXCERPT = "source_excerpt"
+    OFFICIAL_REFERENCE = "official_reference"
+    CROSS_SOURCE_COMPARISON = "cross_source_comparison"
+    REPOSITORY_OBSERVATION = "repository_observation"
+    COMMAND_RESULT = "command_result"
+    TEST_RESULT = "test_result"
+    SCHEMA_RESULT = "schema_result"
+    FIXTURE_RESULT = "fixture_result"
+    HUMAN_OBSERVATION = "human_observation"
+    WORK_EVENT = "work_event"
+
+
+class InsufficientEvidenceDisposition(str, Enum):
+    """Three-way disposition when evidence is insufficient for a criterion."""
+
+    RECORD_UNKNOWN = "record_unknown"
+    VALIDATE_FIRST = "validate_first"
+    BLOCK_HANDOFF = "block_handoff"
+
+
+class CriterionPriority(str, Enum):
+    """Priority level for a Research success criterion."""
+
+    BLOCKING = "blocking"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class Criterion(BaseModel):
+    """Evidence-oriented acceptance criterion anchored to the accepted Input.
+
+    The observable_outcome is a verifiable Research finding or artifact,
+    not an implementation result.  This defines the structure referenced by
+    RequirementTrace.criterion_ids, Plan.accepted_criterion_ids, and
+    Build.criterion_id in validation checks.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    criterion_id: str
+    statement: str = ""
+    observable_outcome: str = ""
+    priority: CriterionPriority = CriterionPriority.MAJOR
+    source_outcome_ids: list[str] = Field(default_factory=list)
+    research_question_ids: list[str] = Field(default_factory=list)
+    required_evidence_types: list[EvidenceType] = Field(default_factory=list)
+    pass_condition: str = ""
+    fail_condition: str = ""
+    insufficient_evidence_disposition: InsufficientEvidenceDisposition = (
+        InsufficientEvidenceDisposition.RECORD_UNKNOWN
+    )
+    prohibited_outcomes: list[str] = Field(default_factory=list)
+
+    @field_validator("criterion_id", "statement", "observable_outcome")
+    @classmethod
+    def not_placeholder(cls, v: str) -> str:
+        if not _is_filled(v):
+            raise ValueError("must be non-empty and not a placeholder")
+        return v
+
+
+class CoverageEntry(BaseModel):
+    """Maps an accepted Input outcome to the Research criteria that cover it."""
+
+    model_config = ConfigDict(extra="allow")
+
+    outcome_id: str
+    criterion_ids: list[str] = Field(default_factory=list)
+
+
+class SuccessCriteria(BaseModel):
+    """Evidence-oriented acceptance criteria for Research, anchored to the
+    accepted Input rather than an implementation Plan.
+
+    Referenced by Research outputs (success_criteria_refs), Plan input
+    (accepted_criterion_ids), and Build validation (criterion_id in checks).
+
+    Artifact identity follows the CaseDefinition oracle pattern from
+    agent/contracts/oracles.py: content_digest, authority_ref,
+    source_revision, and criteria_revision enable the evidence resolver
+    to validate the criteria artifact's identity, content digest, and
+    schema — not just whether its path exists.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: str = "1.0"
+    success_criteria_id: str
+    operation_id: str
+    input_reference: str  # exact accepted Input revision
+    criteria: list[Criterion] = Field(default_factory=list)
+    coverage: list[CoverageEntry] = Field(default_factory=list)
+    created_at: str | None = None
+
+    # Artifact identity — follows PromptDefinition pattern from
+    # agent/prompt_authoring/types.py: content_digest is REQUIRED and
+    # automatically validated by a model_validator against the canonical
+    # digest of the stable fields. authority_ref and source_revision
+    # are optional at model level but required for handoff admission
+    # (see validate_success_criteria_artifact).
+    content_digest: str = Field(pattern=_SHA256_RE)
+    authority_ref: str | None = None
+    source_revision: str | None = None
+    criteria_revision: int = Field(default=1, ge=1)
+
+    @field_validator("success_criteria_id", "operation_id", "input_reference")
+    @classmethod
+    def not_placeholder(cls, v: str) -> str:
+        if not _is_filled(v):
+            raise ValueError("must be non-empty and not a placeholder")
+        return v
+
+    @model_validator(mode="after")
+    def digest_matches_canonical_payload(self) -> "SuccessCriteria":
+        """Automatically validate content_digest against canonical digest.
+
+        Follows PromptDefinition.digest_matches_canonical_payload: the
+        digest is checked at construction time, not via an explicit
+        method callers might forget to invoke. Raises ValueError if
+        content_digest does not match the canonical SHA-256 of the
+        stable fields.
+        """
+        expected = canonical_criteria_digest(self)
+        if self.content_digest != expected:
+            raise ValueError(
+                "content_digest mismatch: supplied "
+                f"{self.content_digest!r} != recomputed {expected!r}. "
+                "A SuccessCriteria must carry the sha-256 of its own "
+                "canonical stable fields. Use canonical_criteria_digest() "
+                "to compute the digest before construction."
+            )
+        return self
+
+    def compute_digest(self) -> str:
+        """Compute SHA-256 of canonical JSON encoding of criteria content.
+
+        Convenience wrapper around canonical_criteria_digest() for
+        instance callers. Returns the same value that the
+        model_validator checks at construction time.
+        """
+        return canonical_criteria_digest(self)
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +683,7 @@ class PlanResearchInput(BaseModel):
     record_revision: int | None = None
     artifact_manifest_ref: str | None = None
     accepted_requirement_ids: list[str] = Field(default_factory=list)
+    accepted_criterion_ids: list[str] = Field(default_factory=list)
 
 
 class PlanRecord(BaseModel):
@@ -576,8 +733,241 @@ class PlanRecord(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Build record models
+# Planning record models (migrated from Plan; legacy kind:plan compatible)
 # ---------------------------------------------------------------------------
+
+
+class TodoValidation(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    method: str
+    expected: str
+
+
+class Todo(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    todo_id: str
+    requirement_ids: list[str] = Field(default_factory=list)
+    action: str = ""
+    target_paths: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    criterion_ids: list[str] = Field(default_factory=list)
+    validation: TodoValidation | None = None
+
+
+class AuthorizedTool(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    tool_id: str
+    version: str = ""
+    allowed_paths: list[str] = Field(default_factory=list)
+
+
+class BuildAdmission(BaseModel):
+    """Verified receipt binding the accepted Planning revision, audit
+    disposition, fixture/chaos evidence, authorized tools, and criteria.
+
+    Required before Build stage entry. A SELECT choice alone is
+    insufficient — this receipt is the authorization artifact.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    receipt_ref: str | None = None
+    accepted_plan_revision: int = Field(ge=1)
+    audit_disposition: Literal["SELECT", "UPDATE", "BLOCK", "REJECT"] = "SELECT"
+    fixture_chaos_status: Literal["passed", "failed", "not_checked"] = "not_checked"
+    unresolved_blockers: list[str] = Field(default_factory=list)
+    authorized_tools: list[AuthorizedTool] = Field(default_factory=list)
+    accepted_criterion_ids: list[str] = Field(default_factory=list)
+    admission_receipt_ref: str | None = None
+
+    @model_validator(mode="after")
+    def check_admission(self) -> BuildAdmission:
+        if self.audit_disposition in ("BLOCK", "REJECT"):
+            raise ValueError(
+                f"Build admission cannot proceed with audit disposition {self.audit_disposition}"
+            )
+        if self.fixture_chaos_status != "passed":
+            raise ValueError(
+                "Build admission requires fixture/chaos status 'passed'"
+            )
+        if self.unresolved_blockers:
+            raise ValueError(
+                f"Build admission has unresolved blockers: {self.unresolved_blockers}"
+            )
+        if not _is_filled(self.admission_receipt_ref):
+            raise ValueError("Build admission requires admission_receipt_ref")
+        return self
+
+
+class PlanningRecord(BaseModel):
+    """Pydantic model for the Planning contract record.
+
+    Migrated from PlanRecord with additional fields for TODOs, criterion
+    propagation, and Build admission. Legacy kind:plan records validate
+    via PlanRecord; new records use kind:planning.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    kind: Literal["planning", "plan"] = "planning"
+    task_id: str
+    record_id: str
+    revision: int = Field(ge=1)
+    status: RecordStatus = RecordStatus.DRAFT
+    updated_at: str | None = None
+
+    research_input: PlanResearchInput
+    todos: list[Todo] = Field(default_factory=list)
+    purpose: PlanPurpose
+    implementation: PlanImplementation
+    gap_analysis: GapAnalysis
+    fixture_validation_chaos: FixtureValidationChaos
+    build_admission: BuildAdmission | None = None
+    claim_decisions: list[ClaimDecision] = Field(default_factory=list)
+
+    progress_log: list[Any] = Field(default_factory=list)
+    decision_log: list[Any] = Field(default_factory=list)
+    checkpoint: Checkpoint = Field(default_factory=Checkpoint)
+    handoff: dict[str, Any] = Field(default_factory=lambda: {"to": "build", "ready": False})
+
+    @field_validator("task_id", "record_id")
+    @classmethod
+    def not_placeholder(cls, v):
+        if not _is_filled(v):
+            raise ValueError("must not be empty or a placeholder")
+        return v
+
+    @model_validator(mode="after")
+    def check_completion(self) -> PlanningRecord:
+        ready = self.handoff.get("ready")
+        if self.status == RecordStatus.COMPLETE or ready is True:
+            if not (ready is True and self.status == RecordStatus.COMPLETE):
+                raise ValueError("complete status and handoff.ready must agree")
+            if not self.progress_log:
+                raise ValueError("no progress log")
+            if not self.decision_log:
+                raise ValueError("no decision log")
+            if not self.updated_at:
+                raise ValueError("missing UTC updated_at")
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Audit addon models (reusable evaluation, NOT a workflow stage)
+# ---------------------------------------------------------------------------
+
+
+class AuditOutcome(str, Enum):
+    SELECT = "SELECT"
+    UPDATE = "UPDATE"
+    BLOCK = "BLOCK"
+    REJECT = "REJECT"
+
+
+class AuditTarget(BaseModel):
+    """Exact target identity for an audit evaluation."""
+
+    model_config = ConfigDict(extra="allow")
+
+    output_id: str
+    source_output_id: str | None = None
+    input_id: str | None = None
+    target_kind: str = ""
+    target_record_id: str | None = None
+    target_revision: int | None = None
+    source_snapshot_ref: str | None = None
+
+
+class AuditRubricCheck(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    check_id: str
+    description: str = ""
+    weight: float = 1.0
+    required: bool = True
+    evidence_type: str | None = None
+
+
+class AuditRubric(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    version: str = "1.0"
+    checks: list[AuditRubricCheck] = Field(default_factory=list)
+    score_range: dict[str, int] = Field(default_factory=lambda: {"min": 0, "max": 100})
+    selection_threshold: float | None = None
+    required_checks: list[str] = Field(default_factory=list)
+
+
+class AuditFinding(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    check_id: str | None = None
+    severity: Literal["blocker", "major", "minor"] = "minor"
+    description: str = ""
+    evidence_refs: list[str] = Field(default_factory=list)
+    recommendation: str = ""
+    status: Literal["open", "resolved", "deferred"] = "open"
+
+
+class AuditRecord(BaseModel):
+    """Reusable audit evaluation addon bound to exact output identity.
+
+    Does NOT authorize workflow transitions. Reports findings and typed
+    outcomes. The Planner interprets the outcome and the controller gates
+    transitions through validate_pipeline + Task Management.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    kind: Literal["audit"] = "audit"
+    task_id: str
+    audit_id: str
+    audit_revision: int = Field(ge=1)
+    status: Literal["not_checked", "in_progress", "complete", "blocked"] = "not_checked"
+    updated_at: str | None = None
+
+    target: AuditTarget
+    rubric: AuditRubric = Field(default_factory=AuditRubric)
+    findings: list[AuditFinding] = Field(default_factory=list)
+
+    outcome: AuditOutcome | None = None
+    outcome_reason: str | None = None
+    outcome_score: float | None = None
+
+    receipts: list[Any] = Field(default_factory=list)
+    auditor_ref: str | None = None
+    audit_receipt_ref: str | None = None
+
+    progress_log: list[Any] = Field(default_factory=list)
+
+    @field_validator("task_id", "audit_id")
+    @classmethod
+    def not_placeholder(cls, v):
+        if not _is_filled(v):
+            raise ValueError("must not be empty or a placeholder")
+        return v
+
+    @model_validator(mode="after")
+    def check_blocker_override(self) -> AuditRecord:
+        if self.outcome == AuditOutcome.SELECT and self.outcome_score is not None:
+            if self.selection_threshold_active() and self.outcome_score < self.rubric.selection_threshold:
+                raise ValueError(
+                    "SELECT outcome score below selection threshold"
+                )
+        if self.findings:
+            blockers = [f for f in self.findings if f.severity == "blocker" and f.status == "open"]
+            if blockers and self.outcome == AuditOutcome.SELECT:
+                raise ValueError(
+                    "SELECT outcome not permitted with open blocker findings"
+                )
+        return self
+
+    def selection_threshold_active(self) -> bool:
+        return self.rubric.selection_threshold is not None
 
 
 class BuildPlanInput(BaseModel):
@@ -1224,7 +1614,11 @@ def validate_pipeline(
     try:
         plan_model = PlanRecord.model_validate(plan)
     except Exception as e:
-        errors.extend(_canonicalize_error(x) for x in _format_pydantic_errors(e, "plan"))
+        # Try PlanningRecord (kind: planning) if PlanRecord fails
+        try:
+            plan_model = PlanningRecord.model_validate(plan)
+        except Exception:
+            errors.extend(_canonicalize_error(x) for x in _format_pydantic_errors(e, "plan"))
 
     try:
         build_model = BuildRecord.model_validate(build)
@@ -1265,6 +1659,39 @@ def validate_pipeline(
         errors.append("downstream complete while Research not ready")
     if not p_complete and b_complete:
         errors.append("Build complete while Plan not ready")
+
+    # SuccessCriteria validation at Research handoff boundary
+    if research_model is not None and r_declared:
+        sc_refs = (research.get("outputs") or {}).get("success_criteria_refs") or []
+        sc_inline = (research.get("outputs") or {}).get("success_criteria") or []
+        if sc_inline and isinstance(sc_inline, list):
+            for sc_data in sc_inline:
+                if isinstance(sc_data, dict):
+                    # Full artifact (has success_criteria_id + content_digest)
+                    # gets full schema validation; lightweight definitions
+                    # (criterion_id + statement) get field-presence checks.
+                    if "success_criteria_id" in sc_data and "content_digest" in sc_data:
+                        sc_errors = validate_success_criteria_artifact(sc_data)
+                        errors.extend(f"research.criteria: {e}" for e in sc_errors)
+                    else:
+                        if not sc_data.get("criterion_id"):
+                            errors.append("research.criteria: missing criterion_id")
+                        if not sc_data.get("statement"):
+                            errors.append(f"research.criteria: missing statement for {sc_data.get('criterion_id', '?')}")
+        elif sc_refs and resolve is not None:
+            for ref in sc_refs:
+                if not resolve(ref):
+                    errors.append(f"research.criteria: unresolved evidence {ref!r}")
+
+    # Criterion ID propagation: Research -> Planning
+    if r_declared and p_declared:
+        research_sc = (research.get("outputs") or {}).get("success_criteria") or []
+        research_cids = {sc.get("criterion_id") for sc in research_sc if isinstance(sc, dict) and "criterion_id" in sc}
+        plan_accepted = (plan.get("research_input") or {}).get("accepted_criterion_ids") or []
+        if research_cids and plan_accepted:
+            missing = research_cids - set(plan_accepted)
+            if missing:
+                errors.append(f"plan: missing criterion IDs from Research: {sorted(missing)}")
 
     # Cross-record identity checks
     if r_complete and p_complete:
@@ -1778,3 +2205,186 @@ def evidence_index_resolver(index: dict[str, dict[str, str]], root: Path) -> Evi
         return hashlib.sha256(target.read_bytes()).hexdigest() == sha
 
     return resolve
+
+
+# ---------------------------------------------------------------------------
+# Typed SuccessCriteria artifact validation (Research → Planner handoff)
+# ---------------------------------------------------------------------------
+
+# Stable fields included in the canonical digest. Excludes content_digest
+# (circular), created_at, and schema_version (metadata, not content).
+_CRITERIA_STABLE_FIELDS = (
+    "success_criteria_id",
+    "operation_id",
+    "input_reference",
+    "criteria_revision",
+    "authority_ref",
+    "source_revision",
+    "criteria",
+    "coverage",
+)
+
+
+def _coerce_json_safe(value: Any) -> Any:
+    """Convert Pydantic models / enums to JSON-safe primitives."""
+    from enum import Enum as _Enum
+
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    if isinstance(value, _Enum):
+        return value.value
+    if isinstance(value, list):
+        return [_coerce_json_safe(v) for v in value]
+    if isinstance(value, tuple):
+        return [_coerce_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _coerce_json_safe(v) for k, v in value.items()}
+    return value
+
+
+def canonical_criteria_digest(
+    criteria: SuccessCriteria | dict[str, Any],
+) -> str:
+    """Compute the sha-256 digest the model_validator enforces.
+
+    Exposed as a module-level function so callers (and tests) can compute
+    the digest WITHOUT a SuccessCriteria instance already existing — this
+    is what authors use to seed content_digest on construction.
+
+    When given a raw dict, Criterion and CoverageEntry entries are coerced
+    through their Pydantic models to fill in default field values, ensuring
+    the digest matches what the SuccessCriteria model_validator would
+    compute from the fully-constructed model.
+
+    Follows canonical_content_digest from agent/prompt_authoring/types.py.
+    """
+    if isinstance(criteria, SuccessCriteria):
+        payload = criteria.model_dump(mode="json")
+    else:
+        payload = {k: _coerce_json_safe(v) for k, v in criteria.items()}
+        # Coerce Criterion dicts through Pydantic to fill in defaults
+        # so the dict-based digest matches the model-based digest.
+        if "criteria" in payload:
+            payload["criteria"] = [
+                Criterion.model_validate(c).model_dump(mode="json")
+                if isinstance(c, dict)
+                else _coerce_json_safe(c)
+                for c in payload["criteria"]
+            ]
+        if "coverage" in payload:
+            payload["coverage"] = [
+                CoverageEntry.model_validate(e).model_dump(mode="json")
+                if isinstance(e, dict)
+                else _coerce_json_safe(e)
+                for e in payload["coverage"]
+            ]
+    stable = {k: payload.get(k) for k in _CRITERIA_STABLE_FIELDS}
+    canonical = json.dumps(stable, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def validate_success_criteria_artifact(
+    content: str | bytes | dict[str, Any],
+    *,
+    trusted_digest: str | None = None,
+    trusted_authority_ref: str | None = None,
+) -> list[str]:
+    """Typed validation of a resolved SuccessCriteria artifact.
+
+    Called at the Research → Planner handoff boundary AFTER the generic
+    evidence_index_resolver confirms the reference resolves and the file
+    digest matches. This function performs:
+
+    1. Schema validation — parse content as SuccessCriteria Pydantic model
+       (automatic: field types, placeholder rejection, content_digest
+       model_validator all run at parse time)
+    2. Identity comparison — compare content_digest against a separately
+       trusted reference digest (not the artifact's own self-consistency)
+    3. Provenance — require valid authority_ref and source_revision
+    4. Criterion coverage — check unique criterion IDs, outcome coverage,
+       evidence type sufficiency, and blocking dispositions
+
+    Returns a list of error strings (empty = valid). Does NOT modify the
+    generic evidence_index_resolver, which remains a multi-type resolver.
+    """
+    errors: list[str] = []
+
+    # --- 1. Schema validation (Pydantic parse) ---
+    if isinstance(content, bytes):
+        content = content.decode("utf-8")
+    if isinstance(content, str):
+        import json as _json
+
+        try:
+            data = _json.loads(content)
+        except _json.JSONDecodeError as exc:
+            return [f"criteria artifact is not valid JSON: {exc}"]
+    else:
+        data = content
+
+    if not isinstance(data, dict):
+        return [f"criteria artifact must be a JSON object, got {type(data).__name__}"]
+
+    try:
+        sc = SuccessCriteria.model_validate(data)
+    except Exception as exc:
+        return [f"criteria artifact failed schema validation: {exc}"]
+
+    # --- 2. Identity comparison against separately trusted reference ---
+    if trusted_digest is not None:
+        if sc.content_digest != trusted_digest:
+            errors.append(
+                f"content_digest {sc.content_digest!r} does not match "
+                f"trusted reference {trusted_digest!r}"
+            )
+
+    # --- 3. Provenance ---
+    if not sc.authority_ref or not _is_filled(sc.authority_ref):
+        errors.append("authority_ref is required for handoff admission")
+    if not sc.source_revision or not _is_filled(sc.source_revision):
+        errors.append("source_revision is required for handoff admission")
+
+    # --- 4. Criterion coverage and evidence checks ---
+    criterion_ids: list[str] = []
+    for c in sc.criteria:
+        criterion_ids.append(c.criterion_id)
+        if not c.required_evidence_types:
+            errors.append(
+                f"criterion {c.criterion_id!r}: required_evidence_types is empty"
+            )
+        if not _is_filled(c.pass_condition):
+            errors.append(
+                f"criterion {c.criterion_id!r}: pass_condition is empty"
+            )
+        if not _is_filled(c.fail_condition):
+            errors.append(
+                f"criterion {c.criterion_id!r}: fail_condition is empty"
+            )
+
+    # Unique criterion IDs
+    seen: set[str] = set()
+    for cid in criterion_ids:
+        if cid in seen:
+            errors.append(f"duplicate criterion_id {cid!r}")
+        seen.add(cid)
+
+    # Coverage: every criterion must be covered by at least one outcome
+    covered_ids: set[str] = set()
+    for entry in sc.coverage:
+        for cid in entry.criterion_ids:
+            covered_ids.add(cid)
+    for cid in criterion_ids:
+        if cid not in covered_ids:
+            errors.append(
+                f"criterion {cid!r}: not covered by any CoverageEntry"
+            )
+
+    # Outcomes referenced in coverage must have at least one criterion
+    for entry in sc.coverage:
+        if not entry.criterion_ids:
+            errors.append(
+                f"coverage entry for outcome {entry.outcome_id!r}: "
+                "criterion_ids is empty"
+            )
+
+    return errors
