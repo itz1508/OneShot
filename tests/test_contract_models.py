@@ -300,11 +300,18 @@ class TestResearchModel(unittest.TestCase):
         with self.assertRaises(ValidationError):
             models.ResearchRecord.model_validate(r)
 
-    def test_extra_fields_allowed(self):
+    def test_unrecognized_research_fields_rejected(self):
         _, r = _mk_r()
         r["custom"] = "x"
-        m = models.ResearchRecord.model_validate(r)
-        self.assertEqual(m.task_id, "t1")
+        with self.assertRaises(ValidationError):
+            models.ResearchRecord.model_validate(r)
+
+    def test_known_continuation_lineage_fields_allowed(self):
+        _, r = _mk_r()
+        r["preceding_record_id"] = "r0"
+        r["preceding_revision"] = 1
+        record = models.ResearchRecord.model_validate(r)
+        self.assertEqual(record.preceding_revision, 1)
 
 
 class TestPlanModel(unittest.TestCase):

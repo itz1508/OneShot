@@ -497,6 +497,9 @@ class ResearchRecord(BaseModel):
     task_id: str
     record_id: str
     revision: int = Field(ge=1, strict=True)
+    # G09 same-task continuation sets these lineage identifiers.
+    preceding_record_id: str | None = None
+    preceding_revision: int | None = Field(default=None, ge=1, strict=True)
     status: RecordStatus = RecordStatus.DRAFT
     updated_at: str | None = None
 
