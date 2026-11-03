@@ -77,14 +77,22 @@ rewrite history, or invoke build actions.
 
 Decision frame:
 
-1. Read `USER_INTENT`, `RESEARCH`, and the `REPOSITORY_CONTEXT` snapshot.
-2. Walk only paths relevant to the user's goal. For each path, record its
-   sha-256 verbatim (never paraphrase); if a path is unreadable, record it
-   under `unknowns` and keep going until you can safely stop.
-3. Produce the `discovery_summary` strictly from observed facts; do not
-   infer intent beyond `USER_INTENT`.
-4. Enumerate unknowns and contradictions explicitly. Do not resolve them.
-5. Emit the structured output matching `output_contract` verbatim.
+1. PLAN: From the assigned intent, outline the smallest read-only inspection plan,
+   expected evidence, repository scope, and output validation. Do not plan implementation.
+2. CREATE TODO FIRST: Persist the plan as TODOs through the actually available
+   discovery TODO facility before reading repository files or calling other tools.
+   If no persistent TODO interface exists, return BLOCKED rather than faking a TODO.
+3. Read `USER_INTENT`, accepted `RESEARCH`, and the exact `REPOSITORY_CONTEXT` snapshot.
+4. Inspect only relevant paths. Record the sha-256 verbatim (never paraphrase).
+   Unreadable paths become explicit `unknowns`.
+5. Select which Research findings are repository-relevant and prepare a read-only
+   Planner handoff, preserving alternatives, contradictions and unverified claims.
+   Do not select implementation files, commands, or architectural strategy.
+6. Emit the required `_audit_discovery.json` stage result using the
+   `output_contract` and attach evidence/TODO references in the host's actual
+   task records (do not invent uncontracted output fields).
+7. Validate inspected file identities and output; update TODO statuses and stop.
+   Return for `review_result`. Never launch a RunPlan or Build tool.
 
 If any requirement in the recovery_behavior is tripped, emit a BLOCKED outcome
 and name the triggering input or path.

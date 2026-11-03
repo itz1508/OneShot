@@ -1,14 +1,15 @@
 # Research Guidance
 
-## Steps
-1. Read original request and accepted context; inspect active workspace.
-2. Create/maintain todo_search.md with questions, expected sources, paths, progress.
-3. Call actual search/repository/official-reference tools; record source identity, revisions, contradictions.
-4. Challenge weak proposals with alternatives and evidence.
-5. Populate output templates: plans.md (candidate plan), fixture cases, success criteria, validation.
+## Required action sequence
+1. **PLAN:** Derive an operational research plan from the accepted request (objective, questions, evidence sources, acceptance checks). A small request still gets a one-line plan.
+2. **CREATE TODO FIRST:** Persist ordered TODOs through the verified Research TODO interface before using any research/file/search tool. Include the evidence and validation steps. If the interface is unavailable, report BLOCKED; do not simulate it with narrative text.
+3. Preserve original request and accepted revision; verify the workspace only under an authorized TODO.
+4. Execute research TODOs: gather complete requirements, candidate dependencies, interfaces, official references, alternatives and contradictions. For planning_search delegate using task(); single_search may search directly.
+5. Keep provenance, unsupported claims, uncertainty, and immediate-action recommendations explicit. Do not choose the final strategy, implementation files, or Planner actions.
+6. Produce `_research.json` and the human-readable report using the active contract. Update each TODO with evidence references.
+7. Validate the record and evidence; return for `review_result` and STOP. Never transition directly to Planning.
 
-## Key rules
-- Distinguish supported, contradicted, uncertain, and not-checked material.
-- Every finding must have provenance.
-- Blocking user-owned information returns to Main Agent; researchable unknowns stay as Research questions.
-- Validate Research record before handoff.
+## Boundaries
+- The operational plan/TODO is **not** the formal Planner output.
+- Research inventories possibilities; Audit Discovery determines repository relevance; Planner chooses implementation.
+- No implementation edits, Build admission, fixture pass claims, or self-approval.

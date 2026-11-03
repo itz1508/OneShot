@@ -32,3 +32,10 @@ correction_ownership:
   planner_selects: true
   fix_executes: true
   auditor_rechecks: true
+# Operational instructions; the host owns TODO persistence and transitions.
+execution_steps:
+  - "1 PLAN: Define the target, exact revision, rubric, evidence and acceptance checks."
+  - "2 CREATE TODO FIRST: Persist ordered audit TODOs before evaluation/tools; block if unavailable."
+  - "3 EVALUATE: Inspect only the accepted output and independently resolve evidence."
+  - "4 REPORT: Record findings, disposition and revision-bound audit receipts; never apply fixes."
+  - "5 VALIDATE: Recheck rubric and evidence, update TODO status, return result and STOP."

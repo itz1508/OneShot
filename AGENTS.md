@@ -2,6 +2,19 @@
 
 Practical repository instructions for coding agents. This file governs **how to work**, not the OneShot product architecture or the Research, Plan, and Build output templates.
 
+## Mandatory role action protocol
+
+Apply this at the start of **every assigned role action**, small or large. These are operational steps, not a new Planning stage or an ExecPlan requirement.
+
+1. **PLAN:** Before any investigation or execution, derive the smallest actionable plan from the assigned request: objective, ordered work, expected observation, validation, and permission boundary. One-line plans are valid for trivial work. Do not decide another role's implementation strategy.
+2. **CREATE TODO:** Before any other tool use, create a TODO containing the plan's action(s) using the role's **actual available** TODO facility (`write_todos` when provided, otherwise the configured Task Management TODO mechanism). Assign an owner and status to each item. Do not claim a TODO tool exists without checking it; if no persistence interface is available, report BLOCKED rather than silently skipping this prerequisite.
+3. **EXECUTE:** Execute only the next authorized TODO, with prerequisite and revision checks. Subsequent tool calls belonging to the same TODO do not each need a new plan.
+4. **UPDATE:** As actions finish or fail, update TODO state and append source/command/receipt references; preserve failures and uncertain side effects.
+5. **VALIDATE:** Run the role's actual output and evidence checks. On a recoverable error, revise the affected plan/TODO, reconcile previous side effects, then retry only if safe.
+6. **RETURN & STOP:** Emit the role-owned stage output with TODO/evidence references, state what passed and what is blocked, and stop at the user review boundary. Only the host interprets `review_result` and authorizes the next stage.
+
+The operational plan and TODO are **not** `_planning.json`; only the Planner owns implementation architecture. The Orchestrator records observable progress without performing role actions. Audit, discovery, correction, execution, and independent verification remain separately owned.
+
 ## Authority and judgment
 
 - Follow the latest applicable user instruction. **Override means replace** conflicting older requirements within the stated scope; do not merge rejected designs back in.
@@ -152,7 +165,7 @@ Official command references: [https://docs.astral.sh/uv/](https://docs.astral.sh
 
 ## Executable specifications (ExecPlans)
 
-Use an ExecPlan for substantial multi-milestone implementation or when explicitly requested. For straightforward work, proceed without one.
+Use an ExecPlan for substantial multi-milestone implementation or when explicitly requested. For straightforward work, use the mandatory one-line operational plan and TODO above without creating a formal ExecPlan.
 
 A self-contained ExecPlan must be understandable by an agent with **no prior conversation**. Start with a short **Purpose** explaining what users gain and how to observe it. Include:
 

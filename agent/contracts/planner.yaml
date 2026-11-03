@@ -14,15 +14,15 @@ responsibilities:
   - produce planning.yaml from accepted Research output
   - propagate criterion IDs from Research SuccessCriteria
   - select corrections from audit findings
-  - run Scanner gap analysis and fix all actionable gaps
-  - validate fixtures and chaos cases before Build
+  - run Scanner gap analysis, select dispositions and authorize separately executed fixes
+  - define fixtures and chaos cases for independent validation before Build
   - issue Build admission receipt binding accepted revision, audit, tools, criteria
   - maintain claim_decisions (USE/DO_NOT_USE/VALIDATE_FIRST) per Research finding
 
 authority:
   can_block: true # can block Build admission
   can_authorize_transition: false # transition requires validation + Task Management
-  can_execute_corrections: true # can execute gap-fix corrections
+  can_execute_corrections: false # Planner selects; a separately authorized Fix executes
   can_modify_records: true # planning.yaml is owned by Planner
 
 scope:
@@ -31,6 +31,13 @@ scope:
   does_not_own: [task_state, audit_evaluation, build_execution]
 
 tool_execution:
-  authorized_tools: [apply_patch, shell, update_plan]
+  authorized_tools: [shell, update_plan] # commands remain host-permission-gated
   binds_receipts_to: planning.yaml
   does_not_own_tool_layer: true
+execution_steps:
+  - "1 PLAN: Outline evidence review, architecture selection, Scanner and validation gates."
+  - "2 CREATE TODO FIRST: Persist ordered Planner TODOs before tools; block if unavailable."
+  - "3 DESIGN: Read accepted Research and Discovery revisions; select file actions and strategy."
+  - "4 SCAN: Record Scanner findings; authorize fixes and independently recheck revisions."
+  - "5 PREPARE: Define fixture expectations and bind independent readiness evidence."
+  - "6 VALIDATE: Check admission and criteria, write _planning.json, update TODO, and STOP."

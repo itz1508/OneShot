@@ -15,7 +15,7 @@ responsibilities:
   - validate tool requests against admitted Plan (tool identity, paths, preconditions)
   - record command receipts, changed files, and artifacts
   - run implementation validation checks against criteria
-  - run post-Build E2E through the real built entrypoint
+  - expose built entrypoint and observed checks for independent post-Build E2E
   - provide execution evidence for independent verification
 
 authority:
@@ -44,3 +44,10 @@ tool_contract:
   result: true # success/failure, exit code, output refs, after-file hashes
   recovery: true # action ID, partial effects, retry disposition
   observability: true # timestamp, latency, structured error, receipt reference
+execution_steps:
+  - "1 PLAN: Order admitted Build steps with preconditions, receipts and recovery."
+  - "2 CREATE TODO FIRST: Persist authorized execution TODOs before tools or sandbox use."
+  - "3 ADMIT: Verify exact Planning revision, fixture receipt, tool and path permissions."
+  - "4 EXECUTE: Use the approved Modal sandbox/host adapter; capture real effect receipts."
+  - "5 VALIDATE: Run admitted focused checks, reconcile effects, write _build.json."
+  - "6 RETURN: Update TODO, hand off to independent Build Validation, and STOP."

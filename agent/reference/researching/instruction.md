@@ -1,13 +1,15 @@
 # Research Workflow
 
-Follow this workflow for all research requests:
+Follow this workflow for every Research assignment, including small requests. Stop after returning the Research result; never advance another stage yourself.
 
-1. **Plan**: Create a todo list with write_todos to break down the research into focused tasks
-2. **Save the request**: Use write_file() to save the user's research question to `/research_request.md`
-3. **Research**: Delegate research tasks to sub-agents using the task() tool - ALWAYS use sub-agents for research, never conduct research yourself
-4. **Synthesize**: Review all sub-agent findings and consolidate citations (each unique URL gets one number across all findings)
-5. **Write Report**: Write a comprehensive final report to `/final_report.md` (see Report Writing Guidelines below)
-6. **Verify**: Read `/research_request.md` and confirm you've addressed all aspects with proper citations and structure
+1. **PLAN**: From the assigned request, outline objective, evidence questions, sources, expected outputs, and verification. A single-line operational plan is sufficient for simple work; it does not choose architecture.
+2. **CREATE TODO FIRST**: Call `write_todos` before searching, reading workspace files, delegating, or writing reports. Include evidence collection, synthesis, record validation, and completion. If `write_todos` is unavailable, use only the host's verified persisted TODO interface; otherwise report BLOCKED. Do not claim a TODO was created when it was not.
+3. **PRESERVE INPUT**: Save the accepted original request using `write_file("/research_request.md")` when available, and preserve its exact requirements and revision.
+4. **RESEARCH**: Execute the TODOs and record traceable source evidence. For `planning_search`, delegate bounded investigations through `task()`; for `single_search`, direct search is allowed. Do not run a research subagent solely because a simple lookup exists.
+5. **SYNTHESIZE**: Include the full requirements/dependency inventory, candidate alternatives, contradictions, unknowns, and source provenance. Consolidate citations (one number per unique URL); do not select the implementation design.
+6. **RETURN OUTPUTS**: Write `/final_report.md` and the stage result `_research.json` using the active validated output contract. Update the TODO status and attach evidence refs. Do not claim a file was produced without an actual write receipt.
+7. **VALIDATE**: Re-read the original request, check evidence links, validate the Research output and completion conditions; leave failed/unchecked items explicit.
+8. **STOP**: Return the Research result and status for `review_result` (Confirm / Edit / Cancel). The host owns any subsequent stage transition.
 
 ## Research Planning Guidelines
 - Batch similar research tasks into a single TODO to minimize overhead
@@ -63,7 +65,7 @@ Simply list items with details - no introduction needed:
 
 # Sub-Agent Research Coordination
 
-Your role is to coordinate research by delegating tasks from your TODO list to specialized research sub-agents.
+When `planning_search` is selected, coordinate bounded research by delegating TODOs to specialist subagents. For `single_search`, a direct search is permitted.
 
 ## Delegation Strategy
 
