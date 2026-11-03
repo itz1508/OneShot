@@ -38,7 +38,9 @@ class ResearchFinalizationResult:
 
 
 def _stable_json(obj: Any) -> bytes:
-    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return json.dumps(
+        obj, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
 
 
 def _stage_root(workspace: Path, record: ResearchRecord) -> Path:
@@ -120,7 +122,11 @@ def finalize_research(
             raise ResearchValidationError("requirements and TODOs are mandatory")
         if record.request_digest != sha256(original_request.encode("utf-8")):
             raise ResearchValidationError("request digest does not match trusted original")
-        expected = {"request": "research_request.md", "report": "final_report.md", "record": "_research.json"}
+        expected = {
+            "request": "research_request.md",
+            "report": "final_report.md",
+            "record": "_research.json",
+        }
         declared = {a.artifact_type: a.relative_path for a in record.artifacts}
         if declared != expected or any(a.revision != record.revision for a in record.artifacts):
             raise ResearchValidationError("artifact paths/revisions do not match contract")
@@ -132,7 +138,9 @@ def finalize_research(
         stage_root.mkdir(parents=True, exist_ok=True)
         _write_or_reconcile(stage_root / expected["request"], original_request.encode("utf-8"))
         _write_or_reconcile(stage_root / expected["report"], report_text.encode("utf-8"))
-        _write_or_reconcile(stage_root / expected["record"], record.model_dump_json(indent=2).encode("utf-8"))
+        _write_or_reconcile(
+            stage_root / expected["record"], record.model_dump_json(indent=2).encode("utf-8")
+        )
 
         restored, checks, artifacts = inspect_persisted_research(
             revision_root=stage_root,
@@ -168,15 +176,14 @@ def finalize_research(
         )
         if final_artifacts != artifacts or not checks_passed(final_checks, contract):
             raise ResearchValidationError("Research artifacts changed after persistence")
-        return ResearchFinalizationResult("passed", record.task_id, record.run_id, record.revision, tuple(checks), artifacts, receipt_ref)
-    except (Exception) as exc:
+        return ResearchFinalizationResult(
+            "passed", record.task_id, record.run_id, record.revision,
+            tuple(checks), artifacts, receipt_ref,
+        )
+    except Exception as exc:
         # The existing TaskManager retains checkpoint and uncertain side-effects.
         # Never convert a failure into a successful handoff.
-        if not isinstance(exc, (ResearchValidationError, OSError, ValueError, KeyError)):
-            # Surface unexpected host errors without fabricating completion.
-            failure = f"{type(exc).__name__}: {exc}"
-        else:
-            failure = f"{type(exc).__name__}: {exc}"
+        failure = f"{type(exc).__name__}: {exc}"
         try:
             _store_metadata(task_manager, record.task_id, "research_failure", {
                 "revision": record.revision,
@@ -187,4 +194,7 @@ def finalize_research(
         except Exception:
             # A store failure must remain visible in the returned failure.
             failure += "; TaskManager persistence failed"
-        return ResearchFinalizationResult("failed", record.task_id, record.run_id, record.revision, tuple(checks), artifacts, None, failure)
+        return ResearchFinalizationResult(
+            "failed", record.task_id, record.run_id, record.revision,
+            tuple(checks), artifacts, None, failure,
+        )

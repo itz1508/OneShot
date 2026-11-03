@@ -4,7 +4,6 @@ No mocked completion receipts: each invocation writes real temporary outputs.
 """
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -105,8 +104,11 @@ def _record(original_request: str, **changes):
     return ResearchRecord.model_validate(fields)
 
 
-def _run(tmp_path: Path, contract_path: Path, original: str, record=None, manager=None,
-         report="Research report with supported evidence [1].\n\n### Sources\n[1] Official reference: https://example.com/docs\n", **kwargs):
+def _run(
+    tmp_path: Path, contract_path: Path, original: str, record=None, manager=None,
+    report=("Research report with supported evidence [1].\n\n### Sources\n"
+            "[1] Official reference: https://example.com/docs\n"), **kwargs,
+):
     return finalize_research(
         record=record or _record(original),
         original_request=original,
@@ -151,7 +153,10 @@ def test_missing_required_comparison_blocks_handoff(tmp_path, contract_path):
     result = _run(tmp_path, contract_path, "Compare A vs B", requested_comparisons=True)
     assert result.status == "failed"
     assert not result.handoff_created
-    assert any(c.check_id == "check_requested_comparisons" and c.status == "failed" for c in result.checks)
+    assert any(
+        c.check_id == "check_requested_comparisons" and c.status == "failed"
+        for c in result.checks
+    )
 
 
 def test_unresolved_requirement_is_covered_without_claiming_verified(tmp_path, contract_path):
@@ -192,7 +197,9 @@ def test_failed_todo_cannot_finalize(tmp_path, contract_path):
     record = _record(original, todos=[{
         "todo_id": "TODO-001", "action": "Search", "expected_result": "Find source",
         "status": "failed", "actual_error": "tool timeout", "recovery_reference": "checkpoint-1",
-        "action_check": {"expected_result": "Find source", "actual_result": "Timeout", "status": "failed"},
+        "action_check": {
+            "expected_result": "Find source", "actual_result": "Timeout", "status": "failed"
+        },
     }])
     result = _run(tmp_path, contract_path, original, record=record)
     assert result.status == "failed"
@@ -243,4 +250,5 @@ def test_actual_task_manager_persists_receipt(tmp_path, contract_path):
     result = _run(tmp_path, contract_path, original, manager=manager)
     assert result.status == "passed", result.failure
     reloaded = TaskManager(storage_path=str(tmp_path / "tm.json"))
-    assert reloaded.get_task("task-1").metadata["research_handoff"]["receipt_ref"] == result.handoff_ref
+    receipt = reloaded.get_task("task-1").metadata["research_handoff"]["receipt_ref"]
+    assert receipt == result.handoff_ref
