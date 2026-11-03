@@ -17,6 +17,7 @@ Covers:
 - AuditRecord target identity binding
 - Audit rubric score threshold enforcement
 """
+
 import sys
 from pathlib import Path
 
@@ -24,20 +25,12 @@ _CONTRACTS = Path(__file__).resolve().parent.parent / "agent" / "contracts"
 if str(_CONTRACTS) not in sys.path:
     sys.path.insert(0, str(_CONTRACTS))
 
-import pytest
-from models import (
-    AuditFinding,
+import pytest  # noqa: E402
+from models import (  # noqa: E402
     AuditOutcome,
     AuditRecord,
-    AuditRubric,
-    AuditRubricCheck,
-    AuditTarget,
-    AuthorizedTool,
-    BuildAdmission,
     PlanningRecord,
-    PlanRecord,
     validate_pipeline,
-    validate_success_criteria_artifact,
 )
 
 
@@ -72,7 +65,12 @@ def _base_planning_data():
         "purpose": {
             "user_outcome": "count characters",
             "acceptance_criteria": [
-                {"id": "c1", "requirement_id": "R1", "expected_result": "counts", "oracle_ref": "AGENTS.md"}
+                {
+                    "id": "c1",
+                    "requirement_id": "R1",
+                    "expected_result": "counts",
+                    "oracle_ref": "AGENTS.md",
+                }
             ],
             "assumptions": [],
             "constraints": [],
@@ -81,7 +79,15 @@ def _base_planning_data():
             "proposed_final_tree_ref": None,
             "file_actions": [],
             "milestones": [
-                {"id": "m1", "goal": "build", "files": ["bin/context_counter.py"], "steps": ["implement"], "commands": [], "expected_observations": ["3"], "status": "not_started"}
+                {
+                    "id": "m1",
+                    "goal": "build",
+                    "files": ["bin/context_counter.py"],
+                    "steps": ["implement"],
+                    "commands": [],
+                    "expected_observations": ["3"],
+                    "status": "not_started",
+                }
             ],
             "dependencies": [],
             "command_environment_ref": None,
@@ -89,7 +95,18 @@ def _base_planning_data():
         },
         "gap_analysis": {
             "status": "resolved",
-            "scanner_calls": [{"at": "2026-01-01T00:00:00Z", "tool_ref": "scanner", "scope_ref": "AGENTS.md", "input_revision": 1, "findings_ref": None, "receipt_ref": "AGENTS.md", "outcome": "passed", "scanner_identity": "a" * 64}],
+            "scanner_calls": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "tool_ref": "scanner",
+                    "scope_ref": "AGENTS.md",
+                    "input_revision": 1,
+                    "findings_ref": None,
+                    "receipt_ref": "AGENTS.md",
+                    "outcome": "passed",
+                    "scanner_identity": "a" * 64,
+                }
+            ],
             "findings": [],
             "unresolved_critical_ids": [],
             "last_recheck_ref": None,
@@ -143,7 +160,13 @@ def _base_audit_data():
         "rubric": {
             "version": "1.0",
             "checks": [
-                {"check_id": "ck1", "description": "coverage", "weight": 1.0, "required": True, "evidence_type": "validation"}
+                {
+                    "check_id": "ck1",
+                    "description": "coverage",
+                    "weight": 1.0,
+                    "required": True,
+                    "evidence_type": "validation",
+                }
             ],
             "score_range": {"min": 0, "max": 100},
             "selection_threshold": 80,
@@ -153,7 +176,14 @@ def _base_audit_data():
         "outcome": "SELECT",
         "outcome_reason": "all checks passed",
         "outcome_score": 95,
-        "receipts": [{"ref": "AGENTS.md", "type": "validation", "sha256": "a" * 64, "at": "2026-01-01T00:00:00Z"}],
+        "receipts": [
+            {
+                "ref": "AGENTS.md",
+                "type": "validation",
+                "sha256": "a" * 64,
+                "at": "2026-01-01T00:00:00Z",
+            }
+        ],
         "auditor_ref": "auditor-agent",
         "audit_receipt_ref": "AGENTS.md",
         "progress_log": [],
@@ -161,6 +191,7 @@ def _base_audit_data():
 
 
 # --- PlanningRecord tests ---
+
 
 class TestPlanningRecord:
     def test_valid_planning_record(self):
@@ -243,6 +274,7 @@ class TestPlanningRecord:
 
 # --- AuditRecord tests ---
 
+
 class TestAuditRecord:
     def test_valid_select_audit(self):
         rec = AuditRecord.model_validate(_base_audit_data())
@@ -273,7 +305,15 @@ class TestAuditRecord:
     def test_select_blocked_by_open_blocker_finding(self):
         data = _base_audit_data()
         data["findings"] = [
-            {"id": "f1", "check_id": "ck1", "severity": "blocker", "description": "missing", "evidence_refs": [], "recommendation": "fix", "status": "open"}
+            {
+                "id": "f1",
+                "check_id": "ck1",
+                "severity": "blocker",
+                "description": "missing",
+                "evidence_refs": [],
+                "recommendation": "fix",
+                "status": "open",
+            }
         ]
         data["outcome"] = "SELECT"
         with pytest.raises(Exception, match="open blocker"):
@@ -290,7 +330,15 @@ class TestAuditRecord:
     def test_select_with_resolved_blocker_ok(self):
         data = _base_audit_data()
         data["findings"] = [
-            {"id": "f1", "check_id": "ck1", "severity": "blocker", "description": "was missing", "evidence_refs": [], "recommendation": "fixed", "status": "resolved"}
+            {
+                "id": "f1",
+                "check_id": "ck1",
+                "severity": "blocker",
+                "description": "was missing",
+                "evidence_refs": [],
+                "recommendation": "fixed",
+                "status": "resolved",
+            }
         ]
         data["outcome"] = "SELECT"
         data["outcome_score"] = 90
@@ -312,6 +360,7 @@ class TestAuditRecord:
 
 # --- Criterion propagation in validate_pipeline ---
 
+
 class TestCriterionPropagation:
     def _base_pipeline(self):
         """Minimal R/P/B dicts for validate_pipeline."""
@@ -322,7 +371,12 @@ class TestCriterionPropagation:
             "revision": 1,
             "status": "complete",
             "updated_at": "2026-01-01T00:00:00Z",
-            "input": {"task_id": "task-001", "objective": "count", "constraints": [], "assumptions": []},
+            "input": {
+                "task_id": "task-001",
+                "objective": "count",
+                "constraints": [],
+                "assumptions": [],
+            },
             "search": {"sources": [], "findings": []},
             "purpose": {
                 "user_outcome": "count chars",
@@ -334,15 +388,69 @@ class TestCriterionPropagation:
                 "fixture_refs": [],
                 "success_criteria_refs": [],
                 "success_criteria": [
-                    {"criterion_id": "c1", "statement": "counts match", "observable_outcome": "correct", "priority": "must", "required_evidence_types": ["e2e"], "pass_condition": "match", "fail_condition": "mismatch", "insufficient_evidence_disposition": "block"}
+                    {
+                        "criterion_id": "c1",
+                        "statement": "counts match",
+                        "observable_outcome": "correct",
+                        "priority": "must",
+                        "required_evidence_types": ["e2e"],
+                        "pass_condition": "match",
+                        "fail_condition": "mismatch",
+                        "insufficient_evidence_disposition": "block",
+                    }
                 ],
-                "requirement_trace": [{"requirement_id": "R1", "finding_ids": [], "fixture_ids": [], "criterion_ids": ["c1"], "disposition": "covered"}],
+                "requirement_trace": [
+                    {
+                        "requirement_id": "R1",
+                        "finding_ids": [],
+                        "fixture_ids": [],
+                        "criterion_ids": ["c1"],
+                        "disposition": "covered",
+                    }
+                ],
             },
-            "review": {"supported_claims": [], "unsupported_claims": [], "unresolved_issues": [], "blockers": [], "disposition": "ready_for_plan", "review_receipt_ref": "AGENTS.md"},
-            "progress_log": [{"at": "2026-01-01T00:00:00Z", "step": "s", "result": "ok", "evidence_ref": "AGENTS.md", "next_step": "plan"}],
-            "decision_log": [{"at": "2026-01-01T00:00:00Z", "decision": "Proceed", "why": "ok", "evidence_refs": ["AGENTS.md"], "impact": "plan"}],
-            "checkpoint": {"last_completed_step": "s", "next_step": "plan", "action_id": "r1", "action_state": "completed", "action_receipt_ref": "AGENTS.md", "retry_disposition": "not_applicable", "source_snapshot_ref": "AGENTS.md", "resume_notes": None},
-            "handoff": {"to": "plan", "ready": True, "artifact_manifest_ref": "agent/contracts/research.yaml", "validation_receipt_ref": "AGENTS.md"},
+            "review": {
+                "supported_claims": [],
+                "unsupported_claims": [],
+                "unresolved_issues": [],
+                "blockers": [],
+                "disposition": "ready_for_plan",
+                "review_receipt_ref": "AGENTS.md",
+            },
+            "progress_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "step": "s",
+                    "result": "ok",
+                    "evidence_ref": "AGENTS.md",
+                    "next_step": "plan",
+                }
+            ],
+            "decision_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "decision": "Proceed",
+                    "why": "ok",
+                    "evidence_refs": ["AGENTS.md"],
+                    "impact": "plan",
+                }
+            ],
+            "checkpoint": {
+                "last_completed_step": "s",
+                "next_step": "plan",
+                "action_id": "r1",
+                "action_state": "completed",
+                "action_receipt_ref": "AGENTS.md",
+                "retry_disposition": "not_applicable",
+                "source_snapshot_ref": "AGENTS.md",
+                "resume_notes": None,
+            },
+            "handoff": {
+                "to": "plan",
+                "ready": True,
+                "artifact_manifest_ref": "agent/contracts/research.yaml",
+                "validation_receipt_ref": "AGENTS.md",
+            },
         }
         plan = {
             "kind": "plan",
@@ -359,15 +467,101 @@ class TestCriterionPropagation:
                 "accepted_requirement_ids": ["R1"],
                 "accepted_criterion_ids": ["c1"],
             },
-            "purpose": {"user_outcome": "count chars", "acceptance_criteria": [{"id": "c1", "requirement_id": "R1", "expected_result": "counts", "oracle_ref": "AGENTS.md"}], "assumptions": [], "constraints": []},
-            "implementation": {"proposed_final_tree_ref": None, "file_actions": [], "milestones": [{"id": "m1", "goal": "build", "files": ["bin/context_counter.py"], "steps": ["implement"], "commands": [], "expected_observations": ["3"], "status": "complete"}], "dependencies": [], "command_environment_ref": None, "rollback_or_recovery": "revert to last commit"},
-            "gap_analysis": {"status": "resolved", "scanner_calls": [{"at": "2026-01-01T00:00:00Z", "tool_ref": "scanner", "scope_ref": "AGENTS.md", "input_revision": 1, "findings_ref": None, "receipt_ref": "AGENTS.md", "outcome": "passed", "scanner_identity": "a" * 64}], "findings": [], "unresolved_critical_ids": [], "last_recheck_ref": None},
-            "fixture_validation_chaos": {"status": "passed", "fixture_refs": ["bin/context_counter.py"], "oracle_evidence_refs": ["AGENTS.md"], "chaos_applicability": "not_applicable", "chaos_case_refs": [], "chaos_exclusion_reason": "deterministic", "prebuild_validation_receipt_refs": ["AGENTS.md"], "coverage_gaps": []},
+            "purpose": {
+                "user_outcome": "count chars",
+                "acceptance_criteria": [
+                    {
+                        "id": "c1",
+                        "requirement_id": "R1",
+                        "expected_result": "counts",
+                        "oracle_ref": "AGENTS.md",
+                    }
+                ],
+                "assumptions": [],
+                "constraints": [],
+            },
+            "implementation": {
+                "proposed_final_tree_ref": None,
+                "file_actions": [],
+                "milestones": [
+                    {
+                        "id": "m1",
+                        "goal": "build",
+                        "files": ["bin/context_counter.py"],
+                        "steps": ["implement"],
+                        "commands": [],
+                        "expected_observations": ["3"],
+                        "status": "complete",
+                    }
+                ],
+                "dependencies": [],
+                "command_environment_ref": None,
+                "rollback_or_recovery": "revert to last commit",
+            },
+            "gap_analysis": {
+                "status": "resolved",
+                "scanner_calls": [
+                    {
+                        "at": "2026-01-01T00:00:00Z",
+                        "tool_ref": "scanner",
+                        "scope_ref": "AGENTS.md",
+                        "input_revision": 1,
+                        "findings_ref": None,
+                        "receipt_ref": "AGENTS.md",
+                        "outcome": "passed",
+                        "scanner_identity": "a" * 64,
+                    }
+                ],
+                "findings": [],
+                "unresolved_critical_ids": [],
+                "last_recheck_ref": None,
+            },
+            "fixture_validation_chaos": {
+                "status": "passed",
+                "fixture_refs": ["bin/context_counter.py"],
+                "oracle_evidence_refs": ["AGENTS.md"],
+                "chaos_applicability": "not_applicable",
+                "chaos_case_refs": [],
+                "chaos_exclusion_reason": "deterministic",
+                "prebuild_validation_receipt_refs": ["AGENTS.md"],
+                "coverage_gaps": [],
+            },
             "claim_decisions": [],
-            "progress_log": [{"at": "2026-01-01T00:00:00Z", "step": "p", "result": "ok", "evidence_ref": "AGENTS.md", "next_step": "build"}],
-            "decision_log": [{"at": "2026-01-01T00:00:00Z", "decision": "proceed", "why": "ok", "evidence_refs": ["AGENTS.md"], "impact": "build"}],
-            "checkpoint": {"last_completed_step": "p", "next_step": "build", "action_id": "p1", "action_state": "completed", "action_receipt_ref": "AGENTS.md", "retry_disposition": "not_applicable", "source_snapshot_ref": "AGENTS.md", "resume_notes": None},
-            "handoff": {"to": "build", "ready": True, "plan_artifact_ref": "AGENTS.md", "artifact_manifest_ref": "agent/contracts/plan.yaml", "validation_receipt_ref": "AGENTS.md"},
+            "progress_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "step": "p",
+                    "result": "ok",
+                    "evidence_ref": "AGENTS.md",
+                    "next_step": "build",
+                }
+            ],
+            "decision_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "decision": "proceed",
+                    "why": "ok",
+                    "evidence_refs": ["AGENTS.md"],
+                    "impact": "build",
+                }
+            ],
+            "checkpoint": {
+                "last_completed_step": "p",
+                "next_step": "build",
+                "action_id": "p1",
+                "action_state": "completed",
+                "action_receipt_ref": "AGENTS.md",
+                "retry_disposition": "not_applicable",
+                "source_snapshot_ref": "AGENTS.md",
+                "resume_notes": None,
+            },
+            "handoff": {
+                "to": "build",
+                "ready": True,
+                "plan_artifact_ref": "AGENTS.md",
+                "artifact_manifest_ref": "agent/contracts/plan.yaml",
+                "validation_receipt_ref": "AGENTS.md",
+            },
         }
         build = {
             "kind": "build",
@@ -376,32 +570,138 @@ class TestCriterionPropagation:
             "revision": 1,
             "status": "complete",
             "updated_at": "2026-01-01T00:00:00Z",
-            "plan_input": {"record_ref": "plan-001", "record_id": "plan-001", "record_revision": 1, "artifact_manifest_ref": "agent/contracts/plan.yaml", "accepted_milestone_ids": ["m1"], "accepted_criterion_ids": ["c1"]},
+            "plan_input": {
+                "record_ref": "plan-001",
+                "record_id": "plan-001",
+                "record_revision": 1,
+                "artifact_manifest_ref": "agent/contracts/plan.yaml",
+                "accepted_milestone_ids": ["m1"],
+                "accepted_criterion_ids": ["c1"],
+            },
             "build_admission_ref": "plan-001",
             "audit_refs": [],
-            "execution": {"workspace_snapshot_ref": "AGENTS.md", "environment_ref": "serverless", "command_receipts": [{"id": "cmd1", "command": "python bin/context_counter.py", "cwd": ".", "label": "normal", "exit_code": 0, "stdout": "3", "stderr": "", "receipt_ref": "AGENTS.md", "at": "2026-01-01T00:00:00Z"}]},
-            "implementation_validation": {"status": "passed", "checks": [{"criterion_id": "c1", "method": "e2e", "expected": "counts", "observed": "3", "receipt_ref": "AGENTS.md", "status": "passed"}], "regressions": []},
-            "post_build_e2e": {"status": "passed", "real_entrypoint_ref": "bin/context_counter.py", "environment_ref": "serverless", "cases": [{"fixture_ref": "bin/context_counter.py", "expected_ref": "AGENTS.md", "observed_ref": "AGENTS.md", "receipt_ref": "AGENTS.md", "status": "passed"}], "chaos_cases": [], "independent_result_checks": [{"criterion_id": "c1", "expected_ref": "AGENTS.md", "observed_ref": "AGENTS.md", "receipt_ref": "AGENTS.md", "status": "passed"}]},
+            "execution": {
+                "workspace_snapshot_ref": "AGENTS.md",
+                "environment_ref": "serverless",
+                "command_receipts": [
+                    {
+                        "id": "cmd1",
+                        "command": "python bin/context_counter.py",
+                        "cwd": ".",
+                        "label": "normal",
+                        "exit_code": 0,
+                        "stdout": "3",
+                        "stderr": "",
+                        "receipt_ref": "AGENTS.md",
+                        "at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+            },
+            "implementation_validation": {
+                "status": "passed",
+                "checks": [
+                    {
+                        "criterion_id": "c1",
+                        "method": "e2e",
+                        "expected": "counts",
+                        "observed": "3",
+                        "receipt_ref": "AGENTS.md",
+                        "status": "passed",
+                    }
+                ],
+                "regressions": [],
+            },
+            "post_build_e2e": {
+                "status": "passed",
+                "real_entrypoint_ref": "bin/context_counter.py",
+                "environment_ref": "serverless",
+                "cases": [
+                    {
+                        "fixture_ref": "bin/context_counter.py",
+                        "expected_ref": "AGENTS.md",
+                        "observed_ref": "AGENTS.md",
+                        "receipt_ref": "AGENTS.md",
+                        "status": "passed",
+                    }
+                ],
+                "chaos_cases": [],
+                "independent_result_checks": [
+                    {
+                        "criterion_id": "c1",
+                        "expected_ref": "AGENTS.md",
+                        "observed_ref": "AGENTS.md",
+                        "receipt_ref": "AGENTS.md",
+                        "status": "passed",
+                    }
+                ],
+            },
             "issues_and_corrections": {"status": "none", "items": []},
-            "outcome": {"status": "verified", "user_visible_result_ref": "AGENTS.md", "evidence_refs": ["AGENTS.md"]},
-            "manifest_binding": {"task_id": "task-001", "research_revision": 1, "plan_revision": 1, "scanner_identity": "a" * 64, "detector_identities": {"scanner": "a" * 64}, "fixture_oracle_sha": "b" * 64, "oracle_revision": 1, "build_receipt_sha": "c" * 64},
-            "progress_log": [{"at": "2026-01-01T00:00:00Z", "step": "b", "result": "ok", "evidence_ref": "AGENTS.md", "next_step": "complete"}],
-            "decision_log": [{"at": "2026-01-01T00:00:00Z", "decision": "done", "why": "ok", "evidence_refs": ["AGENTS.md"], "impact": "complete"}],
-            "checkpoint": {"last_completed_step": "b", "next_step": "complete", "action_id": "b1", "action_state": "completed", "action_receipt_ref": "AGENTS.md", "retry_disposition": "not_applicable", "source_snapshot_ref": "AGENTS.md", "resume_notes": None},
-            "handoff": {"to": "complete", "ready": True, "completion_receipt_ref": "AGENTS.md", "validation_receipt_ref": "AGENTS.md"},
+            "outcome": {
+                "status": "verified",
+                "user_visible_result_ref": "AGENTS.md",
+                "evidence_refs": ["AGENTS.md"],
+            },
+            "manifest_binding": {
+                "task_id": "task-001",
+                "research_revision": 1,
+                "plan_revision": 1,
+                "scanner_identity": "a" * 64,
+                "detector_identities": {"scanner": "a" * 64},
+                "fixture_oracle_sha": "b" * 64,
+                "oracle_revision": 1,
+                "build_receipt_sha": "c" * 64,
+            },
+            "progress_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "step": "b",
+                    "result": "ok",
+                    "evidence_ref": "AGENTS.md",
+                    "next_step": "complete",
+                }
+            ],
+            "decision_log": [
+                {
+                    "at": "2026-01-01T00:00:00Z",
+                    "decision": "done",
+                    "why": "ok",
+                    "evidence_refs": ["AGENTS.md"],
+                    "impact": "complete",
+                }
+            ],
+            "checkpoint": {
+                "last_completed_step": "b",
+                "next_step": "complete",
+                "action_id": "b1",
+                "action_state": "completed",
+                "action_receipt_ref": "AGENTS.md",
+                "retry_disposition": "not_applicable",
+                "source_snapshot_ref": "AGENTS.md",
+                "resume_notes": None,
+            },
+            "handoff": {
+                "to": "complete",
+                "ready": True,
+                "completion_receipt_ref": "AGENTS.md",
+                "validation_receipt_ref": "AGENTS.md",
+            },
         }
         return research, plan, build
 
     def test_criterion_propagation_valid(self):
         r, p, b = self._base_pipeline()
         errors = validate_pipeline(r, p, b, resolve=lambda ref: True)
-        assert not any("criterion IDs" in e for e in errors), f"Unexpected criterion error: {errors}"
+        assert not any("criterion IDs" in e for e in errors), (
+            f"Unexpected criterion error: {errors}"
+        )
 
     def test_missing_criterion_ids_flagged(self):
         r, p, b = self._base_pipeline()
         p["research_input"]["accepted_criterion_ids"] = ["c2"]  # missing c1
         errors = validate_pipeline(r, p, b, resolve=lambda ref: True)
-        assert any("missing criterion IDs" in e for e in errors), f"Expected criterion error: {errors}"
+        assert any("missing criterion IDs" in e for e in errors), (
+            f"Expected criterion error: {errors}"
+        )
 
     def test_inline_criteria_missing_criterion_id(self):
         r, p, b = self._base_pipeline()
@@ -418,7 +718,14 @@ class TestCriterionPropagation:
     def test_planning_record_accepted_in_pipeline(self):
         r, p, b = self._base_pipeline()
         p["kind"] = "planning"
-        p["todos"] = [{"todo_id": "t1", "requirement_ids": ["R1"], "criterion_ids": ["c1"], "validation": {"method": "e2e", "expected": "match"}}]
+        p["todos"] = [
+            {
+                "todo_id": "t1",
+                "requirement_ids": ["R1"],
+                "criterion_ids": ["c1"],
+                "validation": {"method": "e2e", "expected": "match"},
+            }
+        ]
         errors = validate_pipeline(r, p, b, resolve=lambda ref: True)
         # Planning kind should not produce a 'kind' rejection error
         kind_errors = [e for e in errors if "kind" in e.lower() and "should be" in e.lower()]

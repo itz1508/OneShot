@@ -306,7 +306,7 @@ class SuccessCriteria(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def digest_matches_canonical_payload(self) -> "SuccessCriteria":
+    def digest_matches_canonical_payload(self) -> SuccessCriteria:
         """Automatically validate content_digest against canonical digest.
 
         Follows PromptDefinition.digest_matches_canonical_payload: the
@@ -954,7 +954,8 @@ class AuditRecord(BaseModel):
     @model_validator(mode="after")
     def check_blocker_override(self) -> AuditRecord:
         if self.outcome == AuditOutcome.SELECT and self.outcome_score is not None:
-            if self.selection_threshold_active() and self.outcome_score < self.rubric.selection_threshold:
+            threshold = self.rubric.selection_threshold
+            if threshold is not None and self.outcome_score < threshold:
                 raise ValueError(
                     "SELECT outcome score below selection threshold"
                 )
@@ -1603,7 +1604,7 @@ def validate_pipeline(
 
     # Structural validation via Pydantic (collect, don't raise)
     research_model: ResearchRecord | None = None
-    plan_model: PlanRecord | None = None
+    plan_model: PlanRecord | PlanningRecord | None = None
     build_model: BuildRecord | None = None
 
     try:
@@ -1677,7 +1678,10 @@ def validate_pipeline(
                         if not sc_data.get("criterion_id"):
                             errors.append("research.criteria: missing criterion_id")
                         if not sc_data.get("statement"):
-                            errors.append(f"research.criteria: missing statement for {sc_data.get('criterion_id', '?')}")
+                            cid = sc_data.get('criterion_id', '?')
+                            errors.append(
+                                f"research.criteria: missing statement for {cid}"
+                            )
         elif sc_refs and resolve is not None:
             for ref in sc_refs:
                 if not resolve(ref):
@@ -1686,12 +1690,19 @@ def validate_pipeline(
     # Criterion ID propagation: Research -> Planning
     if r_declared and p_declared:
         research_sc = (research.get("outputs") or {}).get("success_criteria") or []
-        research_cids = {sc.get("criterion_id") for sc in research_sc if isinstance(sc, dict) and "criterion_id" in sc}
+        research_cids = {
+            sc["criterion_id"]
+            for sc in research_sc
+            if isinstance(sc, dict) and "criterion_id" in sc
+        }
         plan_accepted = (plan.get("research_input") or {}).get("accepted_criterion_ids") or []
         if research_cids and plan_accepted:
             missing = research_cids - set(plan_accepted)
             if missing:
-                errors.append(f"plan: missing criterion IDs from Research: {sorted(missing)}")
+                errors.append(
+                    f"plan: missing criterion IDs from "
+                    f"Research: {sorted(missing)}"
+                )
 
     # Cross-record identity checks
     if r_complete and p_complete:
@@ -2331,12 +2342,11 @@ def validate_success_criteria_artifact(
         return [f"criteria artifact failed schema validation: {exc}"]
 
     # --- 2. Identity comparison against separately trusted reference ---
-    if trusted_digest is not None:
-        if sc.content_digest != trusted_digest:
-            errors.append(
-                f"content_digest {sc.content_digest!r} does not match "
-                f"trusted reference {trusted_digest!r}"
-            )
+    if trusted_digest is not None and sc.content_digest != trusted_digest:
+        errors.append(
+            f"content_digest {sc.content_digest!r} does not match "
+            f"trusted reference {trusted_digest!r}"
+        )
 
     # --- 3. Provenance ---
     if not sc.authority_ref or not _is_filled(sc.authority_ref):

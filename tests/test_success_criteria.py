@@ -13,19 +13,17 @@ from __future__ import annotations
 import json
 import unittest
 
-from pydantic import ValidationError
-
 from models import (
-    SuccessCriteria,
-    Criterion,
     CoverageEntry,
+    Criterion,
+    CriterionPriority,
     EvidenceType,
     InsufficientEvidenceDisposition,
-    CriterionPriority,
+    SuccessCriteria,
     canonical_criteria_digest,
     validate_success_criteria_artifact,
 )
-
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,32 +32,32 @@ from models import (
 
 def _criterion(cid="C001", **kw):
     """Build a minimal valid Criterion dict with sensible defaults."""
-    defaults = dict(
-        criterion_id=cid,
-        statement="No vendor SDK in core deps",
-        observable_outcome="git grep returns zero matches",
-        priority="blocking",
-        required_evidence_types=["repository_observation"],
-        pass_condition="Zero matches",
-        fail_condition="Any match",
-        insufficient_evidence_disposition="block_handoff",
-    )
+    defaults = {
+        "criterion_id": cid,
+        "statement": "No vendor SDK in core deps",
+        "observable_outcome": "git grep returns zero matches",
+        "priority": "blocking",
+        "required_evidence_types": ["repository_observation"],
+        "pass_condition": "Zero matches",
+        "fail_condition": "Any match",
+        "insufficient_evidence_disposition": "block_handoff",
+    }
     defaults.update(kw)
     return defaults
 
 
 def _sc_dict(criteria=None, coverage=None, **kw):
     """Build a minimal valid SuccessCriteria dict with digest computed."""
-    defaults = dict(
-        success_criteria_id="SC001",
-        operation_id="OP001",
-        input_reference="input-001-r1",
-        criteria_revision=1,
-        authority_ref="AGENTS.md",
-        source_revision="e2b86638",
-        criteria=criteria or [_criterion()],
-        coverage=coverage or [{"outcome_id": "OUT001", "criterion_ids": ["C001"]}],
-    )
+    defaults = {
+        "success_criteria_id": "SC001",
+        "operation_id": "OP001",
+        "input_reference": "input-001-r1",
+        "criteria_revision": 1,
+        "authority_ref": "AGENTS.md",
+        "source_revision": "e2b86638",
+        "criteria": criteria or [_criterion()],
+        "coverage": coverage or [{"outcome_id": "OUT001", "criterion_ids": ["C001"]}],
+    }
     defaults.update(kw)
     # Compute the correct digest so the model_validator passes.
     defaults["content_digest"] = canonical_criteria_digest(defaults)
@@ -198,9 +196,14 @@ class TestCanonicalDigest(unittest.TestCase):
             "authority_ref": "AGENTS.md",
             "source_revision": "abc",
             "criteria": [
-                {"criterion_id": "C1", "statement": "A", "observable_outcome": "B",
-                 "required_evidence_types": ["source_document"],
-                 "pass_condition": "ok", "fail_condition": "bad"},
+                {
+                    "criterion_id": "C1",
+                    "statement": "A",
+                    "observable_outcome": "B",
+                    "required_evidence_types": ["source_document"],
+                    "pass_condition": "ok",
+                    "fail_condition": "bad",
+                },
             ],
             "coverage": [{"outcome_id": "O1", "criterion_ids": ["C1"]}],
         }
@@ -246,7 +249,8 @@ class TestValidateArtifact(unittest.TestCase):
         """content_digest != trusted_digest -> identity mismatch error."""
         data = _sc_dict()
         errors = validate_success_criteria_artifact(
-            data, trusted_digest="b" * 64,
+            data,
+            trusted_digest="b" * 64,
         )
         self.assertTrue(any("does not match trusted" in e for e in errors))
 
@@ -254,7 +258,8 @@ class TestValidateArtifact(unittest.TestCase):
         """content_digest == trusted_digest -> no identity error."""
         data = _sc_dict()
         errors = validate_success_criteria_artifact(
-            data, trusted_digest=data["content_digest"],
+            data,
+            trusted_digest=data["content_digest"],
         )
         self.assertTrue(not any("does not match trusted" in e for e in errors))
 
@@ -413,15 +418,21 @@ class TestCriterion(unittest.TestCase):
 
     def test_default_priority_is_major(self):
         c = Criterion(
-            criterion_id="C1", statement="A", observable_outcome="B",
-            pass_condition="ok", fail_condition="bad",
+            criterion_id="C1",
+            statement="A",
+            observable_outcome="B",
+            pass_condition="ok",
+            fail_condition="bad",
         )
         self.assertEqual(c.priority, CriterionPriority.MAJOR)
 
     def test_default_disposition_is_record_unknown(self):
         c = Criterion(
-            criterion_id="C1", statement="A", observable_outcome="B",
-            pass_condition="ok", fail_condition="bad",
+            criterion_id="C1",
+            statement="A",
+            observable_outcome="B",
+            pass_condition="ok",
+            fail_condition="bad",
         )
         self.assertEqual(
             c.insufficient_evidence_disposition,
@@ -435,7 +446,6 @@ class TestCriterion(unittest.TestCase):
 
 
 class TestCoverageEntry(unittest.TestCase):
-
     def test_valid_coverage_entry(self):
         ce = CoverageEntry(outcome_id="OUT1", criterion_ids=["C1", "C2"])
         self.assertEqual(ce.outcome_id, "OUT1")

@@ -66,6 +66,9 @@ try:
         BuildRecord as _BuildModel,
     )
     from models import (
+        PlanningRecord as _PlanningModel,
+    )
+    from models import (
         PlanRecord as _PlanModel,
     )
     from models import (
@@ -73,15 +76,6 @@ try:
     )
     from models import (
         validate_pipeline as _validate_pipeline_pyd,
-    )
-    from models import (
-        validate_success_criteria_artifact as _validate_sc,
-    )
-    from models import (
-        PlanningRecord as _PlanningModel,
-    )
-    from models import (
-        AuditRecord as _AuditModel,
     )
 
     _PYDANTIC_AVAILABLE = True
@@ -1006,7 +1000,10 @@ class OneShotController:
                 if not _sc.get("criterion_id"):
                     errors.append("research.criteria: missing criterion_id")
                 if not _sc.get("statement"):
-                    errors.append(f"research.criteria: missing statement for {_sc.get('criterion_id', '?')}")
+                    cid = _sc.get('criterion_id', '?')
+                    errors.append(
+                        f"research.criteria: missing statement for {cid}"
+                    )
         if errors:
             return {"record": research, "errors": errors, "evidence_index": ev_idx}
         research["status"] = "complete"
@@ -1634,8 +1631,18 @@ class OneShotController:
             except Exception:
                 pass  # Keep original PlanRecord errors
         # Criterion propagation: verify accepted_criterion_ids match Research
-        _plan_accepted_cids = set((plan.get("research_input") or {}).get("accepted_criterion_ids") or [])
-        _research_cids = {sc.get("criterion_id") for sc in (research.get("outputs") or {}).get("success_criteria") or [] if isinstance(sc, dict) and "criterion_id" in sc}
+        _plan_accepted_cids = set(
+            (plan.get("research_input") or {}).get(
+                "accepted_criterion_ids"
+            ) or []
+        )
+        _research_cids = {
+            sc.get("criterion_id")
+            for sc in (research.get("outputs") or {}).get(
+                "success_criteria"
+            ) or []
+            if isinstance(sc, dict) and "criterion_id" in sc
+        }
         if _research_cids and _plan_accepted_cids:
             _missing_cids = _research_cids - _plan_accepted_cids
             if _missing_cids:
