@@ -36,6 +36,7 @@ from models import (
     BuildAdmission,
     PlanningRecord,
     PlanRecord,
+    ResearchOutputs,
     validate_pipeline,
     validate_success_criteria_artifact,
 )
@@ -429,3 +430,25 @@ class TestCriterionPropagation:
         errors = validate_pipeline(r, p, b, resolve=lambda ref: True)
         kind_errors = [e for e in errors if "kind" in e.lower() and "should be" in e.lower()]
         assert not kind_errors, f"Legacy plan kind rejected: {kind_errors}"
+
+class TestResearchOutputCanonicalSchema:
+    def test_inline_criteria_are_declared_in_generated_schema(self):
+        schema = ResearchOutputs.model_json_schema()
+        assert "success_criteria" in schema["properties"]
+        assert schema["properties"]["success_criteria"]["type"] == "array"
+
+    def test_lightweight_inline_criteria_round_trip(self):
+        data = {
+            "success_criteria": [
+                {"criterion_id": "c1", "statement": "Inspect the actual SDK"}
+            ]
+        }
+        record = ResearchOutputs.model_validate(data)
+        restored = ResearchOutputs.model_validate_json(record.model_dump_json())
+        assert restored.success_criteria == data["success_criteria"]
+
+    def test_invalid_inline_criteria_container_fails(self):
+        with pytest.raises(ValueError):
+            ResearchOutputs.model_validate(
+                {"success_criteria": {"criterion_id": "c1", "statement": "bad shape"}}
+            )

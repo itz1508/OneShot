@@ -437,6 +437,11 @@ class ResearchOutputs(BaseModel):
     candidate_plan_ref: str | None = None
     fixture_refs: list[str] = Field(default_factory=list)
     success_criteria_refs: list[str] = Field(default_factory=list)
+    # Inline criteria are an existing legacy form. Keep lightweight mappings
+    # compatible; validate relationships/field presence at the stage boundary.
+    # This explicit field ensures normalized JSON and generated schemas agree
+    # with research.yaml and validate_pipeline's existing handling.
+    success_criteria: list[dict[str, Any]] = Field(default_factory=list)
     requirement_trace: list[RequirementTrace] = Field(default_factory=list)
 
 
