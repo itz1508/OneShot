@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import ValidationError
 
 from agent.contracts.research_stage import (
     EvidenceStatus,
@@ -118,7 +117,7 @@ def inspect_persisted_research(
     if "record" in observed:
         try:
             record = ResearchRecord.model_validate_json(paths["record"].read_bytes())
-        except (ValidationError, ValueError, UnicodeError):
+        except (ValueError, UnicodeError):
             pass
 
     receipts: dict[str, CheckReceipt] = {}

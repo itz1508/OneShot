@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from agent.contracts.research_stage import ResearchRecord
 from agent.workflows.research_runner import finalize_research
@@ -143,9 +144,9 @@ def test_persists_actual_outputs_and_handoff(tmp_path, contract_path):
 
 def test_empty_research_rejected(tmp_path, contract_path):
     original = "hello"
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _record(original, requirements=[])
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _record(original, todos=[])
 
 
@@ -206,7 +207,7 @@ def test_failed_todo_cannot_finalize(tmp_path, contract_path):
 
 
 def test_task_id_path_traversal_rejected(tmp_path, contract_path):
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _record("test", task_id="../../outside")
 
 
