@@ -8,10 +8,10 @@ Responsibilities:
     - Register and look up output schema descriptors
     - Auto-select applicable output(s) from selection context
     - Serialize data to JSON using the selected schema
-    - Lightweight JSON Schema structural validation
+    - Pydantic Research boundary validation (other outputs retain legacy checks)
 
 Does NOT:
-    - Duplicate contract or invariant validation
+    - Duplicate cross-record or external-evidence validation
     - Execute tools or repeat agent evaluations
     - Replace the OneShotController or TaskManager
     - Create a second scanner or gap-fix service
@@ -240,7 +240,17 @@ class SchemaRegistry:
 
         try:
             data_dict = self._to_dict(data)
-            json_str = json.dumps(data_dict, indent=2, default=str)
+            if output_name == "output_research":
+                from agent.contracts.models import ResearchRecord
+
+                # Validate agent-produced JSON before retaining the output.
+                record = ResearchRecord.model_validate_json(
+                    json.dumps(data_dict), strict=True
+                )
+                data_dict = record.model_dump(mode="json")
+                json_str = record.model_dump_json(indent=2)
+            else:
+                json_str = json.dumps(data_dict, indent=2, default=str)
             return SerializationResult(
                 output_name=output_name,
                 data=data_dict,
@@ -282,6 +292,12 @@ class SchemaRegistry:
         desc = self._schemas.get(name)
         if desc is None:
             return None
+        if name == "output_research":
+            from agent.contracts.models import ResearchRecord
+
+            schema = ResearchRecord.model_json_schema(mode="validation")
+            schema["title"] = "Research Output"
+            return schema
         path = self._schemas_dir / desc.schema_file
         if not path.exists():
             return None
@@ -310,6 +326,17 @@ class SchemaRegistry:
 
         if not isinstance(data, dict):
             return ["JSON root must be an object"]
+
+        if output_name == "output_research":
+            from agent.contracts.models import ResearchRecord
+
+            if "kind" not in data:
+                return ["Missing required field: kind"]
+            try:
+                ResearchRecord.model_validate_json(json_str, strict=True)
+            except ValueError as exc:
+                return [f"Research boundary validation failed: {exc}"]
+            return []
 
         schema = self.load_schema(output_name)
         if schema is None:

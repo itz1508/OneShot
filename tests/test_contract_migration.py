@@ -323,7 +323,6 @@ class TestCriterionPropagation:
             "revision": 1,
             "status": "complete",
             "updated_at": "2026-01-01T00:00:00Z",
-            "input": {"task_id": "task-001", "objective": "count", "constraints": [], "assumptions": []},
             "search": {"sources": [], "findings": []},
             "purpose": {
                 "user_outcome": "count chars",
@@ -339,7 +338,7 @@ class TestCriterionPropagation:
                 ],
                 "requirement_trace": [{"requirement_id": "R1", "finding_ids": [], "fixture_ids": [], "criterion_ids": ["c1"], "disposition": "covered"}],
             },
-            "review": {"supported_claims": [], "unsupported_claims": [], "unresolved_issues": [], "blockers": [], "disposition": "ready_for_plan", "review_receipt_ref": "AGENTS.md"},
+            "review": {"unsupported_claims": [], "unresolved_issues": [], "blockers": [], "disposition": "ready_for_plan", "review_receipt_ref": "AGENTS.md"},
             "progress_log": [{"at": "2026-01-01T00:00:00Z", "step": "s", "result": "ok", "evidence_ref": "AGENTS.md", "next_step": "plan"}],
             "decision_log": [{"at": "2026-01-01T00:00:00Z", "decision": "Proceed", "why": "ok", "evidence_refs": ["AGENTS.md"], "impact": "plan"}],
             "checkpoint": {"last_completed_step": "s", "next_step": "plan", "action_id": "r1", "action_state": "completed", "action_receipt_ref": "AGENTS.md", "retry_disposition": "not_applicable", "source_snapshot_ref": "AGENTS.md", "resume_notes": None},
