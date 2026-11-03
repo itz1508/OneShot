@@ -14,7 +14,6 @@ from pydantic import (
     model_validator,
 )
 
-
 RequirementId = Annotated[
     str,
     Field(pattern=r"^REQ-[0-9]{3,}$"),
