@@ -6,7 +6,7 @@ from __future__ import annotations
 import unittest
 
 # Import via sys.path so Pydantic resolves forward refs correctly
-import models as models
+from agent import contracts as models
 from pydantic import ValidationError
 
 

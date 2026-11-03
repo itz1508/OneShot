@@ -8,14 +8,14 @@ import hashlib
 # Migrated from the retired check_contracts module to the models module.
 # The names used below (validate_records / validate_research / validate_plan /
 # validate_build / preflight_check / evidence_index_resolver) are provided
-# by agent/contracts/models.py as compatibility aliases.
+# by agent/contracts/ as compatibility aliases.
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agent" / "contracts"))
-import models as module
+from agent import contracts as module
 
 
 class ContractTest(unittest.TestCase):

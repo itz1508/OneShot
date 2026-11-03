@@ -118,7 +118,7 @@ class SchemaRegistry:
                 schema_file="",  # generated from ResearchRecord; no duplicate file
                 stage="research",
                 contract_ref="agent/contracts/research.yaml",
-                model_ref="agent/contracts/models.py:ResearchRecord",
+                model_ref="agent/contracts/research.py:ResearchRecord",
                 description="Research findings, evidence, and review output",
                 priority=10,
             ),
@@ -127,7 +127,7 @@ class SchemaRegistry:
                 schema_file="output_gap_analysis.json",
                 stage="plan",
                 contract_ref="agent/contracts/plan.yaml:gap_analysis",
-                model_ref="agent/contracts/models.py:GapAnalysis",
+                model_ref="agent/contracts/planning.py:GapAnalysis",
                 description="Gap analysis findings from Scanner comparison",
                 priority=10,
             ),
@@ -136,7 +136,7 @@ class SchemaRegistry:
                 schema_file="output_built.json",
                 stage="build",
                 contract_ref="agent/contracts/build.yaml",
-                model_ref="agent/contracts/models.py:BuildRecord",
+                model_ref="agent/contracts/build.py:BuildRecord",
                 description="Build execution results, E2E validation, and outcome",
                 priority=10,
             ),
@@ -241,7 +241,7 @@ class SchemaRegistry:
         try:
             data_dict = self._to_dict(data)
             if output_name == "output_research":
-                from agent.contracts.models import ResearchRecord
+                from agent.contracts.research import ResearchRecord
 
                 # Validate agent-produced JSON before retaining the output.
                 record = ResearchRecord.model_validate_json(
@@ -293,7 +293,7 @@ class SchemaRegistry:
         if desc is None:
             return None
         if name == "output_research":
-            from agent.contracts.models import ResearchRecord
+            from agent.contracts.research import ResearchRecord
 
             schema = ResearchRecord.model_json_schema(mode="validation")
             schema["title"] = "Research Output"
@@ -328,7 +328,7 @@ class SchemaRegistry:
             return ["JSON root must be an object"]
 
         if output_name == "output_research":
-            from agent.contracts.models import ResearchRecord
+            from agent.contracts.research import ResearchRecord
 
             if "kind" not in data:
                 return ["Missing required field: kind"]

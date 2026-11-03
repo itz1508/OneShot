@@ -33,7 +33,7 @@ for sub in ("agent", "agent/contracts", "tools"):
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-from models import validate_pipeline  # noqa: E402
+from agent.contracts import validate_pipeline  # noqa: E402
 
 from agent.__main__ import OneShotController  # noqa: E402
 
@@ -239,7 +239,7 @@ class ManifestPlaceholderRejectedTest(unittest.TestCase):
     """
 
     def test_placeholder_scanner_identity_rejected(self):
-        from models import ManifestBinding
+        from agent.contracts import ManifestBinding
         from pydantic import ValidationError
 
         base = {
@@ -257,7 +257,7 @@ class ManifestPlaceholderRejectedTest(unittest.TestCase):
         self.assertIn("placeholder literal 'unknown'", str(ctx.exception))
 
     def test_placeholder_fixture_oracle_sha_rejected(self):
-        from models import ManifestBinding
+        from agent.contracts import ManifestBinding
         from pydantic import ValidationError
 
         base = {
@@ -275,7 +275,7 @@ class ManifestPlaceholderRejectedTest(unittest.TestCase):
         self.assertIn("placeholder literal 'no_oracle_module'", str(ctx.exception))
 
     def test_empty_detector_identity_rejected(self):
-        from models import ManifestBinding
+        from agent.contracts import ManifestBinding
         from pydantic import ValidationError
 
         base = {
@@ -296,7 +296,7 @@ class ManifestPlaceholderRejectedTest(unittest.TestCase):
         self.assertIn("must be a non-empty sha", str(ctx.exception))
 
     def test_empty_detector_identities_dict_rejected(self):
-        from models import ManifestBinding
+        from agent.contracts import ManifestBinding
         from pydantic import ValidationError
 
         base = {

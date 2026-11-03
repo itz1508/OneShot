@@ -1,1 +1,94 @@
-"""OneShot package: agent/contracts"""
+"""OneShot contract API: stage record types plus independent validation.
+
+Runtime structure is defined in stage modules; YAML remains the record template.
+This package preserves the public names of the removed models.py module.
+"""
+
+from .shared import (RecordStatus, ReviewCoverage, EvidenceGrounding, ReviewDisposition, FindingAssessment, PlanApplicability, GapStatus, FixtureValidationStatus, ChaosApplicability, OutcomeStatus, ActionState, RetryDisposition, Checkpoint, Handoff)
+from .criteria import (EvidenceType, InsufficientEvidenceDisposition, CriterionPriority, Criterion, CoverageEntry, SuccessCriteria, canonical_criteria_digest, validate_success_criteria_artifact)
+from .research import (Requirement, ResearchSource, Finding, Contradiction, Uncertainty, ResearchPurpose, ResearchSearch, RequirementTrace, ResearchOutputs, ResearchReview, ResearchWorkspace, ResearchHandoff, ResearchCheckpoint, ResearchRecord)
+from .planning import (AcceptanceCriterion, Milestone, PlanImplementation, ScannerCall, GapFinding, ClaimDecision, GapAnalysis, FixtureValidationChaos, PlanPurpose, PlanResearchInput, PlanRecord, TodoValidation, Todo, AuthorizedTool, BuildAdmission, PlanningRecord)
+from .audit import (AuditOutcome, AuditTarget, AuditRubricCheck, AuditRubric, AuditFinding, AuditRecord)
+from .build import (BuildPlanInput, CommandReceipt, MilestoneResult, BuildExecution, ImplementationValidation, E2ECase, ChaosCase, IndependentResultCheck, PostBuildE2E, IssuesAndCorrections, Outcome, ManifestBinding, BuildRecord)
+from .validation import (validate_pipeline, validate_research, validate_plan, validate_build, validate_records, preflight_check, evidence_index_resolver)
+
+__all__ = [
+    "RecordStatus",
+    "ReviewCoverage",
+    "EvidenceGrounding",
+    "ReviewDisposition",
+    "FindingAssessment",
+    "PlanApplicability",
+    "GapStatus",
+    "FixtureValidationStatus",
+    "ChaosApplicability",
+    "OutcomeStatus",
+    "ActionState",
+    "RetryDisposition",
+    "Checkpoint",
+    "Handoff",
+    "EvidenceType",
+    "InsufficientEvidenceDisposition",
+    "CriterionPriority",
+    "Criterion",
+    "CoverageEntry",
+    "SuccessCriteria",
+    "canonical_criteria_digest",
+    "validate_success_criteria_artifact",
+    "Requirement",
+    "ResearchSource",
+    "Finding",
+    "Contradiction",
+    "Uncertainty",
+    "ResearchPurpose",
+    "ResearchSearch",
+    "RequirementTrace",
+    "ResearchOutputs",
+    "ResearchReview",
+    "ResearchWorkspace",
+    "ResearchHandoff",
+    "ResearchCheckpoint",
+    "ResearchRecord",
+    "AcceptanceCriterion",
+    "Milestone",
+    "PlanImplementation",
+    "ScannerCall",
+    "GapFinding",
+    "ClaimDecision",
+    "GapAnalysis",
+    "FixtureValidationChaos",
+    "PlanPurpose",
+    "PlanResearchInput",
+    "PlanRecord",
+    "TodoValidation",
+    "Todo",
+    "AuthorizedTool",
+    "BuildAdmission",
+    "PlanningRecord",
+    "AuditOutcome",
+    "AuditTarget",
+    "AuditRubricCheck",
+    "AuditRubric",
+    "AuditFinding",
+    "AuditRecord",
+    "BuildPlanInput",
+    "CommandReceipt",
+    "MilestoneResult",
+    "BuildExecution",
+    "ImplementationValidation",
+    "E2ECase",
+    "ChaosCase",
+    "IndependentResultCheck",
+    "PostBuildE2E",
+    "IssuesAndCorrections",
+    "Outcome",
+    "ManifestBinding",
+    "BuildRecord",
+    "validate_pipeline",
+    "validate_research",
+    "validate_plan",
+    "validate_build",
+    "validate_records",
+    "preflight_check",
+    "evidence_index_resolver"
+]

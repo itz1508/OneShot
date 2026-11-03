@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/itz1508/OneShot/schemas/output_built.json",
   "title": "Build Output",
-  "description": "JSON output contract for the Build workflow stage. Derived from agent/contracts/build.yaml and agent/contracts/models.py BuildRecord.",
+  "description": "JSON output contract for the Build workflow stage. Derived from agent/contracts/build.yaml and agent/contracts/ BuildRecord.",
   "type": "object",
   "required": ["kind", "task_id", "record_id", "revision", "status", "plan_input", "execution", "implementation_validation", "post_build_e2e", "outcome", "handoff"],
   "properties": {

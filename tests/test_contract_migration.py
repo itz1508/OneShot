@@ -25,7 +25,7 @@ if str(_CONTRACTS) not in sys.path:
     sys.path.insert(0, str(_CONTRACTS))
 
 import pytest
-from models import (
+from agent.contracts import (
     AuditFinding,
     AuditOutcome,
     AuditRecord,

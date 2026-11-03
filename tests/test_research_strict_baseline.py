@@ -6,7 +6,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from agent.contracts.models import PlanRecord, ResearchRecord
+from agent.contracts import PlanRecord, ResearchRecord
 from agent.output_registry import SchemaRegistry
 
 

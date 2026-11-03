@@ -14,7 +14,7 @@ from __future__ import annotations
 import copy
 import unittest
 
-import models as module  # type: ignore[import-not-found]
+from agent import contracts as module  # type: ignore[import-not-found]
 
 from ._fixtures import make_valid_triple
 

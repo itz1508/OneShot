@@ -27,7 +27,7 @@ On the current HEAD: **374 passed, 55 skipped** across 429 collected tests (19 b
 ## Key files
 
 - `agent/__main__.py` — OneShotController (stage routing, Scanner invocation, fixture validation, workflow harness)
-- `agent/contracts/models.py` — Pydantic v2 validators for Research/Plan/Build records
+- `agent/contracts/` — Pydantic v2 validators for Research/Plan/Build records
 - `agent/adapters/repository_inventory.py` — Scanner inventory adapter (wraps host RepositoryInspector)
 - `agent/adapters/source_comparison.py` — Scanner comparison adapter (wraps host SourceComparator)
 - `tools/fixtures.py` — FixtureRegistry with independent expected results

@@ -57,30 +57,30 @@ try:
 except ImportError:
     _GAP_ANALYSIS_AVAILABLE = False
 
-# Dual-layer validation: Pydantic structural models
+# Pydantic runtime validation, separated by stage
 _CONTRACTS_DIR = Path(__file__).resolve().parent / "contracts"
 if str(_CONTRACTS_DIR) not in sys.path:
     sys.path.insert(0, str(_CONTRACTS_DIR))
 try:
-    from models import (
+    from agent.contracts import (
         BuildRecord as _BuildModel,
     )
-    from models import (
+    from agent.contracts import (
         PlanRecord as _PlanModel,
     )
-    from models import (
+    from agent.contracts import (
         ResearchRecord as _ResearchModel,
     )
-    from models import (
+    from agent.contracts import (
         validate_pipeline as _validate_pipeline_pyd,
     )
-    from models import (
+    from agent.contracts import (
         validate_success_criteria_artifact as _validate_sc,
     )
-    from models import (
+    from agent.contracts import (
         PlanningRecord as _PlanningModel,
     )
-    from models import (
+    from agent.contracts import (
         AuditRecord as _AuditModel,
     )
 

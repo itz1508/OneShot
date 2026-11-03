@@ -60,7 +60,7 @@ The operational plan and TODO are **not** `_planning.json`; only the Planner own
 | Research fields, required information, evidence and handoff | [Research YAML](agent/contracts/research.yaml) | [Contract guide](agent/contracts/README.md) |
 | Plan revision, Scanner findings, universal Gap Fix, pre-Build fixtures/chaos | [Plan YAML](agent/contracts/plan.yaml) | [agent/__main__.py](agent/__main__.py) and actual Scanner receipts |
 | Build plan-pinning, command receipts, real E2E, recovery, outcome | [Build YAML](agent/contracts/build.yaml) | [agent/__main__.py](agent/__main__.py) and actual host evidence |
-| Schema/invariant bug or stage-specific handoff validation | [Pydantic models](agent/contracts/models.py) | [Contract tests](tests/test_workflow_contracts.py) |
+| Schema/invariant bug or stage-specific handoff validation | [Pydantic models](agent/contracts/) | [Contract tests](tests/test_workflow_contracts.py) |
 | Security or ignored local outputs | [`.gitignore`](.gitignore) | Physical worktree, host permissions; never commit credentials |
 
 ### Implemented paths — verified in this checkout

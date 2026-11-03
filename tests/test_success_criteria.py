@@ -15,7 +15,7 @@ import unittest
 
 from pydantic import ValidationError
 
-from models import (
+from agent.contracts import (
     SuccessCriteria,
     Criterion,
     CoverageEntry,
