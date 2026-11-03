@@ -1,0 +1,5 @@
+id: audit_discovery
+version: 1
+phases: [preflight, repository_baseline, inspection, findings, code_intent, package, validation_handoff]
+input: _research.json
+output: _audit_discovery.json

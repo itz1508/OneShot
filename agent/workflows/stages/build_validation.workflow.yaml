@@ -1,0 +1,4 @@
+id: build_validation
+version: 1
+input: _build.json
+output: _build_validation.json

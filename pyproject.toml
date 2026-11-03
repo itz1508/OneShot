@@ -1,0 +1,48 @@
+[project]
+name = "oneshot"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2,<3",
+    "pyyaml>=6",
+    "rfc8785>=0.1.4",
+]
+
+[project.optional-dependencies]
+meta = ["openai>=1.0"]
+claude = ["claude-agent-sdk"]
+codex = ["openai-codex"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "deptry>=0.20",
+    "types-PyYAML",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["E501", "B017", "S101", "RUF012"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["agent"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.deptry]
+known-first-party = ["agent"]

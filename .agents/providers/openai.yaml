@@ -1,0 +1,68 @@
+provider_id: openai
+api_key_env: OPENAI_API_KEY
+base_url_env: OPENAI_BASE_URL
+model_env: OPENAI_MODEL
+
+protocol: openai_compatible
+sdk: openai
+timeout_seconds: 60
+max_retries: 0
+capabilities:
+  chat: required
+  streaming: required
+  tool_calling: required
+  structured_output: required
+  prompt_caching: optional
+  reasoning: optional
+  vision: optional
+  long_context: optional
+  error_handling: required
+  search_grounding: optional
+options:
+  chat:
+    prompt: "Return exactly: provider-ready"
+    expected_text: "provider-ready"
+  streaming:
+    prompt: "Return exactly three short words."
+  tool_calling:
+    prompt: "Use the add tool to calculate 2 + 3, then state the result."
+    expected_result: 5
+    tool_schema:
+      name: add
+      description: Add two integers
+      parameters:
+        type: object
+        properties:
+          a: {type: integer}
+          b: {type: integer}
+        required: [a, b]
+        additionalProperties: false
+  structured_output:
+    prompt: "Return capability structured_output, supported true, and a short observation."
+  prompt_caching:
+    stable_prefix: "Stable provider capability context. "
+    repeat: 200
+    first_suffix: "Return first."
+    second_suffix: "Return second."
+  reasoning:
+    prompt: "Solve 17 * 19 and return the result."
+    effort: low
+  vision:
+    prompt: "Describe the visible content concisely."
+    image_url: "https://upload.wikimedia.org/wikipedia/commons/3/3f/Fronalpstock_big.jpg"
+  long_context:
+    filler: "Context filler sentence. "
+    repeat: 2000
+    marker: "ONESHOT-LONG-CONTEXT-MARKER"
+  error_handling:
+    expected_sdk_retries: 0
+    status_classes:
+      "400": deterministic
+      "401": deterministic
+      "403": deterministic
+      "408": transient
+      "409": transient
+      "429": transient
+      "500": transient
+  search_grounding:
+    prompt: "Find the current Python stable release from an official source and cite it."

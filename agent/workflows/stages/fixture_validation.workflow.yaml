@@ -1,0 +1,4 @@
+id: fixture_validation
+version: 1
+input: frozen_specification.json
+output: _fixture_validation.json

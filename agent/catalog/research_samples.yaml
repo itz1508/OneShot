@@ -1,0 +1,198 @@
+# Synthetic Research Catalog — 10 versioned quality templates.
+#
+# All items are SYNTHETIC. They supply investigation structure, not
+# verified facts, accepted requirements, or implementation authority.
+# Catalog items may be combined when relevant, but duplicate checks
+# must be consolidated.
+
+version: "1.0.0"
+synthetic: true
+
+samples:
+  - catalog_id: SAMPLE-CODING-001
+    category: coding_patterns
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, inspect_codebase, verify_code_pattern]
+      keywords: [code, pattern, implementation, function, class, method]
+    research_checklist:
+      - "Identify the specific code pattern to investigate"
+      - "Locate authoritative source files in the repository"
+      - "Verify the pattern exists by reading actual source"
+      - "Check for variants or anti-patterns"
+      - "Document evidence with file:line references"
+    success_criteria:
+      - "Pattern verified against actual source code"
+      - "All claims backed by file:line evidence"
+      - "Limitations and constraints documented"
+
+  - catalog_id: SAMPLE-FEATURE-001
+    category: feature_requirements
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input]
+      keywords: [feature, requirement, functionality, capability, user story]
+    research_checklist:
+      - "Identify the feature requirement scope"
+      - "Check existing implementation for partial coverage"
+      - "Verify dependencies and constraints"
+      - "Assess feasibility with evidence"
+      - "Document acceptance criteria"
+    success_criteria:
+      - "Feature scope bounded and documented"
+      - "Dependencies verified against actual code"
+      - "Acceptance criteria traceable to requirements"
+
+  - catalog_id: SAMPLE-INTEGRATION-001
+    category: external_integrations
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input, verify_code_pattern]
+      keywords: [integration, API, external, service, client, SDK, protocol]
+    research_checklist:
+      - "Identify the external system and its API"
+      - "Verify SDK/client availability and version compatibility"
+      - "Check authentication and authorization requirements"
+      - "Assess protocol compatibility"
+      - "Document error handling and retry semantics"
+    success_criteria:
+      - "External system interface verified"
+      - "SDK version compatibility confirmed"
+      - "Authentication requirements documented"
+
+  - catalog_id: SAMPLE-UI-001
+    category: user_interfaces
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input]
+      keywords: [UI, interface, frontend, component, render, display, user]
+    research_checklist:
+      - "Identify the UI component or interface requirement"
+      - "Check existing UI framework and patterns"
+      - "Verify accessibility requirements"
+      - "Assess state management approach"
+      - "Document interaction patterns"
+    success_criteria:
+      - "UI requirement scope defined"
+      - "Framework compatibility verified"
+      - "Accessibility constraints documented"
+
+  - catalog_id: SAMPLE-DATA-001
+    category: storage_and_persistence
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, inspect_codebase, verify_code_pattern]
+      keywords: [data, storage, database, persistence, model, schema, migration]
+    research_checklist:
+      - "Identify the storage or persistence requirement"
+      - "Verify existing database schema and migrations"
+      - "Check data model constraints and relationships"
+      - "Assess query patterns and performance"
+      - "Document transaction and consistency requirements"
+    success_criteria:
+      - "Storage approach verified against schema"
+      - "Data model constraints documented"
+      - "Transaction semantics confirmed"
+
+  - catalog_id: SAMPLE-FIXTURE-001
+    category: fixture_requirements
+    version: "1.0.0"
+    matching_conditions:
+      intents: [craft_fixture, investigate_fixture_validation]
+      keywords: [fixture, test, validation, setup, teardown, mock, stub]
+    research_checklist:
+      - "Identify what behavior the fixture must exercise"
+      - "Define preconditions and triggering actions"
+      - "Specify expected observable behavior"
+      - "Define failure observations and false-positive protections"
+      - "Document setup-failure conditions and known limitations"
+    success_criteria:
+      - "Fixture specification has all required fields"
+      - "False-positive protections defined"
+      - "Setup-failure conditions documented"
+    fixture_blueprint:
+      preconditions_required: true
+      triggering_action_required: true
+      expected_behavior_required: true
+      failure_observations_required: true
+      required_evidence_min: 1
+
+  - catalog_id: SAMPLE-FIXTURE-VALIDITY-001
+    category: fixture_validity
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_fixture_validation, craft_fixture]
+      keywords: [fixture, validity, assessment, quality, coverage, gap]
+    research_checklist:
+      - "Assess fixture specification completeness"
+      - "Verify preconditions are testable"
+      - "Check expected behavior is observable"
+      - "Identify gaps in false-positive protections"
+      - "Classify validity: valid, partially_valid, invalid, unresolved"
+    success_criteria:
+      - "Validity classification justified with evidence"
+      - "Gaps identified and documented"
+      - "Assessment independent of product validation"
+
+  - catalog_id: SAMPLE-SECURITY-001
+    category: security_requirements
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input, inspect_codebase]
+      keywords: [security, authentication, authorization, encryption, vulnerability, access]
+    research_checklist:
+      - "Identify the security requirement scope"
+      - "Verify existing security controls in codebase"
+      - "Check for known vulnerability patterns"
+      - "Assess access control boundaries"
+      - "Document threat model assumptions"
+    success_criteria:
+      - "Security controls verified against actual code"
+      - "Access boundaries documented"
+      - "Threat model assumptions explicit"
+
+  - catalog_id: SAMPLE-RUNTIME-001
+    category: runtime_and_performance
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, inspect_codebase, verify_code_pattern]
+      keywords: [performance, runtime, latency, throughput, memory, cpu, benchmark]
+    research_checklist:
+      - "Identify the performance requirement"
+      - "Verify existing runtime behavior with evidence"
+      - "Check for performance anti-patterns"
+      - "Assess resource constraints"
+      - "Document measurement methodology"
+    success_criteria:
+      - "Performance baseline established with evidence"
+      - "Resource constraints documented"
+      - "Measurement methodology reproducible"
+
+  - catalog_id: SAMPLE-MCP-BUILD-001
+    category: complete_operational_mcp_server
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input, inspect_codebase]
+      keywords: [MCP, server, protocol, tool, client, SDK, model context protocol]
+    research_checklist:
+      - "Verify reproducible dependency installation"
+      - "Document configuration and startup procedure"
+      - "Verify compatible protocol connection and negotiation"
+      - "Discover required tools and schemas"
+      - "Execute real tool calls against configured implementation"
+      - "Validate structured responses"
+      - "Observe error handling and dependency failures"
+      - "Verify clean shutdown"
+      - "Confirm fresh-checkout reproducibility"
+    success_criteria:
+      - "Protocol version verified for current task"
+      - "SDK support confirmed for target platform"
+      - "Transport and authentication requirements documented"
+      - "Real tool execution observed (not static inspection)"
+      - "Fresh-checkout reproducibility confirmed"
+    fixture_blueprint:
+      preconditions_required: true
+      triggering_action_required: true
+      expected_behavior_required: true
+      failure_observations_required: true
+      required_evidence_min: 1

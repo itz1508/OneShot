@@ -1,0 +1,4 @@
+id: build
+version: 1
+input: admitted_frozen_specification
+output: _build.json

@@ -1,0 +1,24 @@
+kind: stage_workflow
+stage: planning
+version: 2
+input: verified_audit_discovery_package
+ordered_gates:
+  - validate_planning_input
+  - capture_repository_source_start
+  - review_all_code_intents
+  - perform_coding_analysis
+  - decide_and_correct_if_evidenced
+  - define_build_specification
+  - resolve_action_paths_and_criteria
+  - persist_candidate
+  - reopen_validate_hash_candidate
+  - scanner_exact_digest
+  - review_and_revise_if_material
+  - final_full_scanner
+  - capture_repository_source_end
+  - host_freeze
+  - validate_planning_envelope
+  - authorize_fixture_handoff
+on_stale_package: blocked
+writes: authorized_artifact_content_only
+source_repository: read_only

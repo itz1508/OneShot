@@ -1,0 +1,4 @@
+id: research
+version: 1
+phases: [intake, planning, evidence_collection, synthesis, artifact_production, validation_handoff]
+output: _research.json

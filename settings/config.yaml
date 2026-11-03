@@ -1,0 +1,13 @@
+config_version: "1.0"
+provider:
+  profile: .agents/providers/meta.yaml
+state:
+  root_env: ONESHOT_STATE_ROOT
+  serializer_profile: oneshot-jcs-candidate-v1
+budgets:
+  max_requests_per_run: 64
+  max_retries_per_operation: 2
+  max_duration_seconds: 3600
+security:
+  default_deny: true
+  source_repository: read_only

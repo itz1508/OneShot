@@ -1,0 +1,21 @@
+version: 1
+security:
+  default: deny
+roles:
+  researcher:
+    repository: read_only
+    artifact_writer: research_only
+    shell: denied
+  audit_discovery:
+    repository: read_only
+    artifact_writer: audit_discovery_only
+    shell: denied
+  planner:
+    repository: read_only
+    artifact_writer: planning_only
+    shell: denied
+    scanner: request_only
+authorization:
+  preflight: required
+  on_policy_error: deny
+  receipt_required: true
