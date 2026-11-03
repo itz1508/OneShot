@@ -45,7 +45,7 @@ class OutputSchemaDescriptor:
     """Metadata for a registered output schema."""
 
     name: str  # e.g. "output_research"
-    schema_file: str  # filename inside schemas dir
+    schema_file: str  # empty when schema is generated from the canonical model
     stage: str  # "research" | "plan" | "build" | "any"
     contract_ref: str  # source contract file
     model_ref: str | None = None  # Pydantic model reference, if any
@@ -115,7 +115,7 @@ class SchemaRegistry:
         defaults = [
             OutputSchemaDescriptor(
                 name="output_research",
-                schema_file="output_research.json",
+                schema_file="",  # generated from ResearchRecord; no duplicate file
                 stage="research",
                 contract_ref="agent/contracts/research.yaml",
                 model_ref="agent/contracts/models.py:ResearchRecord",
