@@ -1,0 +1,475 @@
+contract_version: 1
+id: research
+type: stage_workflow
+purpose: 'Research every accepted in-scope requirement, evaluate available evidence,
+  preserve material conflicts and unknowns, and produce validated outputs for audit
+  discovery.
+
+  '
+runtime:
+  controller: contract_workflow
+  output_model: agent.contracts.research_stage:ResearchRecord
+  recovery_handler: shared_error_handling
+  required_capabilities:
+  - todo_tracking
+  - search
+  - file_read
+  - file_write
+  - output_model_validation
+  - shared_error_handling
+  optional_capabilities:
+  - repository_read
+  - call_for_help
+inputs:
+  original_request:
+    required: true
+    handling:
+    - preserve_verbatim
+    - retain_as_source_evidence
+  accepted_requirements:
+    required: true
+    minimum_items: 1
+  clarifications:
+    required: false
+  available_evidence:
+    required: false
+  task_workspace:
+    required: true
+    purpose: 'Scope Research outputs, temporary evidence, and revision history to
+      one task.
+
+      '
+requirements_policy:
+  accepted_sources:
+  - original_request
+  - accepted_clarification
+  - accepted_discovered_requirement
+  accepted_discovered_requirement:
+    meaning: 'A requirement identified during Research and explicitly accepted after
+      discovery.
+
+      '
+    automatic_promotion: false
+  rules:
+  - preserve_accepted_meaning
+  - retain_source_traceability
+  - separate_examples_from_requirements
+  - separate_assumptions_from_requirements
+  - separate_candidates_from_requirements
+  - keep_unaccepted_discoveries_as_candidates
+  - never_silently_omit_an_accepted_requirement
+workflow:
+- id: preserve_request
+  action: preserve_request
+  requires: []
+  produces:
+  - preserved_request
+- id: create_todos
+  action: create_todos
+  requires:
+  - preserve_request
+  produces:
+  - research_todos
+- id: establish_requirement_trace
+  action: establish_requirement_trace
+  requires:
+  - create_todos
+  produces:
+  - requirement_trace
+- id: inspect_available_evidence
+  action: inspect_available_evidence
+  requires:
+  - establish_requirement_trace
+  produces:
+  - available_evidence_assessment
+- id: identify_evidence_gaps
+  action: identify_evidence_gaps
+  requires:
+  - inspect_available_evidence
+  produces:
+  - evidence_gap_list
+- id: gather_missing_evidence
+  action: gather_missing_evidence
+  requires:
+  - identify_evidence_gaps
+  when:
+    any:
+    - evidence_gap_list_is_not_empty
+    - material_conflict_requires_more_evidence
+  produces:
+  - research_findings
+  - source_evidence
+- id: call_for_help
+  action: call_for_help
+  requires:
+  - identify_evidence_gaps
+  when:
+    all:
+    - call_for_help_capability_is_available
+    - independent_help_scope_exists
+    - help_can_improve_coverage_or_remove_a_blocker
+  while_pending:
+  - continue_independent_todos
+  - preserve_current_state
+  - avoid_duplicate_work
+  on_result:
+  - assess_returned_evidence
+  - link_result_to_help_task
+  - deduplicate_sources
+  - preserve_conflicts
+  - record_limitations
+  produces:
+  - assessed_help_results
+- id: evaluate_findings
+  action: evaluate_findings
+  requires:
+  - gather_missing_evidence
+  accepts_skipped_dependencies:
+  - gather_missing_evidence
+  wait_for_when_started:
+  - call_for_help
+  produces:
+  - evaluated_findings
+- id: compare_alternatives
+  action: compare_alternatives
+  requires:
+  - evaluate_findings
+  when:
+    any:
+    - comparison_is_explicitly_requested
+    - accepted_requirement_requires_comparison
+  produces:
+  - comparison_result
+- id: produce_recommendation
+  action: produce_recommendation
+  requires:
+  - evaluate_findings
+  - compare_alternatives
+  accepts_skipped_dependencies:
+  - compare_alternatives
+  when:
+    any:
+    - recommendation_is_explicitly_requested
+    - accepted_requirement_requires_recommendation
+  produces:
+  - research_recommendation
+- id: synthesize_evidence
+  action: synthesize_evidence
+  requires:
+  - evaluate_findings
+  - compare_alternatives
+  - produce_recommendation
+  accepts_skipped_dependencies:
+  - compare_alternatives
+  - produce_recommendation
+  produces:
+  - synthesized_research
+- id: write_outputs
+  action: write_outputs
+  requires:
+  - synthesize_evidence
+  produces:
+  - request_output
+  - report_output
+  - record_output
+- id: validate_completion
+  action: validate_completion
+  requires:
+  - write_outputs
+  evaluates: stage_validation.required_checks
+  produces:
+  - stage_validation_result
+todo_policy:
+  required_before_research_execution: true
+  style: short_action_tracker
+  lifecycle:
+  - pending
+  - in_progress
+  - completed
+  - failed
+  - blocked
+  action_check:
+    purpose: 'Confirm that a TODO action produced its expected local result. This
+      is separate from final stage validation.
+
+      '
+    completed_requires:
+    - observed_result
+    - supporting_evidence
+    - action_check_passed
+    failed_requires:
+    - actual_error
+    - side_effect_assessment
+    - recovery_reference
+    blocked_requires:
+    - blocker_description
+    - recovery_reference
+    - resume_point
+  rules:
+  - todo_creation_is_not_a_recursive_todo
+  - individual_tool_calls_do_not_require_separate_todos
+  - revisions_remain_traceable
+  - completed_work_is_preserved_during_recovery
+  - blocked_work_is_not_silently_omitted
+research_policy:
+  evidence_priority:
+  - official_specification
+  - official_documentation
+  - primary_repository
+  - official_release_notes
+  - maintainer_guidance
+  - reputable_technical_reference
+  - secondary_analysis
+  process:
+  - inspect_available_evidence_before_broad_search
+  - connect_each_search_to_a_material_evidence_need
+  - begin_broadly_only_when_context_is_missing
+  - narrow_later_searches_to_remaining_gaps
+  - run_independent_work_in_parallel
+  - run_dependent_work_sequentially
+  - assess_results_before_searching_again
+  - preserve_material_conflicts
+  continue_when:
+    any:
+    - accepted_requirement_lacks_coverage
+    - material_conflict_can_be_resolved
+    - requested_comparison_is_incomplete
+    - requested_recommendation_lacks_support
+    - additional_evidence_could_change_the_result
+    - recovered_action_requires_continuation
+  stop_searching_when:
+    all:
+    - no_material_resolvable_evidence_gap_remains
+    - no_required_comparison_or_recommendation_outstanding
+coverage_policy:
+  applies_to: every_accepted_requirement
+  satisfied_when:
+    any_of:
+    - supporting_evidence_is_sufficient
+    - requirement_is_verified_not_applicable
+    - requirement_is_explicitly_unresolved_with_missing_evidence_recorded
+  unresolved_requires:
+  - missing_evidence_description
+  - investigation_needed
+  - effect_on_research_result
+  rules:
+  - unresolved_findings_may_have_no_source_reference
+  - unresolved_findings_must_not_claim_verification
+  - unresolved_findings_must_identify_the_missing_evidence
+  - source_count_alone_does_not_establish_coverage
+help_policy:
+  capability: call_for_help
+  optional: true
+  suitable_for:
+  - independent_research_area
+  - explicit_comparison
+  - specialist_evidence
+  - separable_compatibility_question
+  - independent_blocker_resolution
+  request_must_include:
+  - objective
+  - accepted_requirement_references
+  - bounded_scope
+  - questions_to_answer
+  - evidence_needed
+  - preferred_source_types
+  - expected_result
+  - excluded_decisions
+  returned_result:
+    treated_as: evidence_input
+    automatic_acceptance: false
+    researcher_retains_final_synthesis: true
+comparison_policy:
+  enabled_only_when_condition_matches: true
+  evaluate_against:
+  - accepted_requirements
+  - compatibility
+  - dependencies
+  - operational_behavior
+  - integration_effort
+  - maintainability
+  - security
+  - performance
+  - licensing
+  - evidence_quality
+  result_must_include:
+  - evaluated_options
+  - evaluation_basis
+  - supporting_evidence
+  - material_tradeoffs
+  - conflicting_evidence
+  - remaining_uncertainty
+recommendation_policy:
+  enabled_only_when_condition_matches: true
+  result_must_include:
+  - preferred_option
+  - evaluation_basis
+  - supporting_evidence
+  - material_tradeoffs
+  - conflicting_evidence
+  - remaining_uncertainty
+  - conditions_that_could_change_the_recommendation
+  rules:
+  - label_as_research_recommendation
+  - do_not_present_as_implemented_fact
+  - state_when_evidence_is_insufficient_for_a_preference
+repository_evidence_policy:
+  allow_available_repository_evidence: true
+  rules:
+  - state_the_inspected_scope
+  - distinguish_observation_from_inference
+  - use_exact_paths_only_when_observed
+  - distinguish_worktree_state_from_committed_source
+  - do_not_use_external_patterns_as_proof_of_repository_implementation
+  - pass_physical_verification_gaps_to_audit_discovery
+blocker_policy:
+  handler: shared_error_handling
+  on_failure:
+  - preserve_completed_work
+  - register_failure_with_handler
+  - attempt_safe_recovery
+  - call_for_help_when_independent_recovery_is_possible
+  - continue_unaffected_todos
+  - resume_from_affected_todo_after_recovery
+  when_recovery_cannot_remove_blocker:
+  - identify_minimum_missing_input_access_or_decision
+  - ask_for_required_information
+  - retain_blocked_status
+  - retain_resume_point
+  - do_not_claim_stage_completion
+outputs:
+  root:
+    base: task_workspace
+    stage_directory: research
+    revision_directory: revision-{revision_number}
+  revision_policy:
+    initial_revision: 1
+    increment_on_material_rewrite: true
+    previously_validated_revisions_are_immutable: true
+    latest_pointer_allowed: true
+  request:
+    filename: research_request.md
+    required: true
+    purpose: 'Preserve the original request verbatim and separately record accepted
+      clarifications and requirement sources.
+
+      '
+  report:
+    filename: final_report.md
+    required: true
+    purpose: 'Present the evidence-grounded human-readable Research result.
+
+      '
+  record:
+    filename: _research.json
+    required: true
+    canonical_model: ResearchRecord
+    purpose: 'Store normalized Research progress, findings, evidence, and validation
+      results.
+
+      '
+  required_write_receipts:
+  - request
+  - report
+  - record
+citation_policy:
+  inline_style: numbered
+  unique_reference_per_url: true
+  reuse_reference_for_same_url: true
+  sequential_references: true
+  sources_section_required: true
+  preserve_conflicting_sources: true
+checks:
+  check_request_preserved:
+    evaluates: 'The original request in the request output matches the supplied original
+      request verbatim.
+
+      '
+  check_requirement_coverage:
+    evaluates: 'Every accepted requirement satisfies the coverage policy.
+
+      '
+  check_findings_traceable:
+    evaluates: 'Every material finding traces to accepted requirements and available
+      evidence, or records the evidence still missing.
+
+      '
+  check_help_results_assessed:
+    evaluates: 'Every completed help task is linked to its result and assessed before
+      inclusion.
+
+      '
+  check_conflicts_preserved:
+    evaluates: 'Material conflicting evidence remains visible in the record and report.
+
+      '
+  check_requested_comparisons:
+    evaluates: 'Every required comparison was executed and contains the required comparison
+      result.
+
+      '
+  check_requested_recommendations:
+    evaluates: 'Every required recommendation contains its evidence basis, tradeoffs,
+      uncertainty, and change conditions.
+
+      '
+  check_todos_finalized:
+    evaluates: 'Every required TODO has a final status and the evidence required by
+      that status.
+
+      '
+  check_outputs_exist:
+    evaluates: 'All required output files exist in the current task-scoped revision
+      and have successful write receipts.
+
+      '
+  check_record_valid:
+    evaluates: 'The Research record passes the canonical Python model and semantic
+      validation.
+
+      '
+stage_validation:
+  runs_after:
+  - write_outputs
+  required_checks:
+  - check_request_preserved
+  - check_requirement_coverage
+  - check_findings_traceable
+  - check_help_results_assessed
+  - check_conflicts_preserved
+  - check_requested_comparisons
+  - check_requested_recommendations
+  - check_todos_finalized
+  - check_outputs_exist
+  - check_record_valid
+  result:
+    evaluated_at_runtime: true
+    allowed_outcomes:
+    - passed
+    - failed
+    - blocked
+completion:
+  requires:
+    stage_validation: passed
+  blocked_when:
+    any:
+    - required_capability_is_unresolved
+    - required_output_is_missing
+    - required_output_is_invalid
+    - material_recoverable_blocker_remains
+    - required_help_result_is_pending
+    - required_input_was_not_requested
+    - stage_validation_did_not_run
+handoff:
+  target: audit_discovery
+  created_when:
+    all:
+    - stage_validation_passed
+    - current_revision_is_persisted
+    - output_write_receipts_are_complete
+  includes:
+  - research_record_reference
+  - request_output_reference
+  - report_output_reference
+  - revision_identity
+  - validation_result

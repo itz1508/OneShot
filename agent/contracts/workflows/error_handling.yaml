@@ -1,0 +1,20 @@
+contract_version: 1
+id: shared_error_handling
+type: shared_workflow
+purpose: Preserve failed workflow actions, evidence, and uncertain side effects; reconcile before retry.
+implementation_owner: tools/task_management.py
+runtime_handler: tools.task_management:TaskManager
+on_failure:
+  - record_error_and_action_identity
+  - preserve_completed_evidence
+  - classify_side_effects
+  - record_resume_checkpoint
+  - reconcile_uncertain_effects_before_retry
+recovery_outcomes:
+  - safe_retry
+  - reconcile_first
+  - blocked
+rules:
+  - no_replay_of_uncertain_side_effect_without_reconciliation
+  - no_implicit_succeeded_state
+  - no_silent_state_reset
