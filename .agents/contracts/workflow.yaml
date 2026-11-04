@@ -45,6 +45,7 @@ bundle:
     progress_revisions: compare_and_swap
     events: event_store
     transition_gate: completed_with_persisted_evidence
+    final_stage_gate: verified_completion_receipt_and_todo
     effect_authorization: none
   pre_scanner_gate: structural_gap_analysis
   implementation_note: declared_host_services_require_runtime_validation
