@@ -1,16 +1,19 @@
-"""Static deployment-configuration smoke test; no Modal account or CLI required."""
+"""Modal deployment contract checks without external credentials or CLI."""
 
 from __future__ import annotations
 
+import asyncio
 import runpy
 import sys
 import types
 from pathlib import Path
 from typing import Any
 
+from fastapi import Request
 
-def test_modal_image_includes_mvp_and_runtime_assets(monkeypatch: Any) -> None:
-    calls: dict[str, Any] = {"dirs": [], "secrets": []}
+
+def _load_modal(monkeypatch: Any, *, secret: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    calls: dict[str, Any] = {"dirs": [], "secrets": [], "events": [], "commits": 0}
 
     class FakeImage:
         @staticmethod
@@ -22,15 +25,22 @@ def test_modal_image_includes_mvp_and_runtime_assets(monkeypatch: Any) -> None:
             calls["uv_sync"] = kwargs
             return self
 
+        def env(self, vars: dict[str, str]) -> FakeImage:
+            calls["env"] = vars
+            return self
+
         def add_local_dir(self, src: str, **kwargs: Any) -> FakeImage:
             calls["dirs"].append((src, kwargs["remote_path"]))
             return self
 
     class FakeVolume:
+        def commit(self) -> None:
+            calls["commits"] += 1
+
         @staticmethod
-        def from_name(name: str, **kwargs: Any) -> str:
+        def from_name(name: str, **kwargs: Any) -> FakeVolume:
             calls["volume"] = (name, kwargs)
-            return "fake-volume"
+            return FakeVolume()
 
     class FakeSecret:
         @staticmethod
@@ -44,35 +54,119 @@ def test_modal_image_includes_mvp_and_runtime_assets(monkeypatch: Any) -> None:
 
         def function(self, **kwargs: Any) -> Any:
             calls["function"] = kwargs
-            return lambda func: func
+
+            def wrap(func: Any) -> Any:
+                calls["events"].append("function")
+                return func
+
+            return wrap
+
+    def concurrent(*, max_inputs: int) -> Any:
+        calls["max_inputs"] = max_inputs
+
+        def wrap(func: Any) -> Any:
+            calls["events"].append("concurrent")
+            return func
+
+        return wrap
+
+    def asgi_app() -> Any:
+        def wrap(func: Any) -> Any:
+            calls["events"].append("asgi")
+            return func
+
+        return wrap
 
     fake_modal = types.ModuleType("modal")
     fake_modal.Image = FakeImage  # type: ignore[attr-defined]
     fake_modal.Volume = FakeVolume  # type: ignore[attr-defined]
     fake_modal.Secret = FakeSecret  # type: ignore[attr-defined]
     fake_modal.App = FakeApp  # type: ignore[attr-defined]
-    fake_modal.asgi_app = lambda: lambda func: func  # type: ignore[attr-defined]
-
+    fake_modal.concurrent = concurrent  # type: ignore[attr-defined]
+    fake_modal.asgi_app = asgi_app  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "modal", fake_modal)
     monkeypatch.setenv("ONESHOT_MODAL_APP_NAME", "existing-oneshot-app")
     monkeypatch.setenv("ONESHOT_MODAL_VOLUME_NAME", "existing-oneshot-volume")
-    monkeypatch.setenv("ONESHOT_MODAL_MODEL_SECRET", "existing-model-secret")
+    if secret:
+        monkeypatch.setenv("ONESHOT_MODAL_MODEL_SECRET", secret)
+    else:
+        monkeypatch.delenv("ONESHOT_MODAL_MODEL_SECRET", raising=False)
+
     root = Path(__file__).resolve().parents[2]
     module = runpy.run_path(str(root / "modal_app.py"))
+    return calls, module
+
+
+def test_public_modal_image_and_concurrency_contract(monkeypatch: Any) -> None:
+    calls, module = _load_modal(monkeypatch)
+    source = "/root/oneshot-source"
 
     assert calls["app"] == "existing-oneshot-app"
     assert calls["volume"] == ("existing-oneshot-volume", {"create_if_missing": True})
     assert calls["uv_sync"] == {"extras": ["meta", "mvp"], "groups": []}
+    assert calls["env"] == {"PYTHONPATH": source, "ONESHOT_STATE_ROOT": "/data"}
     assert set(calls["dirs"]) == {
-        ("agent", "/root/agent"),
-        ("mvp", "/root/mvp"),
-        ("api_fundamentals", "/root/api_fundamentals"),
-        (".agents", "/root/.agents"),
-        ("settings", "/root/settings"),
-        ("web/public", "/root/web/public"),
+        ("agent", f"{source}/agent"),
+        ("mvp", f"{source}/mvp"),
+        ("api_fundamentals", f"{source}/api_fundamentals"),
+        (".agents", f"{source}/.agents"),
+        ("settings", f"{source}/settings"),
+        ("web/public", f"{source}/web/public"),
     }
-    assert calls["secrets"] == ["existing-model-secret"]
+    assert calls["events"] == ["asgi", "concurrent", "function"]
+    assert calls["max_inputs"] == 20
+    assert calls["secrets"] == []
     assert calls["function"]["max_containers"] == 1
-    assert calls["function"]["volumes"] == {"/data": "fake-volume"}
-    assert calls["function"]["secrets"] == ["existing-model-secret"]
+    assert calls["function"]["volumes"] == {"/data": calls["function"]["volumes"]["/data"]}
+    assert calls["function"]["secrets"] == []
     assert callable(module["web"])
+
+
+def test_explicit_model_secret_opt_in(monkeypatch: Any) -> None:
+    calls, _ = _load_modal(monkeypatch, secret="existing-model-secret")
+    assert calls["secrets"] == ["existing-model-secret"]
+    assert calls["function"]["secrets"] == ["existing-model-secret"]
+
+
+def test_audit_root_set_before_api_import_and_mutations_committed(monkeypatch: Any) -> None:
+    calls, module = _load_modal(monkeypatch)
+
+    class FakeHTTPApp:
+        middleware_func: Any = None
+
+        def middleware(self, kind: str) -> Any:
+            assert kind == "http"
+
+            def register(func: Any) -> Any:
+                self.middleware_func = func
+                return func
+
+            return register
+
+    backend = FakeHTTPApp()
+    fake_api = types.ModuleType("mvp.api")
+    fake_api.app = backend  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mvp.api", fake_api)
+    monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "false")
+    monkeypatch.setenv("MCP_WORKSPACE_ROOT", "/tmp/untrusted")
+    monkeypatch.setenv("ONESHOT_STATE_ROOT", "/tmp/old-state")
+
+    assert module["web"]() is backend
+    import os
+
+    assert os.environ["MCP_TRUSTED_ANCESTRY"] == "true"
+    assert os.environ["MCP_WORKSPACE_ROOT"] == "/root/oneshot-source"
+    assert os.environ["ONESHOT_STATE_ROOT"] == "/data"
+
+    async def call_next(_request: Request) -> object:
+        return object()
+
+    async def check(method: str) -> None:
+        request = Request({"type": "http", "method": method, "path": "/", "headers": []})
+        assert await backend.middleware_func(request, call_next) is not None
+
+    asyncio.run(check("GET"))
+    assert calls["commits"] == 0
+    asyncio.run(check("POST"))
+    asyncio.run(check("PATCH"))
+    assert calls["commits"] == 2
