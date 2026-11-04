@@ -308,7 +308,9 @@ def test_host_evidence_paths_are_forwarded_to_real_mcp_request(tmp_path, monkeyp
 
     service = MVPService(tmp_path)
     task_id = service.create("Inspect repository source")["task_id"]
-    monkeypatch.setenv("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", _json.dumps(["README.md", "agent/contracts/research.py"]))
+    monkeypatch.setenv(
+        "ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", _json.dumps(["README.md", "agent/contracts/research.py"])
+    )
     monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(tmp_path))
     monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "true")
     captured = []
@@ -322,17 +324,21 @@ def test_host_evidence_paths_are_forwarded_to_real_mcp_request(tmp_path, monkeyp
     assert captured == [{"workspace_paths": ["README.md", "agent/contracts/research.py"], "snapshots": []}]
 
 
-@pytest.mark.parametrize("bad", [
-    '["../secret"]',
-    '["/etc/passwd"]',
-    '["dir//ambiguous.txt"]',
-    '["dir/./ambiguous.txt"]',
-    '["dir\\\\escape.txt"]',
-    '["README.md", "README.md"]',
-    '{"workspace_paths": ["README.md"]}',
-    '["' + ("x" * 4097) + '"]',
-    '["README.md"'
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        '["../secret"]',
+        '["/etc/passwd"]',
+        '["dir//ambiguous.txt"]',
+        '["dir/./ambiguous.txt"]',
+        '["dir\\\\escape.txt"]',
+        '["README.md", "README.md"]',
+        '{"workspace_paths": ["README.md"]}',
+        '["' + ("x" * 4097) + '"]',
+        '["README.md"',
+    ],
+)
+
 def test_invalid_host_evidence_paths_fail_before_work_assignment(tmp_path, monkeypatch, bad):
     service = MVPService(tmp_path)
     task_id = service.create("Inspect repository source")["task_id"]
