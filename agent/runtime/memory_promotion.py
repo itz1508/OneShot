@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import re
 
+from pydantic import BaseModel
+
 from agent.contracts.build import BuildActionStatus, BuildRecord
 from agent.contracts.build_memory import VerifiedBuildKnowledge
 from agent.contracts.build_validation import BuildValidationRecord, CriterionResult
 from agent.contracts.common import ArtifactRef, StepStatus
-from agent.contracts.host import PackageLockReceipt, ReceiptRef
+from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, ReceiptRef, admission_receipt_subject
 from agent.contracts.plan_template import PlanTemplate, TemplateStatus
 from agent.contracts.stage_log import StageLogEvent
 from agent.runtime.artifact_store import ArtifactStore
@@ -43,7 +45,7 @@ class HostMemoryManager:
         self._journals = journals
         self._templates = PlanTemplateService(artifacts, receipts)
 
-    def _load(self, ref: ArtifactRef, model: type) -> object:
+    def _load(self, ref: ArtifactRef, model: type[BaseModel]) -> BaseModel:
         if self._artifacts.get_digest(ref.artifact_id, ref.artifact_revision) != ref.artifact_digest:
             raise MemoryPromotionError("missing or changed source artifact")
         return model.model_validate_json(self._artifacts.get_verified(ref.artifact_id, ref.artifact_revision))
@@ -99,6 +101,22 @@ class HostMemoryManager:
             lock.receipt_ref,
             f"{lock.research_ref.artifact_digest}:{lock.audit_ref.artifact_digest}:{lock.frozen_spec_ref.artifact_digest}"
             + (f":{lock.tool_registry_ref.artifact_digest}" if lock.tool_registry_ref else ""),
+        )
+        admission = self._load(build.admission_ref, BuildAdmissionReceipt)
+        if not isinstance(admission, BuildAdmissionReceipt):
+            raise MemoryPromotionError("invalid source Build Admission")
+        if admission.lock_receipt_ref != lock.receipt_ref:
+            raise MemoryPromotionError("Build Admission does not reference source lock")
+        if set(admission.authorized_action_ids) != {entry.action_id for entry in build.action_executions}:
+            raise MemoryPromotionError("Build actions differ from authorized admission")
+        self._verify_receipt(
+            admission.receipt_ref,
+            admission_receipt_subject(
+                lock.receipt_ref,
+                admission.authorized_action_ids,
+                admission.authorized_tool_ids,
+                admission.tool_registry_ref,
+            ),
         )
         if not build.action_executions or any(
             entry.status is not BuildActionStatus.COMPLETED for entry in build.action_executions
