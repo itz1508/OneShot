@@ -5,9 +5,9 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-from mvp.api import app  # noqa: E402
+from mvp.api import app
 
 
 def test_health_reports_no_fake_execution():
