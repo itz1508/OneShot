@@ -2,6 +2,10 @@
 
 This file defines **standing work practices** for contributors and coding agents. It is not a task request, execution plan, runtime contract, permission grant, status report, or build log.
 
+## First rule: role-specific plan and task checklist
+
+Read the assigned role, applicable instructions, and exact inputs. Before executing work, state a concise plan and create a task checklist specific to that role. Research plans investigation; Audit Discovery plans read-only inspection; Planning owns implementation design; Fixture Validation plans checks; the Builder creates only an execution checklist from admitted actions; Build Verification plans independent E2E checks. Keep the checklist in host task state or the current response, not automatic Markdown records. Continue within existing host gates without unnecessary approval loops.
+
 ## Source of truth and workspace
 
 - **`/OneShot`** is the clean rebuild target. Check `git status` and `git log` before making changes.
