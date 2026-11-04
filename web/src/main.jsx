@@ -19,6 +19,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [narrow, setNarrow] = useState(false)
+  const [hostHealthy, setHostHealthy] = useState(false)
   const streamRef = useRef(null)
   const bottom = useRef(null)
   const taskId = task?.task_id
@@ -34,6 +35,11 @@ function App() {
     setEvents(timeline)
     return record
   }
+
+  useEffect(() => {
+    fetch('/api/health').then(json).then((health) => setHostHealthy(health.status === 'ok'))
+      .catch(() => setHostHealthy(false))
+  }, [])
 
   useEffect(() => {
     const id = new URLSearchParams(location.search).get('task')
@@ -126,7 +132,7 @@ function App() {
         <header className="topbar">
           <div className="crumb">Workspace <ChevronRight size={15}/> <strong>{task ? 'Task ' + task.task_id.slice(0, 8) : 'New task'}</strong></div>
           <div className="header-actions">
-            <div className="status-dot"><span/> Host available</div>
+            <div className="status-dot"><span style={{ background: hostHealthy ? '#38bd9a' : '#a77562' }}/> {hostHealthy ? 'Host connected' : 'Host unavailable'}</div>
             <button className="icon-button" title="Refresh task" onClick={() => task && fetchDetails(task.task_id).catch((e) => setError(e.message))}><RefreshCw size={17}/></button>
             <button className="icon-button" title="Settings" onClick={() => setError('Settings are managed by the host configuration.') }><Settings2 size={17}/></button>
           </div>
