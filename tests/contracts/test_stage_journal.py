@@ -58,3 +58,10 @@ def test_identity_and_symlink_defense(tmp_path):
     (tmp_path / "runtime/w").symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(StageJournalError, match="symlink"):
         service.rebuild("w", "t", "r")
+
+
+def test_memory_requires_promotion(tmp_path):
+    service = StageJournalService(tmp_path / "runtime", tmp_path / "events.db")
+    with pytest.raises(StageJournalError, match="verified host memory"):
+        service.append(event("memo", "mem"))
+    assert service.load(workspace_id="w", task_id="t", run_id="r", stage="mem") == ()
