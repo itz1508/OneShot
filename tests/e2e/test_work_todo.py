@@ -62,7 +62,7 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
     source.write_text("def square(x):\n    return x * x\n", encoding="utf-8")
 
     research_scope = binding(controller, "research", "research-1")
-    research_todos, r0 = controller.work_todos.start(
+    research_todos, r0 = controller.assign_work(
         research_scope,
         action="Read source.py and collect its definition",
         expected_result="Source fact with evidence",
@@ -93,7 +93,7 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
         ),
     )
     plan_ref = controller.work_todos.persist_work_plan(plan)
-    audit_todos, a0 = controller.work_todos.start(audit_scope, work_plan_ref=plan_ref)
+    audit_todos, a0 = controller.assign_work(audit_scope, work_plan_ref=plan_ref)
     assert len(audit_todos.actions) == 2
     with pytest.raises(WorkTodoError, match="dependencies"):
         controller.work_todos.set_status(a0, "create-plan", WorkStatus.RUNNING)
@@ -118,7 +118,7 @@ def test_blocked_or_stale_work_cannot_complete_stage(tmp_path) -> None:
     controller = HostController(tmp_path)
     controller.init_task("real-work", "run-real")
     scope = binding(controller, "research", "research-1")
-    _, first = controller.work_todos.start(scope, action="Gather evidence", expected_result="Evidence")
+    _, first = controller.assign_work(scope, action="Gather evidence", expected_result="Evidence")
     receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
     _, running = controller.work_todos.set_status(first, "work-1", WorkStatus.RUNNING)
     with pytest.raises(StaleRevisionError):
@@ -179,3 +179,19 @@ def test_completed_todo_requires_actual_stored_evidence(tmp_path) -> None:
                 ],
             }
         )
+
+
+def test_unassigned_work_cannot_bypass_host_stage_binding(tmp_path) -> None:
+    controller = HostController(tmp_path)
+    controller.init_task("real-work", "run-real")
+    scope = binding(controller, "research", "research-1")
+    _, unassigned = controller.work_todos.start(scope, action="Inspect", expected_result="Evidence")
+    completed = run_action(controller, unassigned, "work-1", "source observed")
+    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
+    with pytest.raises(TransitionError, match="host-assigned"):
+        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=completed)
+
+    controller.assign_work(scope, action="Inspect", expected_result="Evidence")
+    conflicting = binding(controller, "research", "research-2")
+    with pytest.raises(TransitionError, match="already assigned"):
+        controller.assign_work(conflicting, action="Different request", expected_result="Result")
