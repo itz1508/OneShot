@@ -131,13 +131,16 @@ def _interrupted_research(service: MVPService, persist_output: bool) -> str:
         contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
+    dispatch, _ = service.host.prepare_agent_dispatch(
+        task_id, input_ref, "Inspect authorized files", requested_role="researcher"
+    )
     binding = WorkBinding(
-        task_id=task_id,
-        run_id=state.run_id,
+        task_id=dispatch.task_id,
+        run_id=dispatch.run_id,
         stage="research",
-        request_id=f"research-{task_id}",
-        request_revision=revision,
-        input_request_ref=input_ref,
+        request_id=dispatch.request_id,
+        request_revision=dispatch.request_revision,
+        input_request_ref=dispatch.input_request_ref,
     )
     _, first = service.host.assign_work(
         binding,
