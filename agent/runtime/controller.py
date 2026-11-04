@@ -480,9 +480,64 @@ class HostController:
         if self.artifact_store.get_digest(output.artifact_id, output.artifact_revision) != output.artifact_digest:
             raise TransitionError("agent result output artifact digest mismatch")
         try:
-            self.artifact_store.get_verified(output.artifact_id, output.artifact_revision)
+            raw = self.artifact_store.get_verified(output.artifact_id, output.artifact_revision)
+            from agent.contracts.audit_discovery import AuditDiscoveryPackage
+            from agent.contracts.build import BuildRecord
+            from agent.contracts.build_validation import BuildValidationRecord
+            from agent.contracts.fixture_validation import FixtureValidationRecord
+            from agent.contracts.planning import PlanningRecord
+            from agent.contracts.research import ResearchRecord
+
+            contracts = {
+                Stage.RESEARCH: ("research_record", ResearchRecord),
+                Stage.AUDIT_DISCOVERY: ("audit_discovery_package", AuditDiscoveryPackage),
+                Stage.PLANNING: ("planning_record", PlanningRecord),
+                Stage.FIXTURE_VALIDATION: ("fixture_validation_record", FixtureValidationRecord),
+                Stage.BUILD: ("build_record", BuildRecord),
+                Stage.BUILD_VALIDATION: ("build_validation_record", BuildValidationRecord),
+            }
+            required_contract, contract_model = contracts[Stage(envelope.stage)]
+            if output.contract_id != required_contract:
+                raise ValueError("agent result contract belongs to another stage")
+            verified_record = contract_model.model_validate_json(raw)
+            if (verified_record.task_id, verified_record.run_id) != (envelope.task_id, envelope.run_id):
+                raise ValueError("agent result task/run identity mismatch")
+            if Stage(envelope.stage) is Stage.BUILD:
+                from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, admission_receipt_subject
+
+                build = BuildRecord.model_validate(verified_record)
+                admission_bytes = self.artifact_store.get_verified(
+                    build.admission_ref.artifact_id, build.admission_ref.artifact_revision
+                )
+                lock_bytes = self.artifact_store.get_verified(
+                    build.lock_ref.artifact_id, build.lock_ref.artifact_revision
+                )
+                if (
+                    self.artifact_store.get_digest(
+                        build.admission_ref.artifact_id, build.admission_ref.artifact_revision
+                    ) != build.admission_ref.artifact_digest
+                    or self.artifact_store.get_digest(build.lock_ref.artifact_id, build.lock_ref.artifact_revision)
+                    != build.lock_ref.artifact_digest
+                ):
+                    raise ValueError("Build admission or package lock digest mismatch")
+                admission = BuildAdmissionReceipt.model_validate_json(admission_bytes)
+                locked = PackageLockReceipt.model_validate_json(lock_bytes)
+                if admission.lock_receipt_ref != locked.receipt_ref:
+                    raise ValueError("Build admission not bound to package lock")
+                subject = admission_receipt_subject(
+                    admission.lock_receipt_ref,
+                    admission.authorized_action_ids,
+                    admission.authorized_tool_ids,
+                    admission.tool_registry_ref,
+                )
+                if not self.receipt_store.verify(
+                    admission.receipt_ref.receipt_id, admission.receipt_ref.receipt_digest, subject
+                ):
+                    raise ValueError("untrusted Build admission receipt")
+                if any(action.action_id not in admission.authorized_action_ids for action in build.action_executions):
+                    raise ValueError("Build result contains unadmitted actions")
         except Exception as exc:
-            raise TransitionError("agent result output is not verified") from exc
+            raise TransitionError("agent result output contract or admission is not verified") from exc
         aid = f"agent-dispatch-result:{envelope.request_id}"
         try:
             digest = self.artifact_store.put_immutable(
