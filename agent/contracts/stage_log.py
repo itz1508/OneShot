@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 from agent.contracts.common import ContractModel
 
 
+
 StageName = Literal["search", "audit", "plan", "build", "mem"]
 
 
