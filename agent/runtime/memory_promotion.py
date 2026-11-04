@@ -28,9 +28,7 @@ class MemoryPromotionError(ValueError):
     pass
 
 
-_REDACT = re.compile(
-    r"(?i)(?:/home/|/users/|[a-z]:\\|api[_-]?key\s*[:=]|bearer\s+\S+|sk-[a-z0-9]{12,})"
-)
+_REDACT = re.compile(r"(?i)(?:/home/|/users/|[a-z]:\\|api[_-]?key\s*[:=]|bearer\s+\S+|sk-[a-z0-9]{12,})")
 
 
 class HostMemoryManager:
