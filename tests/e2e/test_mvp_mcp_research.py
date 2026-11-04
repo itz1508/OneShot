@@ -133,3 +133,47 @@ def test_error_result_and_nontext_result_fail_closed():
         _tool_json(SimpleNamespace(is_error=True, content=[]))
     with pytest.raises(ProviderError, match="one JSON text"):
         _tool_json(SimpleNamespace(is_error=False, content=[SimpleNamespace(type="image")]))
+
+
+def test_http_research_endpoint_advances_only_after_host_receipts(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import mvp.api
+
+    service = MVPService(tmp_path)
+    monkeypatch.setattr(mvp.api, "service", service)
+    client = TestClient(mvp.api.app)
+    created = client.post("/api/tasks", json={"prompt": "Research actual sources"})
+    assert created.status_code == 201
+    task_id = created.json()["task_id"]
+
+    async def invoke(arguments):
+        return response(json.loads(arguments["prompt"])["task_id"])
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    executed = client.post(f"/api/tasks/{task_id}/research")
+    assert executed.status_code == 200
+    assert executed.json()["current_stage"] == "audit_discovery"
+    stored = client.get(f"/api/tasks/{task_id}/artifacts").json()
+    assert any(artifact["name"] == "_research.json" for artifact in stored)
+    assert client.get(f"/api/tasks/{task_id}").json()["execution_status"] == "research_completed"
+
+
+def test_http_forged_digest_is_502_and_stage_remains_open(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import mvp.api
+
+    service = MVPService(tmp_path)
+    monkeypatch.setattr(mvp.api, "service", service)
+    client = TestClient(mvp.api.app)
+    task_id = client.post("/api/tasks", json={"prompt": "Research sources"}).json()["task_id"]
+
+    async def invoke(_arguments):
+        return response(task_id, wrong_digest=True)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    failed = client.post(f"/api/tasks/{task_id}/research")
+    assert failed.status_code == 502
+    assert client.get(f"/api/tasks/{task_id}").json()["current_stage"] == "research"
+    assert all(file["name"] != "_research.json" for file in client.get(f"/api/tasks/{task_id}/artifacts").json())
