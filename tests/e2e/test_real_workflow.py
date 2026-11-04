@@ -186,7 +186,9 @@ class TestE2EWorkflow:
         """E2E03d: Receipt from different task is rejected."""
         controller = HostController(state_root=tmp_path)
         controller.init_task("task-001", "run-001")
-        # Issue receipt for a DIFFERENT task
+        controller.init_task("task-002", "run-002")
+        _completed_work_todo(controller, "task-002", "run-002", Stage.RESEARCH)
+        # Issue a legitimate artifact-bound receipt for a DIFFERENT task.
         cross_receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="task-002", run_id="run-002", revision=1)
         with pytest.raises(TransitionError, match="invalid completion receipt"):
             controller.advance_stage("task-001", "run-001", Stage.RESEARCH, cross_receipt)
@@ -196,13 +198,13 @@ class TestE2EWorkflow:
         controller.init_task("task-001", "run-001")
         _advance_with_receipt(controller, "task-001", "run-001", Stage.RESEARCH)
         _advance_with_receipt(controller, "task-001", "run-001", Stage.AUDIT_DISCOVERY)
+        todo_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.PLANNING)
         receipt = controller.issue_stage_receipt(Stage.PLANNING, task_id="task-001", run_id="run-001", revision=1)
         with pytest.raises(TransitionError, match="structural gap analysis"):
             controller.advance_stage("task-001", "run-001", Stage.PLANNING, receipt)
 
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
-        todo_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.PLANNING)
         state = controller.advance_stage(
             "task-001",
             "run-001",
