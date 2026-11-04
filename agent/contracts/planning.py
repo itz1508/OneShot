@@ -7,8 +7,6 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from agent.contracts.tool_registry import ToolInvocation
-
 from agent.contracts.common import (
     ArtifactRef,
     ContractModel,
@@ -21,6 +19,7 @@ from agent.contracts.common import (
     Sha256,
     StepResult,
 )
+from agent.contracts.tool_registry import ToolInvocation
 
 
 class IntentDisposition(StrEnum):

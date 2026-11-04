@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, ReceiptRef
+from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, ReceiptRef, admission_receipt_subject
 from agent.contracts.planning import BuildSpecification
 from agent.contracts.validation.structural import tool_invocation_gaps
 from agent.runtime.artifact_store import ArtifactStore
@@ -42,7 +42,7 @@ class BuildAdmission:
         if not authorized_action_ids or len(set(authorized_action_ids)) != len(authorized_action_ids):
             raise BuildAdmissionError("nonempty unique authorized actions required")
         if lock_receipt_ref.issuer_id != "host":
-            raise BuildAdmissionError("untrusted package lock issuer")
+            raise BuildAdmissionError("untrusted lock issuer")
         if issuer_id != "host":
             raise BuildAdmissionError("only host may issue admission receipts")
 
@@ -60,7 +60,7 @@ class BuildAdmission:
             if expected != lock_subject:
                 raise BuildAdmissionError("package lock subject does not match upstream artifacts")
         if not self._receipts.verify(lock_receipt_ref.receipt_id, lock_receipt_ref.receipt_digest, lock_subject):
-            raise BuildAdmissionError("invalid package lock receipt")
+            raise BuildAdmissionError("invalid lock receipt")
 
         authorized_tools: tuple[str, ...] = ()
         if build_spec is not None:
@@ -85,11 +85,7 @@ class BuildAdmission:
             raise BuildAdmissionError("build spec required for registry-bound admission")
 
         receipt_id = f"admission-{admission_id}"
-        subject = (
-            f"{lock_receipt_ref.receipt_id}:{lock_receipt_ref.receipt_digest}:"
-            f"{':'.join(authorized_action_ids)}:{':'.join(authorized_tools)}:"
-            f"{registry_ref.artifact_digest if registry_ref else 'no-tools'}"
-        )
+        subject = admission_receipt_subject(lock_receipt_ref, authorized_action_ids, authorized_tools, registry_ref)
         _, receipt_digest = self._receipts.issue_verified(receipt_id, issuer_id, subject)
         return BuildAdmissionReceipt(
             admission_id=admission_id,

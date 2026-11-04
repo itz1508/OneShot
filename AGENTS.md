@@ -51,3 +51,23 @@ Authorization is **default-deny and host-enforced**. Every effect requires a hos
 - Keep secrets in environment variables, never in Git. Commit only `.env.example` placeholders.
 - Use minimal changes. Preserve working tests. Never weaken assertions to make checks pass.
 - If a check is unavailable, mark it **not checked** or **blocked**, not passed.
+
+## Tool provenance and structural readiness
+
+- Planning records validation expectations as prose and executable checks as typed
+  `ToolInvocation(tool_id, args)` values. Prose is never parsed as an argv command.
+- The host provisions a trusted `ToolRegistrySnapshot`, including tool versions,
+  executable SHA-256 digests, allowed stages/effects, and pinned sandbox profiles.
+  The immutable snapshot is stored in `ArtifactStore` and included in Package Lock.
+- Scanner/Planning validate each requested tool against that exact snapshot.
+  Build Admission derives the allowed tool IDs from admitted actions; arbitrary
+  tool strings from Planner or Builder do not grant execution.
+- The host rechecks tool identities, arguments, paths, sandbox profile,
+  executable digest, and admission immediately before sandbox execution.
+  Tool resolution returns argv without a shell; it never runs an executable itself.
+- Structural gap checks validate producer/consumer reference closure, stage
+  effect gates, and per-stage concern ownership before Build Admission.
+  Missing provenance is a blocker, not an implicit external dependency.
+- No runnable tool catalog is assumed until the host supplies real pinned
+  executable and image identities. Do not invent digests or silently authorize
+  a sandbox profile. The existing filesystem effect executor remains host-owned.
