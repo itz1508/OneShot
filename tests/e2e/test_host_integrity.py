@@ -236,9 +236,8 @@ def test_independent_processes_cannot_run_same_research(tmp_path: Path) -> None:
     child.start()
     try:
         assert ready.wait(timeout=15), "child process failed to acquire Research slot"
-        with pytest.raises(MVPError, match="conflict"):
-            with MVPService(tmp_path).research_slot(task_id):
-                raise AssertionError("duplicate Research admitted")
+        with pytest.raises(MVPError, match="conflict"), MVPService(tmp_path).research_slot(task_id):
+            raise AssertionError("duplicate Research admitted")
     finally:
         release.set()
         child.join(timeout=15)
