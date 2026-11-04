@@ -23,6 +23,7 @@ from agent.runtime.controller import STAGE_ORDER, HostController, Stage, Transit
 from agent.runtime.effect_executor import EffectExecutor
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.scanner_gateway import ScannerGateway
+from tests.fixtures.structural_gap import passing_gap
 
 LOCK_SUBJECT = "package_lock"
 
@@ -30,6 +31,17 @@ LOCK_SUBJECT = "package_lock"
 def _advance_with_receipt(controller, task_id, run_id, stage):
     """Helper: issue a stage receipt then advance."""
     receipt = controller.issue_stage_receipt(stage, task_id=task_id, run_id=run_id, revision=1)
+    if stage is Stage.PLANNING:
+        gap = passing_gap(controller)
+        assert gap.completion_receipt_ref is not None
+        return controller.advance_stage(
+            task_id,
+            run_id,
+            stage,
+            receipt,
+            gap_result_ref=gap.result_ref,
+            gap_receipt_ref=gap.completion_receipt_ref,
+        )
     return controller.advance_stage(task_id, run_id, stage, receipt)
 
 
@@ -118,6 +130,27 @@ class TestE2EWorkflow:
         cross_receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="task-002", run_id="run-002", revision=1)
         with pytest.raises(TransitionError, match="invalid completion receipt"):
             controller.advance_stage("task-001", "run-001", Stage.RESEARCH, cross_receipt)
+
+    def test_planning_requires_verified_structural_gap(self, tmp_path):
+        controller = HostController(state_root=tmp_path)
+        controller.init_task("task-001", "run-001")
+        _advance_with_receipt(controller, "task-001", "run-001", Stage.RESEARCH)
+        _advance_with_receipt(controller, "task-001", "run-001", Stage.AUDIT_DISCOVERY)
+        receipt = controller.issue_stage_receipt(Stage.PLANNING, task_id="task-001", run_id="run-001", revision=1)
+        with pytest.raises(TransitionError, match="structural gap analysis"):
+            controller.advance_stage("task-001", "run-001", Stage.PLANNING, receipt)
+
+        gap = passing_gap(controller)
+        assert gap.completion_receipt_ref is not None
+        state = controller.advance_stage(
+            "task-001",
+            "run-001",
+            Stage.PLANNING,
+            receipt,
+            gap_result_ref=gap.result_ref,
+            gap_receipt_ref=gap.completion_receipt_ref,
+        )
+        assert state.current_stage == Stage.FIXTURE_VALIDATION
 
     def test_resume_from_checkpoint(self, tmp_path):
         """E2E04: Resume from last checkpoint."""

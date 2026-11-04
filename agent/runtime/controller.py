@@ -7,11 +7,21 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from agent.contracts.common import ArtifactRef
 from agent.contracts.host import ReceiptRef
+from agent.contracts.scanner import ScannerResult
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
 from agent.runtime.event_store import EventStore
+from agent.runtime.host_gap_analyzer import (
+    HostGapAnalyzer,
+    SkeletonRunner,
+    StructuralGapOutcome,
+    StructuralGapRequest,
+    StructuralGapResult,
+    structural_gap_receipt_subject,
+)
 from agent.runtime.providers.registry import ProviderRegistry
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.recovery import BoundedRecovery
@@ -71,6 +81,7 @@ class HostController:
         self.event_store = EventStore(self.state_root)
         self.checkpoint_store = CheckpointStore(self.state_root)
         self.scanner = ScannerGateway(self.artifact_store)
+        self.gap_analyzer = HostGapAnalyzer(self.artifact_store, self.receipt_store)
         self.recovery = BoundedRecovery()
         self.providers = ProviderRegistry()
         self.authorization = AuthorizationEngine(
@@ -86,6 +97,8 @@ class HostController:
         run_id: str,
         expected_stage: Stage,
         completion_receipt_ref: ReceiptRef | None = None,
+        gap_result_ref: ArtifactRef | None = None,
+        gap_receipt_ref: ReceiptRef | None = None,
     ) -> TaskState:
         """Advance to the next stage if the current stage is completed.
 
@@ -120,6 +133,9 @@ class HostController:
         ):
             raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
 
+        if state.current_stage is Stage.PLANNING:
+            self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
+
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
             raise TransitionError("already at final stage")
@@ -145,6 +161,71 @@ class HostController:
 
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
+
+    def _verify_structural_gap(
+        self,
+        task_id: str,
+        run_id: str,
+        gap_result_ref: ArtifactRef | None,
+        gap_receipt_ref: ReceiptRef | None,
+        candidate_ref: ArtifactRef | None = None,
+    ) -> StructuralGapResult:
+        """Verify a persisted result and trusted pass receipt for this exact candidate."""
+        if gap_result_ref is None or gap_receipt_ref is None:
+            raise TransitionError("structural gap analysis receipt and result required")
+        if gap_receipt_ref.issuer_id != "host":
+            raise TransitionError("untrusted structural gap completion issuer")
+        try:
+            digest = self.artifact_store.get_digest(gap_result_ref.artifact_id, gap_result_ref.artifact_revision)
+            if digest != gap_result_ref.artifact_digest:
+                raise ValueError("structural gap artifact digest mismatch")
+            if gap_result_ref.contract_id != "structural_analysis_result":
+                raise ValueError("incorrect structural gap result contract")
+            raw = self.artifact_store.get_verified(gap_result_ref.artifact_id, gap_result_ref.artifact_revision)
+            result = StructuralGapResult.model_validate_json(raw)
+            if result.task_id != task_id or result.run_id != run_id:
+                raise ValueError("structural gap result belongs to another task or run")
+            if result.execution_status != "completed" or result.findings:
+                raise ValueError("structural gap analysis did not pass")
+            if result.known_critical_gap_detection_rate != 1.0 or not result.walking_skeleton_completed:
+                raise ValueError("structural gap backtest or walking skeleton incomplete")
+            candidate = result.candidate_specification_ref
+            if (
+                self.artifact_store.get_digest(candidate.artifact_id, candidate.artifact_revision)
+                != candidate.artifact_digest
+            ):
+                raise ValueError("Planning candidate changed since structural analysis")
+            subject = structural_gap_receipt_subject(result, digest)
+            if not self.receipt_store.verify(gap_receipt_ref.receipt_id, gap_receipt_ref.receipt_digest, subject):
+                raise ValueError("structural gap completion receipt is not verified")
+        except Exception as exc:
+            raise TransitionError(f"invalid structural gap evidence: {exc}") from exc
+        if candidate_ref is not None and result.candidate_specification_ref != candidate_ref:
+            raise TransitionError("structural gap pass belongs to a different candidate")
+        return result
+
+    def scan_planning_candidate(
+        self,
+        task_id: str,
+        run_id: str,
+        candidate_ref: ArtifactRef,
+        repository_identity: str,
+        capabilities: tuple[str, ...],
+        gap_result_ref: ArtifactRef | None,
+        gap_receipt_ref: ReceiptRef | None,
+    ) -> ScannerResult:
+        """Host Scanner dispatch; always reject an unvalidated Planning candidate."""
+        self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref, candidate_ref)
+        return self.scanner.scan_exact(candidate_ref, repository_identity, capabilities)
+
+    def run_structural_gap_analysis(
+        self,
+        request: StructuralGapRequest,
+        *,
+        walking_skeleton_runner: SkeletonRunner | None = None,
+    ) -> StructuralGapOutcome:
+        """Run the host structural workflow before accepting Planning."""
+        return self.gap_analyzer.evaluate(request, walking_skeleton_runner=walking_skeleton_runner)
 
     def get_state(self, task_id: str) -> TaskState | None:
         """Get current task state from checkpoint."""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -70,57 +70,170 @@ def _check_exchange_schema(schema: object, label: str) -> None:
             raise LoaderError(f"{label} missing request binding: {field}")
 
 
-def load_stage_workflow(path: str | Path) -> dict[str, Any]:
-    """Load a role workflow and reject structural contract/identity drift.
+_REQUIRED_HOST_WORKFLOWS = frozenset(
+    {
+        "run_initialization",
+        "runtime_output_allocation",
+        "registry_snapshot",
+        "provider_session_initialization",
+        "stage_output_persistence",
+        "stage_transition",
+        "scanner_execution",
+        "specification_freeze",
+        "package_lock",
+        "build_admission",
+        "build_task_compilation",
+        "build_wave_scheduling",
+        "batch_preflight",
+        "task_preflight",
+        "sandbox_creation",
+        "source_snapshot_transfer",
+        "effect_execution",
+        "task_integration",
+        "verification_barrier",
+        "integrated_source_promotion",
+        "run_cleanup",
+        "structural_gap_analysis",
+    }
+)
 
-    This checks workflow definitions, not runtime InputRequest/OutputResult
-    payloads. Host-side JSON Schema evaluation and trusted $ref resolution
-    remain separate responsibilities.
+
+def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
+    """Load and structurally validate the single registered end-to-end YAML contract.
+
+    This verifies workflow metadata only. Host-owned runtime execution, artifact
+    bindings, and external JSON Schema references require separate verification.
     """
     path = Path(path)
     if not path.exists():
-        raise LoaderError(f"workflow file not found: {path}")
+        raise LoaderError(f"workflow contract file not found: {path}")
     try:
         data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     except yaml.YAMLError as e:
         raise LoaderError(f"invalid workflow YAML: {e}") from e
     if not isinstance(data, dict):
-        raise LoaderError("workflow must be a mapping")
-    stage = data.get("stage")
-    if stage not in _STAGE_ROLES or data.get("id") != stage or data.get("version") != 1:
-        raise LoaderError("unknown or mismatched workflow stage/id/version")
-    workflow = data.get("workflow")
-    if not isinstance(workflow, dict):
-        raise LoaderError("workflow missing role contract")
-    if workflow.get("stage_id") != stage or workflow.get("role_id") != _STAGE_ROLES[stage]:
-        raise LoaderError("workflow stage or role does not match registered identity")
-    for field in ("input_schema", "output_schema"):
-        _check_exchange_schema(workflow.get(field), field)
-    output_required = workflow["output_schema"]["required"]
-    if "input_request_ref" not in output_required or "status" not in output_required:
-        raise LoaderError("output_schema must bind the exact input request and status")
-    validation = workflow.get("schema_validation")
-    if not isinstance(validation, dict) or validation.get("validator_owner") != "host":
-        raise LoaderError("host-owned schema validation is required")
-    if validation.get("unresolved_external_ref") != "reject":
-        raise LoaderError("unknown schema references must fail closed")
-    exchange = workflow.get("request_result_exchange")
-    if not isinstance(exchange, dict) or exchange.get("mode") != "bidirectional_request_result":
-        raise LoaderError("bidirectional request/result exchange is required")
-    inputs = workflow.get("inputs")
-    required_inputs = inputs.get("required") if isinstance(inputs, dict) else None
-    if not isinstance(required_inputs, list) or not any(
-        isinstance(item, dict) and item.get("input_id") == "input_request" for item in required_inputs
+        raise LoaderError("workflow bundle must be a mapping")
+
+    bundle = data.get("bundle")
+    roles = data.get("role_workflows")
+    hosts = data.get("host_workflows")
+    execution = data.get("execution")
+    if (
+        not isinstance(bundle, dict)
+        or not isinstance(roles, dict)
+        or not isinstance(hosts, dict)
+        or not isinstance(execution, dict)
     ):
-        raise LoaderError("input_request must be declared as a required stage input")
-    success = workflow.get("success_contract")
-    if not isinstance(success, dict) or success.get("derived_from") != "accepted_user_intent_and_supplied_criteria":
-        raise LoaderError("success must be derived from accepted user intent")
-    if stage == "research" and success.get("criteria_completeness_gate") is not False:
-        raise LoaderError("research must not require criteria completeness")
-    if stage == "build" and not exchange.get("build_admission_precedes_execution"):
-        raise LoaderError("builder must be admitted before effects")
-    return data
+        raise LoaderError("single workflow contract requires bundle, role_workflows, host_workflows, execution")
+
+    if bundle.get("bundle_id") != "oneshot_end_to_end":
+        raise LoaderError("unknown end-to-end bundle identity")
+    if bundle.get("role_guidance_root") != ".agents/reference":
+        raise LoaderError("role guidance must reside under .agents/reference")
+    if bundle.get("pre_scanner_gate") != "structural_gap_analysis":
+        raise LoaderError("structural gap analysis must gate the scanner")
+
+    expected_roles = list(_STAGE_ROLES)
+    if bundle.get("role_order") != expected_roles or set(roles) != set(expected_roles):
+        raise LoaderError("workflow stage order or membership does not match registered roles")
+    for stage, expected_role in _STAGE_ROLES.items():
+        role = roles[stage]
+        if not isinstance(role, dict):
+            raise LoaderError(f"{stage}: workflow must be a mapping")
+        workflow = role.get("workflow")
+        if (
+            role.get("stage") != stage
+            or role.get("id") != stage
+            or role.get("version") != 1
+            or not isinstance(workflow, dict)
+            or workflow.get("stage_id") != stage
+            or workflow.get("role_id") != expected_role
+        ):
+            raise LoaderError(f"{stage}: identity or version mismatch")
+        for name in ("input_schema", "output_schema"):
+            _check_exchange_schema(workflow.get(name), f"{stage}.{name}")
+        if not {"input_request_ref", "status"} <= set(workflow["output_schema"]["required"]):
+            raise LoaderError(f"{stage}: output must bind the exact input request and status")
+        validation = workflow.get("schema_validation")
+        exchange = workflow.get("request_result_exchange")
+        inputs = workflow.get("inputs")
+        success = workflow.get("success_contract")
+        if not isinstance(validation, dict) or validation.get("validator_owner") != "host":
+            raise LoaderError(f"{stage}: host-owned schema validation required")
+        if validation.get("unresolved_external_ref") != "reject":
+            raise LoaderError(f"{stage}: unresolved contract references must be rejected")
+        if not isinstance(exchange, dict) or exchange.get("mode") != "bidirectional_request_result":
+            raise LoaderError(f"{stage}: bidirectional request/result exchange required")
+        required_inputs = inputs.get("required") if isinstance(inputs, dict) else None
+        if not isinstance(required_inputs, list) or not any(
+            isinstance(item, dict) and item.get("input_id") == "input_request" for item in required_inputs
+        ):
+            raise LoaderError(f"{stage}: required input_request missing")
+        if not isinstance(success, dict) or success.get("derived_from") != "accepted_user_intent_and_supplied_criteria":
+            raise LoaderError(f"{stage}: success must derive from user intent")
+        if stage == "research" and success.get("criteria_completeness_gate") is not False:
+            raise LoaderError("research cannot use criteria completeness as a gate")
+        if stage == "build" and not exchange.get("build_admission_precedes_execution"):
+            raise LoaderError("builder must be admitted before effects")
+
+    if set(hosts) != _REQUIRED_HOST_WORKFLOWS:
+        missing = sorted(_REQUIRED_HOST_WORKFLOWS - set(hosts))
+        extra = sorted(set(hosts) - _REQUIRED_HOST_WORKFLOWS)
+        raise LoaderError(f"host workflow registry differs: missing={missing}, extra={extra}")
+    for host_id, workflow in hosts.items():
+        if not isinstance(workflow, dict) or workflow.get("workflow_id") != host_id or not workflow.get("owner"):
+            raise LoaderError(f"{host_id}: missing host workflow identity or owner")
+
+    gap = hosts["structural_gap_analysis"]
+    expected_passes = {
+        "validate_reference_closure",
+        "validate_execution_trace",
+        "validate_concern_coverage",
+        "run_historical_backtest",
+        "run_walking_skeleton",
+        "perform_source_grounded_gap_analysis",
+        "perform_comparable_system_analysis",
+        "persist_analysis",
+    }
+    if set(gap.get("required_work", ())) != expected_passes:
+        raise LoaderError("structural gap analysis passes are incomplete")
+    if gap.get("completion", {}).get("walking_skeleton_completed") is not True:
+        raise LoaderError("walking skeleton must be verified")
+    if gap.get("completion", {}).get("known_critical_gap_detection_rate") != 1.0:
+        raise LoaderError("known critical backtest detection must be complete")
+    correction = gap.get("correction", {})
+    if (
+        correction.get("target_stage") != "planning"
+        or correction.get("requires_new_candidate_revision") is not True
+        or correction.get("rerun_all_passes_before_scanner") is not True
+    ):
+        raise LoaderError("gap correction must return to a new planning revision")
+
+    path_to_scanner = execution.get("research_to_planning", ())
+    if (
+        not isinstance(path_to_scanner, list)
+        or "structural_gap_analysis" not in path_to_scanner
+        or "scanner_execution" not in path_to_scanner
+        or path_to_scanner.index("structural_gap_analysis") >= path_to_scanner.index("scanner_execution")
+    ):
+        raise LoaderError("structural gap analysis must run before scanner")
+    retry = execution.get("on_structural_gap_failure", {})
+    if (
+        not isinstance(retry, dict)
+        or retry.get("return_to") != "planning"
+        or retry.get("rerun") != "structural_gap_analysis"
+        or retry.get("scanner_blocked_until_valid") is not True
+    ):
+        raise LoaderError("invalid structural gap correction route")
+    return cast(dict[str, Any], data)
+
+
+def load_stage_workflow(path: str | Path, stage_id: str) -> dict[str, Any]:
+    """Resolve one role from the single registered end-to-end workflow file."""
+    bundle = load_workflow_bundle(path)
+    if stage_id not in _STAGE_ROLES:
+        raise LoaderError(f"unknown stage: {stage_id}")
+    return cast(dict[str, Any], bundle["role_workflows"][stage_id])
 
 
 def load_role_policy(path: str | Path) -> dict[str, Any]:
