@@ -3,7 +3,14 @@
 from __future__ import annotations
 
 from agent.contracts.common import ArtifactRef
-from agent.contracts.planning import BuildAction, BuildSpecification, CreateAction, ModifyAction, MoveAction, RemoveAction
+from agent.contracts.planning import (
+    BuildAction,
+    BuildSpecification,
+    CreateAction,
+    ModifyAction,
+    MoveAction,
+    RemoveAction,
+)
 from agent.contracts.task_todo import Build, TaskTodo
 from agent.contracts.tool_registry import safe_relative_path
 
