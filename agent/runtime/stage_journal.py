@@ -45,6 +45,7 @@ class StageJournalService:
     @staticmethod
     def _validate_identity(value: str) -> str:
         import re
+
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
             raise StageJournalError("invalid workspace/task/run identity")
         return value
@@ -87,15 +88,27 @@ class StageJournalService:
                     """INSERT INTO stage_log_events
                     (event_id, workspace_id, task_id, run_id, sequence, stage, payload)
                     VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (persisted.event_id, persisted.workspace_id, persisted.task_id,
-                     persisted.run_id, seq, persisted.stage, persisted.model_dump_json()),
+                    (
+                        persisted.event_id,
+                        persisted.workspace_id,
+                        persisted.task_id,
+                        persisted.run_id,
+                        seq,
+                        persisted.stage,
+                        persisted.model_dump_json(),
+                    ),
                 )
         self.rebuild(persisted.workspace_id, persisted.task_id, persisted.run_id)
         return persisted
 
     def load(
-        self, *, workspace_id: str, task_id: str, run_id: str,
-        stage: StageName, after_sequence: int = 0,
+        self,
+        *,
+        workspace_id: str,
+        task_id: str,
+        run_id: str,
+        stage: StageName,
+        after_sequence: int = 0,
     ) -> tuple[StageLogEvent, ...]:
         if stage not in STAGES or after_sequence < 0:
             raise StageJournalError("invalid stage or sequence")
