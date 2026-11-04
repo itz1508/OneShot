@@ -89,9 +89,7 @@ def test_frontend_missing_research_wiring_and_wrong_artifact_editor(tmp_path: Pa
     api.mkdir()
     ui.mkdir(parents=True)
     (api / "api.py").write_text('@app.post("/api/tasks/{task_id}/research")\ndef research(): pass\n')
-    (ui / "main.jsx").write_text(
-        "setActiveFile(file)\nsetEditText(task?.input_text || '')\nMCP integration pending\n"
-    )
+    (ui / "main.jsx").write_text("setActiveFile(file)\nsetEditText(task?.input_text || '')\nMCP integration pending\n")
     result = scan(tmp_path, capabilities=("frontend",))
     assert {item.code for item in result.findings} == {
         "RESEARCH_ACTION_UNWIRED",
