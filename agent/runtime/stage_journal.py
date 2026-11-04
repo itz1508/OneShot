@@ -180,7 +180,7 @@ class StageJournalService:
                 try:
                     with os.fdopen(fd, "w", encoding="utf-8") as stream:
                         for (payload,) in rows:
-                            stream.write(payload + "\\n")
+                            stream.write(payload + "\n")
                         stream.flush()
                         os.fsync(stream.fileno())
                     if target.is_symlink():
