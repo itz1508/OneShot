@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from agent.contracts.common import ArtifactRef
 from agent.contracts.host import ReceiptRef
 from agent.contracts.scanner import ScannerResult
+from agent.contracts.work_todo import TodoList, WorkBinding
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
@@ -57,6 +58,7 @@ class TaskState(BaseModel):
     run_id: str = Field(min_length=1)
     current_stage: Stage = Stage.RESEARCH
     completed_stages: tuple[Stage, ...] = ()
+    active_work_artifact_id: str | None = None
 
     model_config = {"frozen": True}
 
@@ -117,6 +119,8 @@ class HostController:
 
         if state.current_stage != expected_stage:
             raise TransitionError(f"expected stage {expected_stage}, but current is {state.current_stage}")
+        if state.run_id != run_id or state.task_id != task_id:
+            raise TransitionError("stage transition task/run binding mismatch")
 
         # Verify stage-completion receipt
         if completion_receipt_ref is None:
@@ -142,6 +146,8 @@ class HostController:
         # Task tracking is a mandatory observation gate, never permission to execute.
         if todo_ref is None:
             raise TransitionError("completed work list reference required before stage transition")
+        if state.active_work_artifact_id != todo_ref.artifact_id:
+            raise TransitionError("work list does not match the host-assigned request")
         try:
             self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
@@ -237,6 +243,37 @@ class HostController:
     ) -> StructuralGapOutcome:
         """Run the host structural workflow before accepting Planning."""
         return self.gap_analyzer.evaluate(request, walking_skeleton_runner=walking_skeleton_runner)
+
+    def assign_work(
+        self,
+        binding: WorkBinding,
+        *,
+        action: str | None = None,
+        expected_result: str | None = None,
+        work_plan_ref: ArtifactRef | None = None,
+    ) -> tuple[TodoList, ArtifactRef]:
+        """Host registers a stage assignment and auto-generates its work tracker."""
+        checkpoint = self.checkpoint_store.load_checkpoint(binding.task_id)
+        if checkpoint is None:
+            raise TransitionError("cannot assign work before task initialization")
+        revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if state.run_id != binding.run_id or state.current_stage.value != binding.stage:
+            raise TransitionError("work assignment belongs to a different task stage or run")
+        work_id = WorkTodoManager._identity(binding, "work-todo")
+        if state.active_work_artifact_id is not None and state.active_work_artifact_id != work_id:
+            raise TransitionError("different work request already assigned to this stage")
+        record, ref = self.work_todos.start(
+            binding, action=action, expected_result=expected_result, work_plan_ref=work_plan_ref
+        )
+        if state.active_work_artifact_id is None:
+            updated = state.model_copy(update={"active_work_artifact_id":ref.artifact_id})
+            try:
+                self.checkpoint_store.checkpoint_cas(binding.task_id, revision, updated.model_dump(mode="json"))
+            except CompetingWriterError as exc:
+                raise TransitionError(f"concurrent work assignment: {exc}") from exc
+            self.event_store.append(binding.task_id, "work_assigned", ref.artifact_id)
+        return record, ref
 
     def get_state(self, task_id: str) -> TaskState | None:
         """Get current task state from checkpoint."""
