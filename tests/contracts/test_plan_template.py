@@ -18,8 +18,12 @@ class Evidence(BaseModel):
 def stored(artifacts, artifact_id):
     digest = artifacts.put_immutable(Evidence(text=artifact_id), artifact_id, 1, "example", "1.0")
     return ArtifactRef(
-        artifact_id=artifact_id, artifact_revision=1, artifact_digest=digest,
-        contract_id="example", contract_version="1.0", serializer_profile=SERIALIZER_PROFILE,
+        artifact_id=artifact_id,
+        artifact_revision=1,
+        artifact_digest=digest,
+        contract_id="example",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
     )
 
 
