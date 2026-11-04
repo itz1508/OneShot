@@ -10,7 +10,7 @@ import pytest
 from agent.contracts.research import Requirement, ResearchRecord
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
 from agent.runtime.providers.base import ProviderError, ProviderRequest
-from mvp.mcp_research import MCPResearchAdapter, _tool_json, register_mcp_research
+from mvp.mcp_research import MCPResearchAdapter, _tool_json, register_mcp_research, research_artifact_id
 from mvp.research_host import execute_research
 from mvp.service import MVPError, MVPService
 
@@ -35,7 +35,7 @@ def response(task_id: str, *, wrong_digest: bool = False) -> dict:
         "run_id": run_id,
         "task_id": task_id,
         "status": "completed",
-        "artifact_id": f"research-{task_id}-{run_id}",
+        "artifact_id": research_artifact_id(task_id, run_id),
         "artifact_revision": 1,
         "artifact_digest": "f" * 64 if wrong_digest else digest_model(record),
         "artifact": record.model_dump(mode="json"),
@@ -130,9 +130,9 @@ def test_unstructured_prompt_fails_without_call(monkeypatch):
 
 def test_error_result_and_nontext_result_fail_closed():
     with pytest.raises(ProviderError, match="reported an error"):
-        _tool_json(SimpleNamespace(is_error=True, content=[]))
+        _tool_json(SimpleNamespace(is_error=True, content=[], structured_content={"error_class": "ONESHOT_UPSTREAM_ERROR"}))
     with pytest.raises(ProviderError, match="one JSON text"):
-        _tool_json(SimpleNamespace(is_error=False, content=[SimpleNamespace(type="image")]))
+        _tool_json(SimpleNamespace(is_error=False, content=[SimpleNamespace(type="image")], structured_content={}))
 
 
 def test_http_research_endpoint_advances_only_after_host_receipts(tmp_path, monkeypatch):
@@ -199,3 +199,20 @@ def test_research_binds_latest_input_and_locks_later_changes(tmp_path, monkeypat
     with pytest.raises(MVPError, match="input locked"):
         service.revise_input(task_id, "Stale after Research", expected_revision=2)
     assert service.get(task_id)["input_text"] == "Revised request"
+
+
+def test_codex_canonical_artifact_identity():
+    task_id = "a" * 32
+    assert research_artifact_id(task_id, f"run-{task_id}") == "research-199ca5cc042c693d37482322e81e54e9"
+
+
+def test_mcp_text_and_structured_content_must_agree():
+    valid = response("a" * 32)
+    message = SimpleNamespace(type="text", text=json.dumps(valid))
+    assert _tool_json(SimpleNamespace(is_error=False, content=[message], structured_content=valid)) == valid
+    corrupted = dict(valid)
+    corrupted["artifact_digest"] = "b" * 64
+    with pytest.raises(ProviderError, match="mismatch"):
+        _tool_json(SimpleNamespace(is_error=False, content=[message], structured_content=corrupted))
+    with pytest.raises(ProviderError, match="mismatch"):
+        _tool_json(SimpleNamespace(is_error=False, content=[message], structured_content=None))
