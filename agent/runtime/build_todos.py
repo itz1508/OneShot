@@ -67,10 +67,7 @@ def compile_build(spec: BuildSpecification, frozen_plan_ref: ArtifactRef) -> Bui
     waves: list[tuple[str, ...]] = []
     complete: set[str] = set()
     while remaining:
-        ready = [
-            todo for todo in remaining.values()
-            if set(todo.dependency_todo_ids).issubset(complete)
-        ]
+        ready = [todo for todo in remaining.values() if set(todo.dependency_todo_ids).issubset(complete)]
         if not ready:
             raise ValueError("cyclic TaskTodo dependencies")
         paths: set[str] = set()
