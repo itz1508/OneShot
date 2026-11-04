@@ -67,9 +67,7 @@ def test_receipt_binds_exact_output_and_stage_transition(tmp_path: Path) -> None
         artifact_digest=evidence.artifact_digest,
     )
     subject = host.receipt_store.get_subject(receipt.receipt_id)
-    assert subject == (
-        f"stage_complete:task-one:run-one:research:{evidence.artifact_id}:1:{evidence.artifact_digest}"
-    )
+    assert subject == (f"stage_complete:task-one:run-one:research:{evidence.artifact_id}:1:{evidence.artifact_digest}")
     stage = host.advance_stage("task-one", "run-one", Stage.RESEARCH, receipt, todo_ref=todo)
     assert stage.current_stage is Stage.AUDIT_DISCOVERY
 
@@ -78,9 +76,7 @@ def test_legacy_stage_receipt_rejected(tmp_path: Path) -> None:
     host = HostController(tmp_path)
     host.init_task("task-one", "run-one")
     todo, _ = _completed_research_work(host, "task-one", "run-one")
-    _, digest = host.receipt_store.issue_verified(
-        "old-receipt", "host", "stage_complete:task-one:run-one:research"
-    )
+    _, digest = host.receipt_store.issue_verified("old-receipt", "host", "stage_complete:task-one:run-one:research")
     old = ReceiptRef(receipt_id="old-receipt", receipt_digest=digest, issuer_id="host")
     with pytest.raises(TransitionError, match="invalid completion receipt"):
         host.advance_stage("task-one", "run-one", Stage.RESEARCH, old, todo_ref=todo)
@@ -92,8 +88,12 @@ def test_receipt_with_unrelated_artifact_cannot_complete_stage(tmp_path: Path) -
     todo, _ = _completed_research_work(host, "task-one", "run-one")
     unrelated = _artifact(host, "unrelated-output", "not this work")
     receipt = host.issue_stage_receipt(
-        Stage.RESEARCH, task_id="task-one", run_id="run-one",
-        artifact_id=unrelated.artifact_id, revision=1, artifact_digest=unrelated.artifact_digest
+        Stage.RESEARCH,
+        task_id="task-one",
+        run_id="run-one",
+        artifact_id=unrelated.artifact_id,
+        revision=1,
+        artifact_digest=unrelated.artifact_digest,
     )
     with pytest.raises(TransitionError, match="evidence not in completed work"):
         host.advance_stage("task-one", "run-one", Stage.RESEARCH, receipt, todo_ref=todo)
@@ -105,8 +105,12 @@ def test_forged_receipt_digest_fails(tmp_path: Path) -> None:
     host.init_task("task-one", "run-one")
     todo, evidence = _completed_research_work(host, "task-one", "run-one")
     receipt = host.issue_stage_receipt(
-        Stage.RESEARCH, task_id="task-one", run_id="run-one",
-        artifact_id=evidence.artifact_id, revision=1, artifact_digest=evidence.artifact_digest
+        Stage.RESEARCH,
+        task_id="task-one",
+        run_id="run-one",
+        artifact_id=evidence.artifact_id,
+        revision=1,
+        artifact_digest=evidence.artifact_digest,
     )
     forged = ReceiptRef(receipt_id=receipt.receipt_id, receipt_digest="f" * 64, issuer_id="host")
     with pytest.raises(TransitionError, match="unverified host provenance"):
@@ -119,34 +123,47 @@ def _interrupted_research(service: MVPService, persist_output: bool) -> str:
     assert state is not None
     _, revision, input_digest = service.read_input(task_id)
     input_ref = ArtifactRef(
-        artifact_id=f"mvp-input:{task_id}", artifact_revision=revision,
-        artifact_digest=input_digest, contract_id="mvp_task_input",
-        contract_version="1.0", serializer_profile=SERIALIZER_PROFILE,
+        artifact_id=f"mvp-input:{task_id}",
+        artifact_revision=revision,
+        artifact_digest=input_digest,
+        contract_id="mvp_task_input",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
     )
     binding = WorkBinding(
-        task_id=task_id, run_id=state.run_id, stage="research",
-        request_id=f"research-{task_id}", request_revision=revision,
+        task_id=task_id,
+        run_id=state.run_id,
+        stage="research",
+        request_id=f"research-{task_id}",
+        request_revision=revision,
         input_request_ref=input_ref,
     )
     _, first = service.host.assign_work(
-        binding, action="Execute verified MCP Research",
+        binding,
+        action="Execute verified MCP Research",
         expected_result="ResearchRecord validated and persisted by the host",
     )
     service.host.work_todos.set_status(first, "work-1", WorkStatus.RUNNING)
     if persist_output:
         artifact = ResearchRecord(
-            task_id=task_id, run_id=state.run_id, stage_revision=1,
+            task_id=task_id,
+            run_id=state.run_id,
+            stage_revision=1,
             requirements=(
                 Requirement(
-                    requirement_id="REQ-001", source_reference="request",
+                    requirement_id="REQ-001",
+                    source_reference="request",
                     original_wording="Inspect authorized files",
                     statement="Inspect authorized files before implementation",
                 ),
             ),
         )
         service.artifacts.put_immutable(
-            artifact, research_artifact_id(task_id, state.run_id), 1,
-            "research_record", "1.0",
+            artifact,
+            research_artifact_id(task_id, state.run_id),
+            1,
+            "research_record",
+            "1.0",
         )
     return task_id
 
@@ -197,6 +214,4 @@ def test_dead_process_admission_can_be_reclaimed(tmp_path: Path) -> None:
     with service.research_slot(task_id):
         pass
     with sqlite3.connect(str(tmp_path / "research_admission.db")) as conn:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM active_research WHERE task_id = ?", (task_id,)
-        ).fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM active_research WHERE task_id = ?", (task_id,)).fetchone()[0] == 0
