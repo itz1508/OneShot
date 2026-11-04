@@ -11,6 +11,7 @@ import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal, cast
 
 from .contracts import CandidateManifest, ChangedPath, CommandSpec, SandboxCommandResult, SandboxExecutionRequest
 from .policy import canonical_digest, check_commands, normalize_path
@@ -65,10 +66,13 @@ def changed_paths(before: dict[str, dict[str, object]], after: dict[str, dict[st
         a, b = before.get(p), after.get(p)
         if a == b:
             continue
-        operation = "create" if a is None else "delete" if b is None else "mode" if a["sha256"] == b["sha256"] else "modify"
-        paths.append(ChangedPath(path=p, operation=operation, before_sha256=a["sha256"] if a else None,
-                                 after_sha256=b["sha256"] if b else None,
-                                 before_mode=a["mode"] if a else None, after_mode=b["mode"] if b else None))
+        operation: Literal["create", "modify", "delete", "mode"] = (
+            "create" if a is None else "delete" if b is None else
+            "mode" if a["sha256"] == b["sha256"] else "modify"
+        )
+        paths.append(ChangedPath(path=p, operation=operation, before_sha256=cast(str, a["sha256"]) if a else None,
+                                 after_sha256=cast(str, b["sha256"]) if b else None,
+                                 before_mode=cast(int, a["mode"]) if a else None, after_mode=cast(int, b["mode"]) if b else None))
     return tuple(paths)
 
 
@@ -117,7 +121,8 @@ def run_command(cmd: CommandSpec, root: Path, output: Path, max_bytes: int) -> t
                     break
                 for key, _ in sel.select(timeout=min(remaining, 0.2)):
                     name = key.data
-                    chunk = os.read(key.fileobj.fileno(), 65536)
+                    pipe_fd = key.fileobj if isinstance(key.fileobj, int) else key.fileobj.fileno()
+                    chunk = os.read(pipe_fd, 65536)
                     if not chunk:
                         sel.unregister(key.fileobj)
                         continue
