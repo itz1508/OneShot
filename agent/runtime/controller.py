@@ -375,6 +375,9 @@ class HostController:
         stage = state.current_stage
         role = self._declared_dispatch_role(stage)
         if requested_role is not None and requested_role != role:
+            self.event_store.append(
+                task_id, "agent_dispatch_rejected", f"stage={stage.value};requested={requested_role};allowed={role}"
+            )
             raise TransitionError("incorrect agent role for active workflow stage")
         if stage is Stage.RESEARCH:
             if requester_role not in {"workflow_entry", "audit_discovery", "planning"}:
