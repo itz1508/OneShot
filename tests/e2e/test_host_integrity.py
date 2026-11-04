@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import multiprocessing
 import sqlite3
 from pathlib import Path
 
@@ -215,3 +216,55 @@ def test_dead_process_admission_can_be_reclaimed(tmp_path: Path) -> None:
         pass
     with sqlite3.connect(str(tmp_path / "research_admission.db")) as conn:
         assert conn.execute("SELECT COUNT(*) FROM active_research WHERE task_id = ?", (task_id,)).fetchone()[0] == 0
+
+
+def _hold_research_slot(state_root: str, task_id: str, ready: object, release: object) -> None:
+    """Separate process holding a real SQLite admission record."""
+    service = MVPService(state_root)
+    with service.research_slot(task_id):
+        ready.set()
+        if not release.wait(timeout=20):
+            raise RuntimeError("slot holder timed out")
+
+
+def test_independent_processes_cannot_run_same_research(tmp_path: Path) -> None:
+    ctx = multiprocessing.get_context("spawn")
+    ready = ctx.Event()
+    release = ctx.Event()
+    task_id = "c" * 32
+    child = ctx.Process(target=_hold_research_slot, args=(str(tmp_path), task_id, ready, release))
+    child.start()
+    try:
+        assert ready.wait(timeout=15), "child process failed to acquire Research slot"
+        with pytest.raises(MVPError, match="conflict"):
+            with MVPService(tmp_path).research_slot(task_id):
+                raise AssertionError("duplicate Research admitted")
+    finally:
+        release.set()
+        child.join(timeout=15)
+        if child.is_alive():
+            child.terminate()
+            child.join(timeout=5)
+    assert child.exitcode == 0
+    with MVPService(tmp_path).research_slot(task_id):
+        pass
+
+
+def test_crashed_process_slot_is_reclaimable_without_replaying_mcp(tmp_path: Path) -> None:
+    ctx = multiprocessing.get_context("spawn")
+    ready = ctx.Event()
+    release = ctx.Event()
+    task_id = "d" * 32
+    child = ctx.Process(target=_hold_research_slot, args=(str(tmp_path), task_id, ready, release))
+    child.start()
+    try:
+        assert ready.wait(timeout=15), "child process failed to acquire Research slot"
+        child.terminate()
+        child.join(timeout=15)
+        assert child.exitcode is not None
+        with MVPService(tmp_path).research_slot(task_id):
+            pass
+    finally:
+        if child.is_alive():
+            child.kill()
+            child.join(timeout=5)
