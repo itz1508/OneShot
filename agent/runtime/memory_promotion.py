@@ -154,6 +154,32 @@ class HostMemoryManager:
         self._verify_receipt(memory.verification_receipt_ref, verification_subject)
         self._verify_receipt(memory.approval_receipt_ref, approval_subject)
 
+        # Fail before any memory side effect if the template was verified
+        # against a different Build. Concurrent CAS is still independently
+        # checked below and must be reconciled by the host on interruption.
+        latest_template_revision = self._artifacts.latest_revision(memory.source_plan_template_ref.artifact_id)
+        if latest_template_revision > memory.source_plan_template_ref.artifact_revision:
+            current_digest = self._artifacts.get_digest(
+                memory.source_plan_template_ref.artifact_id, latest_template_revision
+            )
+            if current_digest is None:
+                raise MemoryPromotionError("missing latest template revision")
+            current = self._templates.load(
+                ArtifactRef(
+                    artifact_id=memory.source_plan_template_ref.artifact_id,
+                    artifact_revision=latest_template_revision,
+                    artifact_digest=current_digest,
+                    contract_id="plan_template",
+                    contract_version="1.0",
+                    serializer_profile=SERIALIZER_PROFILE,
+                )
+            )
+            if (
+                not current.verified_by_build
+                or current.build_verification_receipt_ref != memory.verification_receipt_ref
+            ):
+                raise MemoryPromotionError("conflicting verified template revision")
+
         memory_artifact_id = f"build-memory:{workspace_id}:{memory.memory_id}"
         digest = self._artifacts.put_immutable(memory, memory_artifact_id, 1, "verified_build_memory", "1.0")
         memory_ref = ArtifactRef(
