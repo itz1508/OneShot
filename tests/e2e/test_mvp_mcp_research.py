@@ -136,6 +136,8 @@ def test_error_result_and_nontext_result_fail_closed():
 
 
 def test_http_research_endpoint_advances_only_after_host_receipts(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
     from fastapi.testclient import TestClient
 
     import mvp.api
@@ -160,6 +162,8 @@ def test_http_research_endpoint_advances_only_after_host_receipts(tmp_path, monk
 
 
 def test_http_forged_digest_is_502_and_stage_remains_open(tmp_path, monkeypatch):
+    pytest.importorskip("fastapi")
+    pytest.importorskip("httpx")
     from fastapi.testclient import TestClient
 
     import mvp.api
