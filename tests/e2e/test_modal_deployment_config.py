@@ -6,11 +6,10 @@ import asyncio
 import runpy
 import sys
 import types
-
-import pytest
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi import Request
 
 
