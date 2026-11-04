@@ -59,9 +59,7 @@ class BuildAdmission:
                 expected += f":{registry_ref.artifact_digest}"
             if expected != lock_subject:
                 raise BuildAdmissionError("package lock subject does not match upstream artifacts")
-        if not self._receipts.verify(
-            lock_receipt_ref.receipt_id, lock_receipt_ref.receipt_digest, lock_subject
-        ):
+        if not self._receipts.verify(lock_receipt_ref.receipt_id, lock_receipt_ref.receipt_digest, lock_subject):
             raise BuildAdmissionError("invalid package lock receipt")
 
         authorized_tools: tuple[str, ...] = ()

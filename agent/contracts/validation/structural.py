@@ -9,10 +9,20 @@ from typing import Literal
 from agent.contracts.planning import BuildSpecification
 from agent.contracts.tool_registry import ToolRegistrySnapshot, resolve_invocation
 
-CONCERNS = frozenset({
-    "identity", "authority", "registry", "provenance", "persistence",
-    "recovery", "concurrency", "pinning", "evidence", "cleanup",
-})
+CONCERNS = frozenset(
+    {
+        "identity",
+        "authority",
+        "registry",
+        "provenance",
+        "persistence",
+        "recovery",
+        "concurrency",
+        "pinning",
+        "evidence",
+        "cleanup",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -117,7 +127,8 @@ def tool_invocation_gaps(
     profiles_by_action: dict[str, set[str]] = {}
     for action in pending:
         paths = frozenset(
-            path for path in (getattr(action, "source_path", None), getattr(action, "target_path", None))
+            path
+            for path in (getattr(action, "source_path", None), getattr(action, "target_path", None))
             if path is not None
         )
         for invocation in action.verification_tools:

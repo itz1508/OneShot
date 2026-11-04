@@ -108,14 +108,14 @@ def test_wrong_stage_and_unknown_tool_rejected() -> None:
 
 def test_invented_argument_rejected() -> None:
     with pytest.raises(ValueError, match="arguments"):
-        resolve_invocation(catalog(), ToolInvocation(tool_id="pytest-quiet", args={"other": "tests"}), "build", frozenset())
+        resolve_invocation(
+            catalog(), ToolInvocation(tool_id="pytest-quiet", args={"other": "tests"}), "build", frozenset()
+        )
 
 
 def test_path_param_requires_exact_affected_path() -> None:
     base = catalog()
-    tool = base.tools[0].model_copy(
-        update={"params": (ToolParam(name="path", kind=ParamKind.PATH),)}
-    )
+    tool = base.tools[0].model_copy(update={"params": (ToolParam(name="path", kind=ParamKind.PATH),)})
     changed = base.model_copy(update={"tools": (tool,)})
     with pytest.raises(ValueError, match="not admitted"):
         resolve_invocation(changed, invocation(path="other.py"), "build", frozenset({"tests/test_new.py"}))
@@ -123,9 +123,11 @@ def test_path_param_requires_exact_affected_path() -> None:
 
 def test_unknown_profile_rejected() -> None:
     with pytest.raises(ValidationError, match="sandbox profile"):
-        ToolRegistrySnapshot(registry_version="1", tools=catalog().tools, sandbox_profiles=(
-            SandboxProfile(profile_id="different", image_ref=IMAGE),
-        ))
+        ToolRegistrySnapshot(
+            registry_version="1",
+            tools=catalog().tools,
+            sandbox_profiles=(SandboxProfile(profile_id="different", image_ref=IMAGE),),
+        )
 
 
 def test_template_cannot_embed_user_value_in_option() -> None:
@@ -163,28 +165,43 @@ def test_build_admission_derives_tools_from_locked_spec(tmp_path) -> None:
     upstream: list[ArtifactRef] = []
     for name in ("research", "audit", "frozen"):
         digest = store.put_immutable(catalog(), name, 1, "fixture", "1")
-        upstream.append(ArtifactRef(
-            artifact_id=name, artifact_revision=1, artifact_digest=digest,
-            contract_id="fixture", contract_version="1", serializer_profile="rfc8785-jcs-sha256-v1",
-        ))
-    lock = PackageLock(store, receipts).lock(
-        "lock-001", *upstream, tool_registry_ref=registry_ref
-    )
+        upstream.append(
+            ArtifactRef(
+                artifact_id=name,
+                artifact_revision=1,
+                artifact_digest=digest,
+                contract_id="fixture",
+                contract_version="1",
+                serializer_profile="rfc8785-jcs-sha256-v1",
+            )
+        )
+    lock = PackageLock(store, receipts).lock("lock-001", *upstream, tool_registry_ref=registry_ref)
     subject = ":".join(ref.artifact_digest for ref in upstream) + ":" + registry_ref.artifact_digest
     admission = BuildAdmission(receipts, store).admit(
-        "adm-001", lock.receipt_ref, ("act-001",), subject,
-        build_spec=spec(invocation()), package_lock=lock,
+        "adm-001",
+        lock.receipt_ref,
+        ("act-001",),
+        subject,
+        build_spec=spec(invocation()),
+        package_lock=lock,
     )
     assert admission.authorized_tool_ids == ("pytest-quiet",)
     assert admission.tool_registry_ref == registry_ref
     with pytest.raises(BuildAdmissionError, match="unknown action"):
         BuildAdmission(receipts, store).admit(
-            "adm-bad", lock.receipt_ref, ("act-999",), subject,
-            build_spec=spec(invocation()), package_lock=lock,
+            "adm-bad",
+            lock.receipt_ref,
+            ("act-999",),
+            subject,
+            build_spec=spec(invocation()),
+            package_lock=lock,
         )
     with pytest.raises(BuildAdmissionError, match="Package Lock required"):
         BuildAdmission(receipts, store).admit(
-            "adm-unbound", lock.receipt_ref, ("act-001",), subject,
+            "adm-unbound",
+            lock.receipt_ref,
+            ("act-001",),
+            subject,
             build_spec=spec(invocation()),
         )
 

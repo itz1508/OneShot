@@ -13,8 +13,12 @@ from agent.contracts.common import ContractModel, Sha256
 
 ToolId = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
 StageId = Literal[
-    "research", "audit_discovery", "planning", "fixture_validation",
-    "build", "build_validation",
+    "research",
+    "audit_discovery",
+    "planning",
+    "fixture_validation",
+    "build",
+    "build_validation",
 ]
 _PLACEHOLDER = re.compile(r"^\{([a-z][a-z0-9_-]*)\}$")
 _DRIVE = re.compile(r"^[A-Za-z]:")
@@ -36,9 +40,12 @@ class ParamKind(StrEnum):
 def safe_relative_path(value: str) -> str:
     """Reject ambiguous, absolute, traversal, and option-like path arguments."""
     if (
-        not value or value.startswith(("-", "/", "\\"))
-        or "\x00" in value or _DRIVE.match(value)
-        or "\\" in value or any(ord(ch) < 32 for ch in value)
+        not value
+        or value.startswith(("-", "/", "\\"))
+        or "\x00" in value
+        or _DRIVE.match(value)
+        or "\\" in value
+        or any(ord(ch) < 32 for ch in value)
     ):
         raise ValueError("unsafe relative workspace path")
     parts = PurePosixPath(value).parts
@@ -182,8 +189,7 @@ def resolve_invocation(
         elif param.kind == ParamKind.WORKSPACE_PATH:
             safe_relative_path(value)
     argv = tuple(
-        invocation.args[token[1:-1]] if _PLACEHOLDER.fullmatch(token) else token
-        for token in spec.argv_template
+        invocation.args[token[1:-1]] if _PLACEHOLDER.fullmatch(token) else token for token in spec.argv_template
     )
     profile = next(p for p in snapshot.sandbox_profiles if p.profile_id == spec.sandbox_profile_id)
     return ResolvedCommand(

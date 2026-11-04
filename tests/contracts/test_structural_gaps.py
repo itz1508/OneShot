@@ -71,6 +71,6 @@ def test_concern_matrix_requires_evidence_or_reason() -> None:
     )
     assert concern_gaps(("build",), cells) == []
     assert any("missing coverage" in gap for gap in concern_gaps(("build",), cells[:-1]))
-    assert any("N/A reason" in gap for gap in concern_gaps((
-        "build",), (ConcernCell("build", "cleanup", "not_applicable"),)
-    ))
+    assert any(
+        "N/A reason" in gap for gap in concern_gaps(("build",), (ConcernCell("build", "cleanup", "not_applicable"),))
+    )
