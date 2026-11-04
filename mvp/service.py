@@ -14,7 +14,6 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from agent.runtime.artifact_store import ArtifactStore, StaleRevisionError
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.controller import HostController
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
@@ -48,7 +47,7 @@ class MVPService:
     def create(self, prompt: str) -> dict[str, object]:
         cleaned = prompt.strip()
         if not cleaned or len(cleaned) > 20000:
-            raise MVPError("task text must contain 1–20000 characters")
+            raise MVPError("task text must contain 1-20000 characters")
         task_id = uuid4().hex
         run_id = f"run-{task_id}"
         record = TaskInput(task_id=task_id, text=cleaned)
@@ -99,7 +98,7 @@ class MVPService:
             raise MVPError("invalid expected revision")
         content = text.strip()
         if not content or len(content) > 20000:
-            raise MVPError("task text must contain 1–20000 characters")
+            raise MVPError("task text must contain 1-20000 characters")
         record = TaskInput(task_id=task_id, text=content)
         try:
             self.artifacts.put_cas(record, self._artifact_id(task_id), expected_revision, "mvp_task_input", "1.0")
