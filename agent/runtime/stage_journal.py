@@ -66,6 +66,8 @@ class StageJournalService:
 
     def append(self, event: StageLogEvent) -> StageLogEvent:
         """Assign a per-run sequence and commit an idempotent authoritative event."""
+        if event.stage == "mem":
+            raise StageJournalError("mem.log requires verified host memory promotion")
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             previous = conn.execute(
