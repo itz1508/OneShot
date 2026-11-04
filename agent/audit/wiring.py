@@ -24,7 +24,9 @@ def scan_wiring(root: Path, scope: Path) -> list[Finding]:
             continue
         for decorator in node.decorator_list:
             if isinstance(decorator, ast.Call) and decorator.args and isinstance(decorator.args[0], ast.Constant):
-                if isinstance(decorator.func, ast.Attribute) and decorator.func.attr in {"get", "post", "patch", "put", "delete"}:
+                if isinstance(decorator.func, ast.Attribute) and decorator.func.attr in {
+                    "get", "post", "patch", "put", "delete"
+                }:
                     value = decorator.args[0].value
                     if isinstance(value, str):
                         routes.add(re.sub(r"\{[^}]+\}", "{}", value))
@@ -42,7 +44,8 @@ def scan_wiring(root: Path, scope: Path) -> list[Finding]:
                     findings.append(
                         evidence(
                             root, file, line_no, "API_ROUTE_REVIEW", "wiring", "low",
-                            f"Literal API prefix {value!r} not matched to a FastAPI route; dynamic URLs require runtime verification.",
+                            f"Literal API prefix {value!r} not matched to a FastAPI route; "
+                            "dynamic URLs require runtime verification.",
                         )
                     )
     return findings
