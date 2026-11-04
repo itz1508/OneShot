@@ -1,7 +1,7 @@
 """Real host stores: verify memory admission and journal/template promotion."""
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 
 from agent.contracts.build import BuildActionExecution, BuildActionStatus, BuildRecord
 from agent.contracts.build_memory import KnowledgeKind, VerifiedBuildKnowledge
@@ -157,7 +157,6 @@ def test_failed_e2e_cannot_promote(tmp_path):
 
 def test_missing_approval_blocks_memory(tmp_path):
     manager, journals, memory, completion, diagnostic = setup_case(tmp_path)
-    from agent.contracts.host import ReceiptRef
 
     untrusted = ReceiptRef(receipt_id="missing", receipt_digest="a" * 64, issuer_id="host")
     forged = VerifiedBuildKnowledge.model_validate({
