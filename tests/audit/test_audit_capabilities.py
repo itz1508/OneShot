@@ -18,7 +18,8 @@ def test_static_findings_are_not_e2e_success(tmp_path: Path) -> None:
     result = scan(tmp_path, capabilities=("contracts", "completeness"))
     assert result.disposition == "findings_open"
     assert {finding.code for finding in result.findings} == {"INTERNAL_IMPORT_MISSING", "UNRESOLVED_COMMENT"}
-    assert all(finding.evidence_digest == hashlib.sha256(source.read_bytes()).hexdigest() for finding in result.findings)
+    expected_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    assert all(finding.evidence_digest == expected_digest for finding in result.findings)
 
 
 def test_empty_scope_is_not_verified(tmp_path: Path) -> None:
