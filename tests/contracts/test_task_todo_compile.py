@@ -98,7 +98,9 @@ def test_manual_build_rejects_reused_source_action():
     compiled = compile_build(spec, ref())
     second = compiled.todos[1].model_copy(update={"source_action_ids": ("a",)})
     with pytest.raises(ValueError, match="multiple TaskTodo"):
-        Build.model_validate({
-            **compiled.model_dump(),
-            "todos": [compiled.todos[0].model_dump(), second.model_dump()],
-        })
+        Build.model_validate(
+            {
+                **compiled.model_dump(),
+                "todos": [compiled.todos[0].model_dump(), second.model_dump()],
+            }
+        )
