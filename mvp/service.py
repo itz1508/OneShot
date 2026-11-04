@@ -66,9 +66,7 @@ class _ResearchAdmissionStore:
         token = uuid4().hex
         with sqlite3.connect(str(self.path), timeout=10) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT owner_pid FROM active_research WHERE task_id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT owner_pid FROM active_research WHERE task_id = ?", (task_id,)).fetchone()
             if row is not None:
                 pid = int(row[0])
                 if self._pid_alive(pid):
