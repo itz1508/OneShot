@@ -385,16 +385,12 @@ class HostController:
                 raise TransitionError("stage result must return to the host")
             respond_to = "host_controller"
         if input_request_ref.artifact_revision < 1 or (
-            self.artifact_store.get_digest(
-                input_request_ref.artifact_id, input_request_ref.artifact_revision
-            )
+            self.artifact_store.get_digest(input_request_ref.artifact_id, input_request_ref.artifact_revision)
             != input_request_ref.artifact_digest
         ):
             raise TransitionError("dispatch input artifact revision or digest mismatch")
         try:
-            self.artifact_store.get_verified(
-                input_request_ref.artifact_id, input_request_ref.artifact_revision
-            )
+            self.artifact_store.get_verified(input_request_ref.artifact_id, input_request_ref.artifact_revision)
         except Exception as exc:
             raise TransitionError("dispatch input is not verified") from exc
         fingerprint = sha256(
@@ -459,7 +455,9 @@ class HostController:
             raise TransitionError("agent dispatch differs from persisted host assignment")
         if state.current_stage is Stage.RESEARCH:
             if envelope.respond_to != envelope.requester_role or envelope.respond_to not in {
-                "workflow_entry", "audit_discovery", "planning"
+                "workflow_entry",
+                "audit_discovery",
+                "planning",
             }:
                 raise TransitionError("invalid Research respond_to binding")
         elif envelope.respond_to != "host_controller":
@@ -472,9 +470,7 @@ class HostController:
         ):
             raise TransitionError("stale or changed dispatch input")
 
-    def receive_agent_result(
-        self, envelope: HostDispatchEnvelope, result: HostDispatchResult
-    ) -> ArtifactRef:
+    def receive_agent_result(self, envelope: HostDispatchEnvelope, result: HostDispatchResult) -> ArtifactRef:
         """Receive an agent result at the host-controlled route, not at another agent."""
         self.verify_agent_dispatch(envelope)
         for field in ("task_id", "run_id", "stage", "role", "request_id", "request_revision", "respond_to"):
