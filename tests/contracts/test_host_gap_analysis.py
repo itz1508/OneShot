@@ -76,6 +76,7 @@ def test_skeleton_error_is_blocked_not_synthetic_success(tmp_path) -> None:
     assert any("execution unavailable" in msg for msg in outcome.result.findings)
     assert outcome.completion_receipt_ref is None
 
+
 def test_scanner_dispatch_requires_host_gap_pass(tmp_path) -> None:
     controller = HostController(tmp_path)
     request, _runner = build_gap_inputs(controller)
