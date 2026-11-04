@@ -127,8 +127,14 @@ class HostMemoryManager:
         if (
             not validation.criterion_results
             or not validation.e2e_results
-            or any(result.outcome is not CriterionResult.PASS or not result.evidence_refs for result in validation.criterion_results)
-            or any(result.outcome is not CriterionResult.PASS or result.exit_code != 0 for result in validation.e2e_results)
+            or any(
+                result.outcome is not CriterionResult.PASS or not result.evidence_refs
+                for result in validation.criterion_results
+            )
+            or any(
+                result.outcome is not CriterionResult.PASS or result.exit_code != 0
+                for result in validation.e2e_results
+            )
             or any(step.status is not StepStatus.COMPLETED for step in validation.step_results)
         ):
             raise MemoryPromotionError("independent Build verification did not pass")
@@ -212,7 +218,10 @@ class HostMemoryManager:
                     serializer_profile=SERIALIZER_PROFILE,
                 )
             )
-            if not promoted.verified_by_build or promoted.build_verification_receipt_ref != memory.verification_receipt_ref:
+            if (
+                not promoted.verified_by_build
+                or promoted.build_verification_receipt_ref != memory.verification_receipt_ref
+            ):
                 raise MemoryPromotionError("conflicting verified template revision")
             next_digest = self._artifacts.get_digest(memory.source_plan_template_ref.artifact_id, rev) or ""
         verified_ref = ArtifactRef(
