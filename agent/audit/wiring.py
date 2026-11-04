@@ -45,7 +45,12 @@ def scan_wiring(root: Path, scope: Path) -> list[Finding]:
                 if normalized not in routes and not any(route.startswith(normalized + "/") for route in routes):
                     findings.append(
                         evidence(
-                            root, file, line_no, "API_ROUTE_REVIEW", "wiring", "low",
+                            root,
+                            file,
+                            line_no,
+                            "API_ROUTE_REVIEW",
+                            "wiring",
+                            "low",
                             f"Literal API prefix {value!r} not matched to a FastAPI route; "
                             "dynamic URLs require runtime verification.",
                         )
