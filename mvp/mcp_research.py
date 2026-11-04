@@ -121,15 +121,17 @@ async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
         transport = StdioServerParameters(command=command, args=args, env=child_env)
     try:
         async with Client(transport, read_timeout_seconds=60) as session:
-            names: set[str] = set()
+            names: list[str] = []
             cursor: str | None = None
-            while True:
+            for _ in range(16):
                 page = await session.list_tools(cursor=cursor)
-                names.update(tool.name for tool in page.tools)
+                names.extend(tool.name for tool in page.tools)
                 cursor = page.next_cursor
                 if cursor is None:
                     break
-            if names != {"oneshot_research"}:
+            else:
+                raise ProviderError("MCP tool pagination exceeded limit")
+            if names != ["oneshot_research"]:
                 raise ProviderError("MCP server must advertise only oneshot_research in OneShot mode")
             response = await session.call_tool("oneshot_research", arguments)
             return _tool_json(response)
