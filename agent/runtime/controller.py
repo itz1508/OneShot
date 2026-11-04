@@ -122,7 +122,7 @@ class HostController:
         if state.run_id != run_id or state.task_id != task_id:
             raise TransitionError("stage transition task/run binding mismatch")
 
-        self._verify_stage_receipt(state, completion_receipt_ref)
+        receipt_artifact = self._verify_stage_receipt(state, completion_receipt_ref)
         if state.current_stage is Stage.PLANNING:
             self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
 
@@ -135,6 +135,7 @@ class HostController:
             self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
             raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
+        self._verify_stage_evidence(receipt_artifact, todo_ref)
 
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
@@ -162,25 +163,62 @@ class HostController:
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
 
-    def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> None:
-        """Verify an existing host completion receipt for the actual stage."""
-        # Verify stage-completion receipt
+    def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> ArtifactRef:
+        """Verify host provenance and exact stage artifact; never accept legacy subjects."""
         if completion_receipt_ref is None:
             raise TransitionError("stage completion receipt required")
-        # Verify task-bound receipt: subject must match task_id, run_id, and stage
-        # Accept old format (stage_complete:{stage}) for backward compat
-        expected_old = f"stage_complete:{state.current_stage.value}"
-        expected_new = f"stage_complete:{state.task_id}:{state.run_id}:{state.current_stage.value}"
+        if completion_receipt_ref.issuer_id != "host":
+            raise TransitionError("invalid completion receipt: untrusted issuer")
+        subject = self.receipt_store.get_subject(completion_receipt_ref.receipt_id)
+        prefix = f"stage_complete:{state.task_id}:{state.run_id}:{state.current_stage.value}:"
+        if subject is None or not subject.startswith(prefix):
+            raise TransitionError("invalid completion receipt: identity mismatch")
+        try:
+            artifact_id, revision_text, digest = subject[len(prefix) :].rsplit(":", 2)
+            revision = int(revision_text)
+        except (ValueError, AttributeError) as exc:
+            raise TransitionError("invalid completion receipt: artifact identity") from exc
+        if not artifact_id or revision < 1 or len(digest) != 64:
+            raise TransitionError("invalid completion receipt: missing artifact evidence")
         if not self.receipt_store.verify(
             completion_receipt_ref.receipt_id,
             completion_receipt_ref.receipt_digest,
-            expected_old,
-        ) and not self.receipt_store.verify(
-            completion_receipt_ref.receipt_id,
-            completion_receipt_ref.receipt_digest,
-            expected_new,
+            subject,
         ):
-            raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
+            raise TransitionError("invalid completion receipt: unverified host provenance")
+        try:
+            if self.artifact_store.get_digest(artifact_id, revision) != digest:
+                raise ValueError("artifact digest mismatch")
+            self.artifact_store.get_verified(artifact_id, revision)
+        except Exception as exc:
+            raise TransitionError("invalid completion receipt: artifact not verified") from exc
+        return ArtifactRef(
+            artifact_id=artifact_id,
+            artifact_revision=revision,
+            artifact_digest=digest,
+            contract_id="stage_receipt_evidence",
+            contract_version="1.0",
+            serializer_profile="rfc8785-jcs-sha256-v1",
+        )
+
+    def _verify_stage_evidence(self, receipt_artifact: ArtifactRef, todo_ref: ArtifactRef) -> None:
+        """Receipt must bind the completed work list or an artifact it actually cites."""
+        if (
+            receipt_artifact.artifact_id == todo_ref.artifact_id
+            and receipt_artifact.artifact_revision == todo_ref.artifact_revision
+            and receipt_artifact.artifact_digest == todo_ref.artifact_digest
+        ):
+            return
+        work = self.work_todos.read(todo_ref)
+        for action in work.actions:
+            for ref in action.evidence_refs:
+                if (
+                    ref.artifact_id == receipt_artifact.artifact_id
+                    and ref.artifact_revision == receipt_artifact.artifact_revision
+                    and ref.artifact_digest == receipt_artifact.artifact_digest
+                ):
+                    return
+        raise TransitionError("invalid completion receipt: evidence not in completed work")
 
     def _verify_structural_gap(
         self,
@@ -264,7 +302,7 @@ class HostController:
             raise TransitionError("final stage task/run mismatch")
         if state.current_stage is not Stage.BUILD_VALIDATION or Stage.BUILD_VALIDATION in state.completed_stages:
             raise TransitionError("task is not at an unfinished final verification stage")
-        self._verify_stage_receipt(state, completion_receipt_ref)
+        receipt_artifact = self._verify_stage_receipt(state, completion_receipt_ref)
         if todo_ref is None:
             raise TransitionError("completed final-stage work list required")
         if state.active_work_artifact_id != todo_ref.artifact_id:
@@ -273,6 +311,7 @@ class HostController:
             self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
             raise TransitionError(f"invalid or unfinished final work list: {exc}") from exc
+        self._verify_stage_evidence(receipt_artifact, todo_ref)
         completed = state.model_copy(
             update={
                 "completed_stages": (*state.completed_stages, Stage.BUILD_VALIDATION),
@@ -319,6 +358,35 @@ class HostController:
             self.event_store.append(binding.task_id, "work_assigned", ref.artifact_id)
         return record, ref
 
+    def finish_capability_work(
+        self,
+        task_id: str,
+        run_id: str,
+        stage: Stage,
+        todo_ref: ArtifactRef,
+    ) -> TaskState:
+        """Finish verified role-local work without issuing a stage receipt or advancing."""
+        checkpoint = self.checkpoint_store.load_checkpoint(task_id)
+        if checkpoint is None:
+            raise TransitionError("capability work has no checkpoint")
+        revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if (state.task_id, state.run_id, state.current_stage) != (task_id, run_id, stage):
+            raise TransitionError("capability work stage/task/run mismatch")
+        if state.active_work_artifact_id != todo_ref.artifact_id:
+            raise TransitionError("capability work does not match assigned request")
+        try:
+            self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=stage.value)
+        except WorkTodoError as exc:
+            raise TransitionError(f"capability work not verified: {exc}") from exc
+        updated = state.model_copy(update={"active_work_artifact_id": None})
+        try:
+            self.checkpoint_store.checkpoint_cas(task_id, revision, updated.model_dump(mode="json"))
+        except CompetingWriterError as exc:
+            raise TransitionError(f"capability work checkpoint conflict: {exc}") from exc
+        self.event_store.append(task_id, "capability_work_completed", todo_ref.artifact_id)
+        return updated
+
     def get_state(self, task_id: str) -> TaskState | None:
         """Get current task state from checkpoint."""
         checkpoint = self.checkpoint_store.load_checkpoint(task_id)
@@ -341,20 +409,35 @@ class HostController:
         run_id: str = "",
         revision: int = 0,
         artifact_digest: str = "",
+        artifact_id: str = "",
     ) -> ReceiptRef:
-        """Issue a task-bound stage-completion receipt.
+        """Issue an artifact-bound receipt from verified host evidence.
 
-        The receipt subject binds task_id, run_id, stage, revision, and
-        artifact digest so the same evidence cannot be applied to a
-        different task or run.
+        Without an explicit result artifact, bind the latest assigned work-list
+        revision. The work-list must be verified during stage transition.
         """
-        subject = f"stage_complete:{task_id}:{run_id}:{stage.value}"
-        receipt_id = f"receipt-{task_id}-{stage.value}" if task_id else f"receipt-{stage.value}"
-        _, receipt_digest = self.receipt_store.issue_verified(
-            receipt_id,
-            "host",
-            subject,
-        )
+        if not task_id or not run_id:
+            raise TransitionError("stage receipt requires task/run identity")
+        state = self.get_state(task_id)
+        if state is None or state.run_id != run_id or state.current_stage != stage:
+            raise TransitionError("stage receipt must belong to active host task")
+        if not artifact_id:
+            if state.active_work_artifact_id is None:
+                raise TransitionError("stage receipt requires assigned artifact evidence")
+            artifact_id = state.active_work_artifact_id
+            revision = self.artifact_store.latest_revision(artifact_id)
+            artifact_digest = self.artifact_store.get_digest(artifact_id, revision) or ""
+        if revision < 1 or len(artifact_digest) != 64:
+            raise TransitionError("stage receipt requires complete artifact identity")
+        try:
+            if self.artifact_store.get_digest(artifact_id, revision) != artifact_digest:
+                raise ValueError("artifact digest mismatch")
+            self.artifact_store.get_verified(artifact_id, revision)
+        except Exception as exc:
+            raise TransitionError("stage receipt artifact is not verified") from exc
+        subject = f"stage_complete:{task_id}:{run_id}:{stage.value}:{artifact_id}:{revision}:{artifact_digest}"
+        receipt_id = f"receipt-{task_id}-{stage.value}-{artifact_digest[:16]}"
+        _, receipt_digest = self.receipt_store.issue_verified(receipt_id, "host", subject)
         return ReceiptRef(
             receipt_id=receipt_id,
             receipt_digest=receipt_digest,

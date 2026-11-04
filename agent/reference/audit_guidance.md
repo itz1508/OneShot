@@ -44,4 +44,4 @@ The CLI intentionally performs no shell commands, network calls, or source write
 
 ## Integration limitations
 
-This scanner does not yet connect to the Research UI mode, independently run browser tests, validate a remote deployment, or persist findings through host-owned TODO and artifact stores. The static CLI performs read-only observations only. Audit checks cover recognized source patterns, not all languages, dynamic call graphs, or complete vulnerability assessment. Its `audit-report.json` output from the repository audit workflow is evidence for review, not an acceptance receipt.
+The Research UI selects Audit and dispatches through the host, which persists findings with work records. Connected browser tests are defined in the workflow but are not evidence of success until their CI run passes; remote deployment remains unverified. The static CLI performs read-only observations only. Audit checks cover recognized source patterns, not all languages, dynamic call graphs, or complete vulnerability assessment. Its `audit-report.json` output from the repository audit workflow is evidence for review, not an acceptance receipt.

@@ -11,6 +11,7 @@ const json = async (response) => {
 
 function App() {
   const [prompt, setPrompt] = useState('')
+  const [purpose, setPurpose] = useState('research')
   const [task, setTask] = useState(null)
   const [events, setEvents] = useState([])
   const [files, setFiles] = useState([])
@@ -71,7 +72,7 @@ function App() {
     try {
       const record = await fetch('/api/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, purpose }),
       }).then(json)
       history.replaceState(null, '', '?task=' + record.task_id)
       setPrompt('')
@@ -81,13 +82,27 @@ function App() {
     } finally { setLoading(false) }
   }
 
+  async function runTask() {
+    if (!task || loading) return
+    setLoading(true)
+    setError('')
+    try {
+      const selected = task.purpose === 'audit' ? 'audit' : 'research'
+      await fetch('/api/tasks/' + task.task_id + '/' + selected, { method: 'POST' }).then(json)
+      await fetchDetails(task.task_id)
+    } catch (exc) {
+      await fetchDetails(task.task_id).catch(() => {})
+      setError(exc.message)
+    } finally { setLoading(false) }
+  }
+
   function openFile(file) {
     setActiveFile(file)
-    setEditText(task?.input_text || '')
+    setEditText(file.kind === 'input' ? task?.input_text || '' : file.content || '')
   }
 
   async function saveInput() {
-    if (!task || !activeFile) return
+    if (!task || !activeFile || activeFile.kind !== 'input') return
     setLoading(true)
     try {
       const updated = await fetch('/api/tasks/' + task.task_id + '/input', {
@@ -122,6 +137,7 @@ function App() {
             <div className="section-title">REPOSITORY SUMMARY</div>
             <div className="info-line"><span>Source</span><strong>OneShot</strong></div>
             <div className="info-line"><span>Stage</span><strong>{task?.current_stage || 'Idle'}</strong></div>
+            <div className="info-line"><span>Capability</span><strong>{task?.purpose || purpose}</strong></div>
             <div className="info-line"><span>Artifacts</span><strong>{files.length}</strong></div>
             <div className="info-line"><span>Events</span><strong>{events.length}</strong></div>
           </div>
@@ -147,7 +163,14 @@ function App() {
             </div>}
             {task && <>
               <div className="task-heading"><span className="eyebrow">TASK SESSION</span><h1>Workflow activity</h1><p className="subtitle">Host-owned task state and recorded events, streamed as they occur.</p></div>
-              <div className="user-message"><div className="message-label">REQUEST</div><p>{task.input_text}</p></div>
+              <div className="user-message"><div className="message-label">REQUEST · {task.purpose || 'research'}</div><p>{task.input_text}</p></div>
+              <div className="execution-control">
+                <span role="status" aria-label="Execution status">{task.execution_status}</span>
+                {task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp'].includes(task.execution_status) &&
+                  <button className="primary" type="button" onClick={runTask} disabled={loading}>
+                    {loading ? 'Running...' : 'Run ' + (task.purpose === 'audit' ? 'Audit' : 'Research')}
+                  </button>}
+              </div>
               <div className="timeline-heading"><span>LIVE ACTIVITY</span><span>{events.length} EVENTS</span></div>
               <div className="timeline">
                 {events.map((event) => <div key={event.sequence} className="activity">
@@ -156,7 +179,12 @@ function App() {
                 </div>)}
                 <div ref={bottom}/>
               </div>
-              <div className="integration-warning"><CircleAlert size={17}/><div><strong>MCP integration pending</strong><p>The task and input are persisted. Research, Audit, Planning, and Build have not been executed.</p></div></div>
+              {task.execution_status === 'awaiting_mcp' &&
+                <div className="integration-warning"><CircleAlert size={17}/><div><strong>Research transport required</strong><p>Research requires a configured MCP provider; no agent output is simulated.</p></div></div>}
+              {task.purpose === 'audit' && task.execution_status === 'audit_completed' &&
+                <div className="integration-warning"><Check size={17}/><div><strong>Audit findings persisted</strong><p>Static scanning completed. The Research stage remains open until a valid ResearchRecord is accepted.</p></div></div>}
+              {task.execution_status === 'audit_blocked' &&
+                <div className="integration-warning"><CircleAlert size={17}/><div><strong>Audit blocked</strong><p>Review the stored findings and limitations; no stage advancement occurred.</p></div></div>
             </>}
           </div>
         </div>
@@ -164,19 +192,26 @@ function App() {
           {error && <div role="alert" className="error"><CircleAlert size={15}/>{error}<button aria-label="Dismiss" onClick={() => setError('')}><X size={14}/></button></div>}
           <form className="composer" onSubmit={submit}>
             <textarea aria-label="Task description" placeholder="Describe what you want OneShot to work on..." rows={2} value={prompt} onChange={(e) => setPrompt(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form.requestSubmit() } }} />
-            <div className="composer-bottom"><span>Enter to submit · Shift+Enter for a new line</span><button className="send" disabled={!prompt.trim() || loading} aria-label="Submit task">{loading ? <LoaderCircle size={17} className="spin"/> : <ArrowUp size={18}/>}</button></div>
+            <div className="composer-bottom">
+              <label className="mode-picker">Capability
+                <select aria-label="Task capability" value={purpose} onChange={(e) => setPurpose(e.target.value)} disabled={loading}>
+                  <option value="research">Research</option>
+                  <option value="audit">Audit</option>
+                </select>
+              </label>
+              <span>Enter to submit · Shift+Enter for a new line</span><button className="send" disabled={!prompt.trim() || loading} aria-label="Submit task">{loading ? <LoaderCircle size={17} className="spin"/> : <ArrowUp size={18}/>}</button></div>
           </form>
           <div className="footnote">MVP · Persistent host state · No simulated agent results</div>
         </div>
       </main>
 
       {activeFile && <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveFile(null) }}>
-        <div className="review-modal" role="dialog" aria-modal="true" aria-label="Review input artifact">
+        <div className="review-modal" role="dialog" aria-modal="true" aria-label="Review artifact">
           <header><span><FileCode2 size={18}/> {activeFile.name} <small>rev {task?.input_revision}</small></span><button className="icon-button" aria-label="Close" onClick={() => setActiveFile(null)}><X size={18}/></button></header>
-          <div className="modal-meta">Immutable input artifact · revisioned editing with conflict protection</div>
-          <label htmlFor="file-editor">Task description</label>
-          <textarea id="file-editor" spellCheck="false" value={editText} onChange={(e) => setEditText(e.target.value)}/>
-          <footer><span>Original content preserved as earlier artifact revisions</span><button className="secondary" onClick={() => setActiveFile(null)}>Cancel</button><button className="primary" disabled={loading || !editText.trim()} onClick={saveInput}>{loading ? 'Saving...' : 'Save revision'}</button></footer>
+          <div className="modal-meta">{activeFile.kind === 'input' ? 'Revisioned input editing with conflict protection' : 'Verified, read-only artifact'}</div>
+          <label htmlFor="file-editor">{activeFile.kind === 'input' ? 'Task description' : 'Artifact content'}</label>
+          <textarea id="file-editor" spellCheck="false" value={editText} readOnly={activeFile.kind !== 'input'} onChange={(e) => setEditText(e.target.value)}/>
+          <footer><span>{activeFile.kind === 'input' ? 'Original content preserved in earlier revisions' : 'Read-only source of evidence'}</span><button className="secondary" onClick={() => setActiveFile(null)}>Close</button>{activeFile.kind === 'input' && <button className="primary" disabled={loading || !editText.trim()} onClick={saveInput}>{loading ? 'Saving...' : 'Save revision'}</button>}</footer>
         </div>
       </div>}
     </div>
