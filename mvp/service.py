@@ -143,11 +143,13 @@ class MVPService:
         if state is not None:
             research_id = f"research-{task_id}-{state.run_id}"
             if self.artifacts.latest_revision(research_id) > 0:
-                files.append({
-                    "name": "_research.json",
-                    "kind": "research",
-                    "revision": 1,
-                    "digest": self.artifacts.get_digest(research_id, 1),
-                    "content": self.artifacts.get_verified(research_id, 1).decode("utf-8"),
-                })
+                files.append(
+                    {
+                        "name": "_research.json",
+                        "kind": "research",
+                        "revision": 1,
+                        "digest": self.artifacts.get_digest(research_id, 1),
+                        "content": self.artifacts.get_verified(research_id, 1).decode("utf-8"),
+                    }
+                )
         return files
