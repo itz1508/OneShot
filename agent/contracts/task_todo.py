@@ -8,6 +8,11 @@ from agent.contracts.common import ArtifactRef, ContractModel, DiagnosticStatus,
 from agent.contracts.tool_registry import ToolInvocation, safe_relative_path
 
 
+def paths_overlap(left: str, right: str) -> bool:
+    """A file path also conflicts with any descendant path in the same namespace."""
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+
+
 class TaskTodo(ContractModel):
     todo_id: str = Field(min_length=1)
     todo_revision: int = Field(ge=1)
@@ -58,7 +63,7 @@ class Build(ContractModel):
                     raise ValueError("unknown or repeated todo")
                 if not set(todo.dependency_todo_ids).issubset(scheduled):
                     raise ValueError("dependency not complete before wave")
-                if paths.intersection(todo.authorized_paths):
+                if any(paths_overlap(path, occupied) for path in todo.authorized_paths for occupied in paths):
                     raise ValueError("overlapping wave paths")
                 paths.update(todo.authorized_paths)
             scheduled.update(wave)
