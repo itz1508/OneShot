@@ -131,16 +131,11 @@ def _interrupted_research(service: MVPService, persist_output: bool) -> str:
         contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
-    binding = WorkBinding(
-        task_id=task_id,
-        run_id=state.run_id,
-        stage="research",
-        request_id=f"research-{task_id}",
-        request_revision=revision,
-        input_request_ref=input_ref,
-    )
-    _, first = service.host.assign_work(
-        binding,
+    _, _, first = service.host.prepare_agent_dispatch(
+        task_id,
+        input_ref,
+        "Inspect authorized files",
+        requested_role="researcher",
         action="Execute verified MCP Research",
         expected_result="ResearchRecord validated and persisted by the host",
     )
