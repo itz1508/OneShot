@@ -164,7 +164,8 @@ def test_build_admission_derives_tools_from_locked_spec(tmp_path) -> None:
     registry_ref = pin_tool_registry(store, catalog(), "tools-001")
     upstream: list[ArtifactRef] = []
     for name in ("research", "audit", "frozen"):
-        digest = store.put_immutable(catalog(), name, 1, "fixture", "1")
+        model = spec(invocation()) if name == "frozen" else catalog()
+        digest = store.put_immutable(model, name, 1, "fixture", "1")
         upstream.append(
             ArtifactRef(
                 artifact_id=name,
@@ -203,6 +204,15 @@ def test_build_admission_derives_tools_from_locked_spec(tmp_path) -> None:
             ("act-001",),
             subject,
             build_spec=spec(invocation()),
+        )
+    with pytest.raises(BuildAdmissionError, match="frozen BuildSpecification mismatch"):
+        BuildAdmission(receipts, store).admit(
+            "adm-forged",
+            lock.receipt_ref,
+            ("act-001",),
+            subject,
+            build_spec=spec(invocation(path="somewhere-else")),
+            package_lock=lock,
         )
 
 

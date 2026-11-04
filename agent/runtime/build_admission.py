@@ -3,15 +3,38 @@
 from __future__ import annotations
 
 from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, ReceiptRef, admission_receipt_subject
-from agent.contracts.planning import BuildSpecification
+from agent.contracts.planning import BuildSpecification, CandidateSpecification, PlanningRecord
 from agent.contracts.validation.structural import tool_invocation_gaps
 from agent.runtime.artifact_store import ArtifactStore
+from agent.runtime.canonical_serialization import digest_raw
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.tool_registry import load_pinned_tool_registry
 
 
 class BuildAdmissionError(Exception):
     pass
+
+
+def _load_frozen_spec(store: ArtifactStore, lock: PackageLockReceipt) -> BuildSpecification:
+    """Load the exact spec bytes referenced by the host-issued Package Lock."""
+    ref = lock.frozen_spec_ref
+    try:
+        raw = store.get_verified(ref.artifact_id, ref.artifact_revision)
+    except Exception as exc:
+        raise BuildAdmissionError("frozen specification unavailable") from exc
+    if digest_raw(raw) != ref.artifact_digest:
+        raise BuildAdmissionError("frozen specification digest mismatch")
+    for model in (BuildSpecification, CandidateSpecification, PlanningRecord):
+        try:
+            parsed = model.model_validate_json(raw)
+        except ValueError:
+            continue
+        if isinstance(parsed, BuildSpecification):
+            return parsed
+        if isinstance(parsed, CandidateSpecification):
+            return parsed.build_spec
+        return parsed.candidate.build_spec
+    raise BuildAdmissionError("frozen artifact does not contain a BuildSpecification")
 
 
 class BuildAdmission:
@@ -63,15 +86,20 @@ class BuildAdmission:
             raise BuildAdmissionError("invalid lock receipt")
 
         authorized_tools: tuple[str, ...] = ()
-        if build_spec is not None:
+        if build_spec is not None or package_lock is not None:
+            if self._artifacts is None or package_lock is None or build_spec is None:
+                raise BuildAdmissionError("verified Package Lock required for frozen BuildSpecification")
+            frozen = _load_frozen_spec(self._artifacts, package_lock)
+            if frozen != build_spec:
+                raise BuildAdmissionError("frozen BuildSpecification mismatch")
             action_map = {action.action_id: action for action in build_spec.actions}
             if any(action_id not in action_map for action_id in authorized_action_ids):
                 raise BuildAdmissionError("admission contains unknown action ids")
             actions = tuple(action_map[action_id] for action_id in authorized_action_ids)
             invocations = tuple(inv for action in actions for inv in action.verification_tools)
             if invocations:
-                if self._artifacts is None or registry_ref is None or package_lock is None:
-                    raise BuildAdmissionError("frozen tool registry and Package Lock required")
+                if registry_ref is None:
+                    raise BuildAdmissionError("frozen tool registry required")
                 try:
                     snapshot = load_pinned_tool_registry(self._artifacts, registry_ref)
                     scoped = build_spec.model_copy(update={"actions": actions})
@@ -81,8 +109,6 @@ class BuildAdmission:
                 if errors:
                     raise BuildAdmissionError("tool validation failed: " + "; ".join(errors))
                 authorized_tools = tuple(sorted({inv.tool_id for inv in invocations}))
-        elif registry_ref is not None:
-            raise BuildAdmissionError("build spec required for registry-bound admission")
 
         receipt_id = f"admission-{admission_id}"
         subject = admission_receipt_subject(lock_receipt_ref, authorized_action_ids, authorized_tools, registry_ref)
