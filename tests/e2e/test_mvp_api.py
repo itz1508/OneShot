@@ -27,6 +27,13 @@ def test_invalid_task_does_not_leak_information():
     assert response.status_code in {400, 404}
 
 
+def test_deployed_public_mode_disables_research_by_handler(monkeypatch):
+    monkeypatch.setenv("ONESHOT_RESEARCH_DISABLED", "true")
+    response = TestClient(app).post("/api/tasks/" + "a" * 32 + "/research")
+    assert response.status_code == 403
+    assert "disabled" in response.json()["detail"].lower()
+
+
 def test_untrusted_host_header_is_rejected():
     response = TestClient(app, base_url="http://attacker.example").get("/api/health")
     assert response.status_code == 400
