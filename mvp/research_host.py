@@ -106,6 +106,10 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
             todo.task_id != task_id
             or todo.run_id != state.run_id
             or todo.stage != Stage.RESEARCH.value
+            or todo.request_id != f"research-{task_id}"
+            or todo.request_revision != input_revision
+            or todo.input_request_ref.artifact_id != f"mvp-input:{task_id}"
+            or todo.input_request_ref.contract_id != "mvp_task_input"
             or todo.input_request_ref.artifact_revision != input_revision
             or todo.input_request_ref.artifact_digest != input_digest
             or input_record.task_id != task_id
