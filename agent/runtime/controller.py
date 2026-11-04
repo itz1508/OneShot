@@ -182,7 +182,6 @@ class HostController:
         ):
             raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
 
-
     def _verify_structural_gap(
         self,
         task_id: str,
