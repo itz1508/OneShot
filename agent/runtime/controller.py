@@ -7,7 +7,6 @@ from hashlib import sha256
 from pathlib import Path
 
 import yaml
-
 from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
