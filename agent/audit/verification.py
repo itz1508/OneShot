@@ -12,8 +12,14 @@ def scan_verification(root: Path, scope: Path) -> list[Finding]:
     if scope == root and (not tests.exists() or not any(tests.rglob("test_*.py"))):
         return [
             Finding(
-                "verification", "NO_PYTHON_TESTS_DISCOVERED", "verified_observation", "medium",
-                "tests", 0, "No conventional Python test modules discovered; test coverage remains unverified.", "",
+                "verification",
+                "NO_PYTHON_TESTS_DISCOVERED",
+                "verified_observation",
+                "medium",
+                "tests",
+                0,
+                "No conventional Python test modules discovered; test coverage remains unverified.",
+                "",
             )
         ]
     return []
