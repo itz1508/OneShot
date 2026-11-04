@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from agent.runtime.controller import HostController
+from agent.contracts.scanner import ScannerOutcome
+from agent.runtime.controller import HostController, TransitionError
 from agent.runtime.host_gap_analyzer import StructuralGapError
 from tests.fixtures.structural_gap import build_gap_inputs, passing_gap
 
@@ -74,3 +75,33 @@ def test_skeleton_error_is_blocked_not_synthetic_success(tmp_path) -> None:
     outcome = controller.run_structural_gap_analysis(request, walking_skeleton_runner=broken)
     assert any("execution unavailable" in msg for msg in outcome.result.findings)
     assert outcome.completion_receipt_ref is None
+
+def test_scanner_dispatch_requires_host_gap_pass(tmp_path) -> None:
+    controller = HostController(tmp_path)
+    request, _runner = build_gap_inputs(controller)
+    controller.scanner.register_detector("syntax", lambda _content: ())
+    with pytest.raises(TransitionError, match="structural gap analysis"):
+        controller.scan_planning_candidate(
+            request.task_id, request.run_id, request.candidate_specification_ref,
+            "repo-snapshot", ("syntax",), None, None,
+        )
+
+
+def test_scanner_dispatch_accepts_only_exact_candidate_and_receipt(tmp_path) -> None:
+    controller = HostController(tmp_path)
+    request, runner = build_gap_inputs(controller)
+    outcome = controller.run_structural_gap_analysis(request, walking_skeleton_runner=runner)
+    assert outcome.completion_receipt_ref is not None
+    controller.scanner.register_detector("syntax", lambda _content: ())
+    result = controller.scan_planning_candidate(
+        request.task_id, request.run_id, request.candidate_specification_ref,
+        "repo-snapshot", ("syntax",), outcome.result_ref, outcome.completion_receipt_ref,
+    )
+    assert result.outcome == ScannerOutcome.PASS
+
+    wrong = request.candidate_specification_ref.model_copy(update={"artifact_id": "different-candidate"})
+    with pytest.raises(TransitionError, match="different candidate"):
+        controller.scan_planning_candidate(
+            request.task_id, request.run_id, wrong, "repo-snapshot", ("syntax",),
+            outcome.result_ref, outcome.completion_receipt_ref,
+        )
