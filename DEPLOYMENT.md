@@ -1,49 +1,57 @@
-# OneShot Modal deployment
+# OneShot — Modal ASGI Audit Demo Deployment
 
-**Status:** repository configuration only. A successful `modal deploy` and live HTTP checks are required before marking the deployment verified.
+**Implementation:** `modal_app.py` wraps the existing `mvp.api:app`, serving the same-origin `/live.html` and `/api/*` routes. **Deployment:** unverified until an authenticated Modal execution returns a real HTTPS URL and live acceptance checks pass.
 
-The Modal ASGI function reuses `mvp.api:app`; its root and `/live.html` routes are served by that same FastAPI app. The Modal Sandbox is a separate isolated Builder environment and is not required to start the ASGI server.
+## Deploy without rebuilding the architecture
 
-## Existing resource discovery
+The App is the API serving layer; the Modal Sandbox is independent, isolated Builder execution. No new login system, server implementation, or competing API is introduced.
 
-Run in the authenticated Modal workspace:
+1. In the authorized Modal workspace, inspect existing resources before creating any: `modal app list --json`, `modal app info <app>`, `modal volume list`. For named Sandboxes, use `modal.Sandbox.list()`/`from_name()` or the Modal dashboard. Preserve any existing Sandbox and Volume.
+2. Reuse their names via `ONESHOT_MODAL_APP_NAME` and `ONESHOT_MODAL_VOLUME_NAME` in the deploying process; defaults are `oneshot` and `oneshot-state`.
+3. Ensure the executor is authenticated with `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` (or an active Modal CLI profile). **Proxy tokens are not deployment credentials.** Never put tokens in Git or browser JavaScript.
+4. Use `modal deploy --strategy recreate modal_app.py` to avoid a rolling-overlap period where two deployment revisions could modify the same SQLite files.
+5. Capture the **actual** HTTPS URL printed by Modal. Do not infer an endpoint from the App name.
+
+A manual workflow is provided at `.github/workflows/modal-deploy.yml` for execution by a GitHub Actions runner **after that workflow is available on the default branch**. It requires GitHub Actions secrets `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET`; its dispatch inputs identify the existing App and Volume. It does not attach a model secret. The workflow inspects resources, deploys, and gates completion on live Python API/SSE and Chromium browser checks. On a development branch, the authenticated subagent may execute the same commands directly rather than claiming the task impossible because its parent chat cannot run Modal CLI.
+
+## Bundled source and working API
+
+The image uses the existing `uv.lock` with the `meta` and `mvp` extras. Modal's `uv_sync` does **not** install the local project, so the entrypoint mounts the needed packages and runtime assets under `/root/oneshot-source` and adds that directory to `PYTHONPATH`.
+
+The source bundle includes `agent/`, `mvp/`, `api_fundamentals/`, `.agents/`, `settings/`, and `web/`, excluding local `.env*`, dependencies, browser results and build outputs. `live.html` is served from `web/public`. No virtual environment is inside the scanned workspace.
+
+At runtime, before importing `mvp.api`, `web()` sets:
+
+- `ONESHOT_STATE_ROOT=/data` — backed by the existing named Modal Volume.
+- `MCP_WORKSPACE_ROOT=/root/oneshot-source` — source bundle for the read-only Audit scanner.
+- `MCP_TRUSTED_ANCESTRY=true` — host-controlled assertion for this specific immutable deployment bundle, **not** permission to scan arbitrary paths.
+
+The public demo does **not** attach `MODEL_API_KEY` or configure an MCP Research transport. Research remains blocked without MCP. The optional `ONESHOT_MODAL_MODEL_SECRET` setting must not be enabled for the public demo; a model-backed private deployment needs independently enforced API access controls first. `GET /api/health` should return `mcp_transport_configured=false` in the public demo.
+
+## Concurrency and persistence
+
+`@modal.concurrent(max_inputs=20)` is required because `live.html` holds `GET /api/tasks/{id}/stream` (SSE) open while issuing `POST /audit`. Without it, `max_containers=1` can deadlock at the input queue. This retains one container while allowing simultaneous requests in that container. The existing host admission guards and SQLite writes must still be tested under concurrency.
+
+`max_containers=1` prevents unrestricted multi-container access to the same SQLite files. The write-response middleware issues `Volume.commit()` after `POST`/`PATCH`, and a failed commit prevents a successful response. This is an MVP workaround, **not** cross-process transactionality or proof of crash consistency. Modal Volumes explicitly warn against concurrent writes to the same files. Test restart/reconciliation against the actual backend, and migrate to a transactionally coordinated store before horizontal scaling.
+
+## Verification gates
 
 ```bash
-modal app list
-modal volume list
-modal secret list
+# Run in the authenticated deployment workspace:
+modal deploy --strategy recreate modal_app.py
+python3 scripts/modal_live_probe.py --base-url "https://ACTUAL-ENDPOINT.modal.run"
+
+# Run browser tests against that same real endpoint:
+cd web
+npm ci
+npx playwright install chromium
+MODAL_BASE_URL="https://ACTUAL-ENDPOINT.modal.run" npx playwright test --config=playwright.modal.config.js
 ```
 
-Check which App, Volume, Sandbox and endpoint already belong to OneShot. The defaults in `modal_app.py` are `oneshot` and `oneshot-state`; set `ONESHOT_MODAL_APP_NAME` and `ONESHOT_MODAL_VOLUME_NAME` **in the deployment environment** if the existing resource names differ. Do not create duplicate application identities or delete an existing Volume.
+The automated Python probe asserts same-origin page/API reachability, MCP disabled, task creation, real SSE connected while Audit POST completes, persisted artifact, task restoration and event replay. The Chromium test submits from `live.html`, requires real completion and confirms reload restores the result. Neither test represents an active model-backed MCP nor the Builder Sandbox.
 
-## Image and runtime
+Separate deployment acceptance also requires a fresh-container state recovery check, inspection of the existing Sandbox identity without mutation, and a recorded URL, app revision, deployment log and test results. Mark each missing check as `NOT_VERIFIED`. Never label Modal or six-stage OneShot E2E as complete based on repository CI alone.
 
-`modal_app.py` installs the locked `meta` and `mvp` extras using `uv.lock` and mounts the local source and runtime assets: `agent/`, `mvp/`, `api_fundamentals/`, `.agents/`, `settings/`, and `web/public/`. The running container uses `/data` for `ONESHOT_STATE_ROOT`.
+### Exposure
 
-A named Modal Secret can be mounted by setting `ONESHOT_MODAL_MODEL_SECRET` to the **existing secret's name**, not the key value. That secret should contain the required `MODEL_API_KEY` and provider settings. Never pass credential files into source-control or print their contents. Deployment authorization requires a Modal authenticated profile or deployment API token, not a proxy token.
-
-Research also requires a working MCP transport. Set exactly one of `ONESHOT_MCP_COMMAND` (plus `ONESHOT_MCP_ARGS_JSON`) or loopback `ONESHOT_MCP_URL` in the runtime environment. Merely mounting `MODEL_API_KEY` does **not** provide an MCP server. Package and connect the intended MCP server separately; do not substitute the test fixture for production Research.
-
-## Deploy and check
-
-```bash
-modal deploy modal_app.py
-```
-
-Capture the actual HTTPS URL from the deployment output. Verify from the deployed endpoint (not a local TestClient):
-
-1. `GET /` redirects to `/live.html`; `GET /live.html` returns HTML.
-2. `GET /api/health` returns `status=ok`. `mcp_transport_configured=true` confirms configuration shape only, **not** live MCP connectivity.
-3. `POST /api/tasks` returns a real task ID; `GET /api/tasks/{id}` restores the same task.
-4. `GET /api/tasks/{id}/events` and `GET /api/tasks/{id}/stream` replay the persisted events, including on SSE reconnect.
-5. With an authorized MCP server configured, `POST /api/tasks/{id}/research` (or `/audit` as appropriate) completes with independently validated artifacts.
-6. Restart or replace the container and re-read the existing task and events to verify durable state.
-7. Test the same flow through the deployed `live.html` browser interface and record the endpoint, logs, and verification evidence.
-
-## Persistence and security boundaries
-
-The ASGI function is limited to **one container** because the existing host stores mutable SQLite files in the Volume. The Modal-specific HTTP middleware calls `Volume.commit()` after mutating requests; this is an MVP durability measure, **not** a replacement for a transactional database or a guarantee against interrupted multi-process writes. Before increasing replicas, migrate the mutable state to an appropriately coordinated transactional store and repeat crash/restart tests.
-
-The existing app does not implement end-user login. Do not publish a model-backed, unauthenticated task-execution API to untrusted users without an authorized edge access-control or equivalent protection. Keep tokens out of browser JavaScript.
-
-Do not claim ASGI, MCP, Sandbox Builder, SSE or browser E2E success until actual deployment/runtime evidence exists.
+The public demo currently has no end-user login. Its Audit endpoint reads the deliberately bundled source and may still be abused for resource consumption or expose source-derived findings. Keep the source bundle non-sensitive; limit public exposure, add operator-approved edge controls/rate limits before broader public use, and do not attach model credentials to this unprotected API.
