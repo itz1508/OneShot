@@ -62,8 +62,7 @@ def python_files(root: Path, scope: Path) -> Iterable[Path]:
     """Walk only ordinary files; never recurse through directory symlinks."""
     for path in sorted(scope.rglob("*.py")):
         if any(
-            part in {".git", ".venv", "venv", "node_modules", "__pycache__"}
-            for part in path.relative_to(root).parts
+            part in {".git", ".venv", "venv", "node_modules", "__pycache__"} for part in path.relative_to(root).parts
         ):
             continue
         if path.is_file() and not path.is_symlink():
