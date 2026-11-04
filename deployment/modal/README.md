@@ -28,3 +28,25 @@ host-integration task. Do not expose sandbox creation over the public health
 endpoint or permit Builder execution without frozen Plan and Build Admission
 receipts, scoped permissions, checkpoint/reconciliation handling, and E2E
 verification.
+
+## Optional read-only GitHub inspection
+
+`github_clone.py` is a separate Modal App, **not** exposed as a public
+endpoint and **not** deployed by the default health workflow. It uses a
+separate Modal secret named `github-secret`, containing `GITHUB_TOKEN`.
+Grant the token only read access to the repositories it must inspect.
+
+Create this Modal secret in the dashboard; do not upload `.env` or paste
+credentials into GitHub source. Then run:
+
+```sh
+modal run deployment/modal/github_clone.py --repo-url https://github.com/<owner>/<repo> --branch main
+```
+
+The function validates GitHub repository URLs, avoids embedding credentials
+in clone URLs, and removes the temporary checkout before returning. It only
+returns top-level names and does not modify the remote repository.
+
+`MODAL_PROXY_TOKEN_ID` / `MODAL_PROXY_TOKEN_SECRET` authenticate requests
+to protected inference endpoints. They do **not** deploy Modal Apps.
+Deployment requires `MODAL_TOKEN_ID` (`ak-`) and `MODAL_TOKEN_SECRET` (`as-`).
