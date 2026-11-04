@@ -15,7 +15,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent.contracts.research import ResearchRecord
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_dict, digest_model
 from agent.runtime.providers.base import (
     CapabilityDescriptor,
     ProviderError,
@@ -26,6 +26,12 @@ from agent.runtime.providers.registry import ProviderRegistry
 
 _TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
+
+
+def research_artifact_id(task_id: str, run_id: str) -> str:
+    """Match the canonical content-derived identity in the pushed TypeScript MCP server."""
+    identity = digest_dict({"run_id": run_id, "stage": "research", "task_id": task_id})
+    return f"research-{identity[:32]}"
 
 
 class ResearchMCPOutput(BaseModel):
@@ -67,16 +73,21 @@ class ResearchMCPOutput(BaseModel):
 def _tool_json(response: Any) -> dict[str, Any]:
     """Accept exactly one JSON text content result; fail closed on tool errors."""
     if response.is_error:
-        raise ProviderError("MCP Research tool reported an error")
+        detail = response.structured_content
+        code = detail.get("error_class") if isinstance(detail, dict) else None
+        if not isinstance(code, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{1,80}", code):
+            code = "MCP_TOOL_ERROR"
+        raise ProviderError(f"MCP Research tool failed: {code}")
     if len(response.content) != 1 or getattr(response.content[0], "type", None) != "text":
         raise ProviderError("MCP Research must return one JSON text block")
     try:
         parsed = json.loads(response.content[0].text)
     except (ValueError, TypeError) as exc:
         raise ProviderError("MCP Research returned invalid JSON") from exc
-    if not isinstance(parsed, dict):
-        raise ProviderError("MCP Research response must be a JSON object")
-    return parsed
+    structured = response.structured_content
+    if not isinstance(parsed, dict) or not isinstance(structured, dict) or structured != parsed:
+        raise ProviderError("MCP Research text/structured response mismatch")
+    return structured
 
 
 async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -105,7 +116,9 @@ async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
             raise ProviderError("invalid ONESHOT_MCP_ARGS_JSON") from exc
         if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
             raise ProviderError("MCP stdio arguments must be a JSON array of strings")
-        transport = StdioServerParameters(command=command, args=args)
+        child_env = os.environ.copy()
+        child_env["MCP_SERVER_MODE"] = "oneshot"
+        transport = StdioServerParameters(command=command, args=args, env=child_env)
     try:
         async with Client(transport, read_timeout_seconds=60) as session:
             names: set[str] = set()
@@ -165,7 +178,7 @@ class MCPResearchAdapter:
             envelope = ResearchMCPOutput.model_validate(reply)
             if envelope.task_id != task_id or envelope.run_id != request.run_id:
                 raise ProviderError("MCP Research identity mismatch")
-            if envelope.artifact_id != f"research-{task_id}-{request.run_id}" or envelope.artifact_revision != 1:
+            if envelope.artifact_id != research_artifact_id(task_id, request.run_id) or envelope.artifact_revision != 1:
                 raise ProviderError("MCP Research artifact ID/revision mismatch")
             artifact = ResearchRecord.model_validate(envelope.artifact)
             if artifact.task_id != task_id or artifact.run_id != request.run_id or artifact.stage_revision != 1:
