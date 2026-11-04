@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from hashlib import sha256
 from pathlib import Path
 
 from agent.contracts.research import ResearchRecord
 from agent.runtime.canonical_serialization import digest_model
 from agent.runtime.controller import Stage
-from mvp.research_host import execute_research
+from mvp.research_host import configured_evidence_sources, execute_research
 from mvp.service import MVPService
 
 
@@ -36,6 +38,30 @@ def main() -> int:
     artifact = ResearchRecord.model_validate_json(research_bytes)
     if digest_model(artifact) != ref["artifact_digest"]:
         raise RuntimeError("Persisted Research digest mismatch")
+    sources = configured_evidence_sources()
+    evidence_verified = False
+    if sources is not None:
+        root = Path(os.environ["MCP_WORKSPACE_ROOT"]).resolve(strict=True)
+        workspace_paths = sources["workspace_paths"]
+        if not isinstance(workspace_paths, list):
+            raise RuntimeError("Invalid host evidence selection")
+        for relative in workspace_paths:
+            if not isinstance(relative, str):
+                raise RuntimeError("Invalid host evidence path")
+            target = root / relative
+            # This probe is for an operator-trusted workspace, not untrusted filesystem races.
+            if target.is_symlink() or not target.resolve(strict=True).is_relative_to(root):
+                raise RuntimeError("Unsafe source in independent evidence verification")
+            digest = sha256(target.read_bytes()).hexdigest()
+            if not any(
+                item.location == relative
+                and item.source == "configured_workspace"
+                and item.content_digest == digest
+                and item.status == "valid"
+                for item in artifact.evidence
+            ):
+                raise RuntimeError(f"Missing independently verified evidence for {relative}")
+        evidence_verified = True
     print(
         json.dumps(
             {
@@ -45,6 +71,7 @@ def main() -> int:
                 "research_artifact_id": ref["artifact_id"],
                 "research_digest": ref["artifact_digest"],
                 "evidence_count": len(artifact.evidence),
+                "evidence_verified": evidence_verified,
                 "unresolved_count": len(artifact.unknowns),
             },
             sort_keys=True,
