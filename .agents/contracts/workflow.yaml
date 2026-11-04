@@ -73,66 +73,148 @@ host_workflows:
   run_initialization:
     workflow_id: run_initialization
     owner: host_controller
+    requires:
+      - workspace_registry
+      - workflow_registry
+      - runtime_root_registry
   runtime_output_allocation:
     workflow_id: runtime_output_allocation
     owner: host
+    requires:
+      - workflow_output_slot_registration
   registry_snapshot:
     workflow_id: registry_snapshot
     owner: host
+    requires:
+      - repository_registry_definitions
+      - host_registry_definitions
   provider_session_initialization:
     workflow_id: provider_session_initialization
     owner: host
+    requires:
+      - provider_registry
+      - credential_references
   stage_output_persistence:
     workflow_id: stage_output_persistence
     owner: host
+    requires:
+      - registered_output_contract
   stage_transition:
     workflow_id: stage_transition
     owner: host_controller
+    requires:
+      - completion_receipt
+      - handoff_artifact
   scanner_execution:
     workflow_id: scanner_execution
     owner: scanner_gateway
+    requires:
+      - scanner_check_registry
+      - tool_registry
+    input_contract: scanner_request
+    output_contract: scanner_result
   specification_freeze:
     workflow_id: specification_freeze
     owner: host
+    requires:
+      - scanner_result
+      - scanner_receipt
+    input_contract: scanner_result
+    output_contract: freeze_result
   package_lock:
     workflow_id: package_lock
     owner: host
+    requires:
+      - accepted_upstream_artifacts
+      - upstream_receipts
+    input_contract: fixture_package_lock_handoff
+    output_contract: package_lock
   build_admission:
     workflow_id: build_admission
     owner: host
+    requires:
+      - package_lock
+      - recovery_readiness_record
+    input_contract: package_lock
+    output_contract: build_admission
   build_task_compilation:
     workflow_id: build_task_compilation
     owner: host_task_compiler
+    requires:
+      - frozen_specification
+      - tool_registry
+      - sandbox_profile_registry
+    input_contract: frozen_build_specification
+    output_contract: build_task_set
   build_wave_scheduling:
     workflow_id: build_wave_scheduling
     owner: host_wave_scheduler
+    requires:
+      - build_task_set
+      - valid_task_dependency_graph
+    input_contract: build_task_set
+    output_contract: build_execution_plan
   batch_preflight:
     workflow_id: batch_preflight
     owner: host
+    requires:
+      - accepted_source_snapshot
   task_preflight:
     workflow_id: task_preflight
     owner: host
+    requires:
+      - build_task
+      - build_admission
+      - preimages
+    input_contract: build_task_attempt
+    output_contract: build_preflight_result
   sandbox_creation:
     workflow_id: sandbox_creation
     owner: host
+    requires:
+      - registered_sandbox_profile
+      - image_identity
+    input_contract: build_preflight_result
+    output_contract: sandbox_handle
   source_snapshot_transfer:
     workflow_id: source_snapshot_transfer
     owner: host
+    requires:
+      - safe_archive
+      - source_manifest
   effect_execution:
     workflow_id: effect_execution
     owner: host_effect_executor
+    requires:
+      - admitted_candidate
+      - pre_effect_checkpoint
   task_integration:
     workflow_id: task_integration
     owner: host_task_integrator
+    requires:
+      - reconciled_builder_result
+    input_contract: builder_task_integration_handoff
+    output_contract: task_integration_result
   verification_barrier:
     workflow_id: verification_barrier
     owner: host
+    requires:
+      - independently_accepted_task_results
+    input_contract: wave_task_results
+    output_contract: verified_wave_result
   integrated_source_promotion:
     workflow_id: integrated_source_promotion
     owner: host
+    requires:
+      - final_build_validation_receipt
   run_cleanup:
     workflow_id: run_cleanup
     owner: host
+    requires:
+      - runtime_inventory
+      - retention_policy
+    input_contract: validation_cleanup_handoff
+    output_contract: run_cleanup_manifest
   structural_gap_analysis:
     workflow_id: structural_gap_analysis
     owner: host_gap_analyzer

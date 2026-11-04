@@ -82,8 +82,13 @@ def test_scanner_dispatch_requires_host_gap_pass(tmp_path) -> None:
     controller.scanner.register_detector("syntax", lambda _content: ())
     with pytest.raises(TransitionError, match="structural gap analysis"):
         controller.scan_planning_candidate(
-            request.task_id, request.run_id, request.candidate_specification_ref,
-            "repo-snapshot", ("syntax",), None, None,
+            request.task_id,
+            request.run_id,
+            request.candidate_specification_ref,
+            "repo-snapshot",
+            ("syntax",),
+            None,
+            None,
         )
 
 
@@ -94,14 +99,24 @@ def test_scanner_dispatch_accepts_only_exact_candidate_and_receipt(tmp_path) -> 
     assert outcome.completion_receipt_ref is not None
     controller.scanner.register_detector("syntax", lambda _content: ())
     result = controller.scan_planning_candidate(
-        request.task_id, request.run_id, request.candidate_specification_ref,
-        "repo-snapshot", ("syntax",), outcome.result_ref, outcome.completion_receipt_ref,
+        request.task_id,
+        request.run_id,
+        request.candidate_specification_ref,
+        "repo-snapshot",
+        ("syntax",),
+        outcome.result_ref,
+        outcome.completion_receipt_ref,
     )
     assert result.outcome == ScannerOutcome.PASS
 
     wrong = request.candidate_specification_ref.model_copy(update={"artifact_id": "different-candidate"})
     with pytest.raises(TransitionError, match="different candidate"):
         controller.scan_planning_candidate(
-            request.task_id, request.run_id, wrong, "repo-snapshot", ("syntax",),
-            outcome.result_ref, outcome.completion_receipt_ref,
+            request.task_id,
+            request.run_id,
+            wrong,
+            "repo-snapshot",
+            ("syntax",),
+            outcome.result_ref,
+            outcome.completion_receipt_ref,
         )
