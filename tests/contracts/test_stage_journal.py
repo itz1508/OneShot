@@ -1,4 +1,5 @@
 """Actual SQLite append, replay, identity, and JSONL projection tests."""
+
 from datetime import UTC, datetime
 
 import pytest
@@ -9,9 +10,17 @@ from agent.runtime.stage_journal import StageJournalError, StageJournalService
 
 def event(event_id: str = "one", stage: str = "search", **changes):
     return StageLogEvent(
-        event_id=event_id, sequence=1, workspace_id="w", task_id="t", run_id="r",
-        stage=stage, event="started", status="running", summary="Started",
-        created_at=datetime(2026, 11, 3, tzinfo=UTC), **changes,
+        event_id=event_id,
+        sequence=1,
+        workspace_id="w",
+        task_id="t",
+        run_id="r",
+        stage=stage,
+        event="started",
+        status="running",
+        summary="Started",
+        created_at=datetime(2026, 11, 3, tzinfo=UTC),
+        **changes,
     )
 
 
