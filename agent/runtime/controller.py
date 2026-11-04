@@ -9,6 +9,10 @@ from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
 from agent.contracts.host import ReceiptRef
+from agent.runtime.artifact_store import ArtifactStore
+from agent.runtime.authorization import AuthorizationEngine
+from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
+from agent.runtime.event_store import EventStore
 from agent.runtime.host_gap_analyzer import (
     HostGapAnalyzer,
     SkeletonRunner,
@@ -17,10 +21,6 @@ from agent.runtime.host_gap_analyzer import (
     StructuralGapResult,
     structural_gap_receipt_subject,
 )
-from agent.runtime.artifact_store import ArtifactStore
-from agent.runtime.authorization import AuthorizationEngine
-from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
-from agent.runtime.event_store import EventStore
 from agent.runtime.providers.registry import ProviderRegistry
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.recovery import BoundedRecovery
@@ -158,7 +158,10 @@ class HostController:
                 if result.known_critical_gap_detection_rate != 1.0 or not result.walking_skeleton_completed:
                     raise ValueError("structural gap backtest or walking skeleton incomplete")
                 candidate = result.candidate_specification_ref
-                if self.artifact_store.get_digest(candidate.artifact_id, candidate.artifact_revision) != candidate.artifact_digest:
+                if (
+                    self.artifact_store.get_digest(candidate.artifact_id, candidate.artifact_revision)
+                    != candidate.artifact_digest
+                ):
                     raise ValueError("Planning candidate changed since structural analysis")
                 subject = structural_gap_receipt_subject(result, digest)
                 if not self.receipt_store.verify(
