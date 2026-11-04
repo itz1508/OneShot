@@ -1,12 +1,13 @@
 import pytest
+from test_contracts import make_request
 
 from modal_build_sandbox.applicator import apply_changes, parse_patch, prepare_changes
 from modal_build_sandbox.snapshot import secure_read
-from test_contracts import make_request
 
 
 def _patch(req):
     import zipfile
+
     with zipfile.ZipFile(req.candidate_bundle_ref) as z:
         return z.read("candidate.patch")
 

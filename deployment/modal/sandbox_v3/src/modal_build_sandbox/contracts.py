@@ -1,4 +1,5 @@
 """Strict standalone request, candidate, and execution record contracts."""
+
 from __future__ import annotations
 
 from enum import StrEnum
@@ -120,13 +121,17 @@ class SandboxExecutionRequest(Strict):
     network_blocked: Literal[True] = True
 
     _valid_hashes = field_validator(
-        "source_snapshot_sha256", "expected_source_tree_digest", "sandbox_profile_digest",
-        "candidate_bundle_sha256", "command_plan_sha256"
+        "source_snapshot_sha256",
+        "expected_source_tree_digest",
+        "sandbox_profile_digest",
+        "candidate_bundle_sha256",
+        "command_plan_sha256",
     )(_sha)
 
     @model_validator(mode="after")
     def validate_shape(self) -> SandboxExecutionRequest:
         from .policy import normalize_path
+
         ps = [normalize_path(p) for p in self.authorized_paths]
         if len(ps) != len(set(p.casefold() for p in ps)):
             raise ValueError("duplicate path aliases")
@@ -139,7 +144,15 @@ class SandboxExecutionRequest(Strict):
         checks = self.baseline_checks + self.focused_checks + self.broader_checks
         if len(checks) > self.limits.max_commands or len(set(c.command_id for c in checks)) != len(checks):
             raise ValueError("command count/identity conflict")
-        if any(c.purpose != label for label, arr in (("baseline", self.baseline_checks), ("focused", self.focused_checks), ("broader", self.broader_checks)) for c in arr):
+        if any(
+            c.purpose != label
+            for label, arr in (
+                ("baseline", self.baseline_checks),
+                ("focused", self.focused_checks),
+                ("broader", self.broader_checks),
+            )
+            for c in arr
+        ):
             raise ValueError("command purpose mismatch")
         if self.baseline_expectation == "not_required" and self.baseline_checks:
             raise ValueError("baseline must be absent")

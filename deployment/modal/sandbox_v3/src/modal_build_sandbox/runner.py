@@ -1,4 +1,5 @@
 """One isolated Sandbox per attempt; authoritative import is explicitly out of scope."""
+
 from __future__ import annotations
 
 import hashlib
@@ -9,7 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from .applicator import apply_changes, prepare_changes
-from .contracts import Cleanup, Diagnostic, Outcome, SandboxCommandResult, SandboxExecutionRequest, SandboxExecutionResult
+from .contracts import (
+    Cleanup,
+    Diagnostic,
+    Outcome,
+    SandboxCommandResult,
+    SandboxExecutionRequest,
+    SandboxExecutionResult,
+)
 from .evidence import changed_paths, matches_oracle, run_command, validate_candidate, write_evidence_zip
 from .policy import canonical_digest, check_commands
 from .recovery import AttemptStore
@@ -18,23 +26,36 @@ from .snapshot import archive_directory, extract_verified_tar, scan_tree, sha256
 
 def profile_digest(req: SandboxExecutionRequest) -> str:
     """Coherence digest only; not a trusted host authorization receipt."""
-    return canonical_digest({"image_id": req.image_id, "profile_id": req.sandbox_profile_id,
-                             "limits": req.limits.model_dump(mode="json"), "network_blocked": True})
+    return canonical_digest(
+        {
+            "image_id": req.image_id,
+            "profile_id": req.sandbox_profile_id,
+            "limits": req.limits.model_dump(mode="json"),
+            "network_blocked": True,
+        }
+    )
 
 
 def preflight(req: SandboxExecutionRequest) -> None:
     if req.sandbox_profile_digest != profile_digest(req):
         raise ValueError("sandbox profile digest mismatch")
-    if Path(req.source_snapshot_ref).stat().st_size > req.limits.max_archive_bytes or sha256_file(req.source_snapshot_ref) != req.source_snapshot_sha256:
+    if (
+        Path(req.source_snapshot_ref).stat().st_size > req.limits.max_archive_bytes
+        or sha256_file(req.source_snapshot_ref) != req.source_snapshot_sha256
+    ):
         raise ValueError("source archive digest mismatch")
     check_commands(req)
     validate_candidate(req)
     with tempfile.TemporaryDirectory(prefix="oneshot-source-preflight-") as tmp:
         target = Path(tmp) / "source"
-        snapshot = extract_verified_tar(Path(req.source_snapshot_ref), target,
-            archive_digest=req.source_snapshot_sha256, expected_tree_digest=req.expected_source_tree_digest,
+        snapshot = extract_verified_tar(
+            Path(req.source_snapshot_ref),
+            target,
+            archive_digest=req.source_snapshot_sha256,
+            expected_tree_digest=req.expected_source_tree_digest,
             max_archive_bytes=req.limits.max_archive_bytes,
-            max_extracted_bytes=req.limits.max_extracted_bytes)
+            max_extracted_bytes=req.limits.max_extracted_bytes,
+        )
         for rel, expected in req.expected_preimages.items():
             observed = snapshot.get(rel)
             if (observed["sha256"] if observed else None) != expected:
@@ -45,10 +66,14 @@ def _run_worker(req: SandboxExecutionRequest, root: Path, output: Path, sandbox_
     """Trusted worker, run *inside* isolated Modal container. Never claim host receipt."""
     output.mkdir(exist_ok=True, parents=True)
     patch = validate_candidate(req)
-    before = extract_verified_tar(Path(req.source_snapshot_ref), root,
-        archive_digest=req.source_snapshot_sha256, expected_tree_digest=req.expected_source_tree_digest,
+    before = extract_verified_tar(
+        Path(req.source_snapshot_ref),
+        root,
+        archive_digest=req.source_snapshot_sha256,
+        expected_tree_digest=req.expected_source_tree_digest,
         max_archive_bytes=req.limits.max_archive_bytes,
-        max_extracted_bytes=req.limits.max_extracted_bytes)
+        max_extracted_bytes=req.limits.max_extracted_bytes,
+    )
     baselines: list[SandboxCommandResult] = []
     focused: list[SandboxCommandResult] = []
     broad: list[SandboxCommandResult] = []
@@ -91,15 +116,27 @@ def _run_worker(req: SandboxExecutionRequest, root: Path, output: Path, sandbox_
     after_tar = output / "after.tar"
     after_digest, output_tree = archive_directory(root, after_tar, max_bytes=req.limits.max_archive_bytes)
     result = SandboxExecutionResult(
-        operation_id=req.operation_id, attempt_id=req.attempt_id, work_item_id=req.work_item_id,
-        sandbox_id=sandbox_id, image_id=req.image_id, sandbox_profile_id=req.sandbox_profile_id,
-        sandbox_profile_digest=req.sandbox_profile_digest, input_archive_sha256=req.source_snapshot_sha256,
+        operation_id=req.operation_id,
+        attempt_id=req.attempt_id,
+        work_item_id=req.work_item_id,
+        sandbox_id=sandbox_id,
+        image_id=req.image_id,
+        sandbox_profile_id=req.sandbox_profile_id,
+        sandbox_profile_digest=req.sandbox_profile_digest,
+        input_archive_sha256=req.source_snapshot_sha256,
         input_tree_digest=req.expected_source_tree_digest,
-        candidate_bundle_sha256=req.candidate_bundle_sha256, command_plan_sha256=req.command_plan_sha256,
-        baseline_results=tuple(baselines), focused_results=tuple(focused), broader_results=tuple(broad),
-        changed_paths=changes, output_tree_digest=output_tree, execution_status=status,
-        diagnostic_status=diagnostic, effect_reconciliation=effect,
-        after_archive_ref=str(after_tar), after_archive_sha256=after_digest,
+        candidate_bundle_sha256=req.candidate_bundle_sha256,
+        command_plan_sha256=req.command_plan_sha256,
+        baseline_results=tuple(baselines),
+        focused_results=tuple(focused),
+        broader_results=tuple(broad),
+        changed_paths=changes,
+        output_tree_digest=output_tree,
+        execution_status=status,
+        diagnostic_status=diagnostic,
+        effect_reconciliation=effect,
+        after_archive_ref=str(after_tar),
+        after_archive_sha256=after_digest,
         detail="; ".join(problems)[:500],
     )
     if req.baseline_expectation == "not_required" and baselines:
@@ -113,9 +150,12 @@ def _run_worker(req: SandboxExecutionRequest, root: Path, output: Path, sandbox_
 def sandbox_worker(request_path: str) -> None:
     """Modal command entry. Fixed source path is part of trusted adapter, not agent input."""
     req = SandboxExecutionRequest.model_validate_json(Path(request_path).read_text(encoding="utf-8"))
-    req = req.model_copy(update={"source_snapshot_ref": "/input/source.tar", "candidate_bundle_ref": "/input/bundle.zip"})
-    _run_worker(req, Path("/workspace"), Path("/output"),
-        Path("/input/sandbox-id.txt").read_text(encoding="utf-8").strip())
+    req = req.model_copy(
+        update={"source_snapshot_ref": "/input/source.tar", "candidate_bundle_ref": "/input/bundle.zip"}
+    )
+    _run_worker(
+        req, Path("/workspace"), Path("/output"), Path("/input/sandbox-id.txt").read_text(encoding="utf-8").strip()
+    )
 
 
 class StandaloneRunner:
@@ -164,14 +204,18 @@ class StandaloneRunner:
             self._verify_export(req, reported, after_tar, evidence_zip, sid)
             self.attempts.transition(req.operation_id, req.attempt_id, previous, "HOST_STAGING_VERIFIED")
             previous = "HOST_STAGING_VERIFIED"
-            result = reported.model_copy(update={"after_archive_ref": str(after_tar),
-                "evidence_bundle_ref": str(evidence_zip), "effect_reconciliation": "host independently verified sandbox export"})
+            result = reported.model_copy(
+                update={
+                    "after_archive_ref": str(after_tar),
+                    "evidence_bundle_ref": str(evidence_zip),
+                    "effect_reconciliation": "host independently verified sandbox export",
+                }
+            )
         except Exception as exc:
             # Scheduling may have succeeded even if create() lost its response.
             # Absence of a local handle is not proof the remote Sandbox never existed.
             next_state = "UNCERTAIN"
-            self.attempts.transition(req.operation_id, req.attempt_id, previous, next_state,
-                                     detail=type(exc).__name__)
+            self.attempts.transition(req.operation_id, req.attempt_id, previous, next_state, detail=type(exc).__name__)
             previous = next_state
             raise
         finally:
@@ -183,7 +227,11 @@ class StandaloneRunner:
                     cleanup = Cleanup.FAILED
             if previous in {"HOST_STAGING_VERIFIED", "BLOCKED_PRE_EFFECT", "UNCERTAIN"}:
                 # Uncertain effects remain uncertain; termination does not prove reconciliation.
-                new_state = "TERMINATION_RECORDED" if previous == "HOST_STAGING_VERIFIED" and cleanup == Cleanup.CONFIRMED else previous
+                new_state = (
+                    "TERMINATION_RECORDED"
+                    if previous == "HOST_STAGING_VERIFIED" and cleanup == Cleanup.CONFIRMED
+                    else previous
+                )
                 if new_state != previous:
                     self.attempts.transition(req.operation_id, req.attempt_id, previous, new_state)
         if result is None:
@@ -194,27 +242,56 @@ class StandaloneRunner:
         """Read-only inspection; existence/poll alone never authorizes a retry or marks completion."""
         record = self.attempts.get(operation_id, attempt_id)
         try:
-            sandbox = self.runtime.recover(str(record["sandbox_name"]),
-                                           str(record["sandbox_id"]) if record["sandbox_id"] else None)
+            sandbox = self.runtime.recover(
+                str(record["sandbox_name"]), str(record["sandbox_id"]) if record["sandbox_id"] else None
+            )
             observed = sandbox.poll()
             observation = "running" if observed is None else "terminated"
         except Exception as exc:
             observation = "lookup_uncertain:" + type(exc).__name__
-        return {"operation_id": operation_id, "attempt_id": attempt_id,
-                "persisted_state": record["state"], "sandbox_id": record["sandbox_id"],
-                "sandbox_name": record["sandbox_name"], "remote_observation": observation,
-                "retry_authorized": False}
+        return {
+            "operation_id": operation_id,
+            "attempt_id": attempt_id,
+            "persisted_state": record["state"],
+            "sandbox_id": record["sandbox_id"],
+            "sandbox_name": record["sandbox_name"],
+            "remote_observation": observation,
+            "retry_authorized": False,
+        }
 
-    def _verify_export(self, req: SandboxExecutionRequest, result: SandboxExecutionResult,
-                       after_tar: Path, evidence_zip: Path, sandbox_id: str) -> None:
-        if (result.operation_id, result.attempt_id, result.work_item_id, result.sandbox_id,
-            result.image_id, result.sandbox_profile_id, result.sandbox_profile_digest,
-            result.input_archive_sha256, result.input_tree_digest,
-            result.candidate_bundle_sha256, result.command_plan_sha256) != (
-            req.operation_id, req.attempt_id, req.work_item_id, sandbox_id,
-            req.image_id, req.sandbox_profile_id, req.sandbox_profile_digest,
-            req.source_snapshot_sha256, req.expected_source_tree_digest,
-            req.candidate_bundle_sha256, req.command_plan_sha256):
+    def _verify_export(
+        self,
+        req: SandboxExecutionRequest,
+        result: SandboxExecutionResult,
+        after_tar: Path,
+        evidence_zip: Path,
+        sandbox_id: str,
+    ) -> None:
+        if (
+            result.operation_id,
+            result.attempt_id,
+            result.work_item_id,
+            result.sandbox_id,
+            result.image_id,
+            result.sandbox_profile_id,
+            result.sandbox_profile_digest,
+            result.input_archive_sha256,
+            result.input_tree_digest,
+            result.candidate_bundle_sha256,
+            result.command_plan_sha256,
+        ) != (
+            req.operation_id,
+            req.attempt_id,
+            req.work_item_id,
+            sandbox_id,
+            req.image_id,
+            req.sandbox_profile_id,
+            req.sandbox_profile_digest,
+            req.source_snapshot_sha256,
+            req.expected_source_tree_digest,
+            req.candidate_bundle_sha256,
+            req.command_plan_sha256,
+        ):
             raise ValueError("sandbox result binding mismatch")
         if not result.after_archive_sha256 or sha256_file(after_tar) != result.after_archive_sha256:
             raise ValueError("exported archive digest mismatch")
@@ -233,19 +310,31 @@ class StandaloneRunner:
             for claim in claims:
                 for kind in ("stdout", "stderr"):
                     raw = bundle.read(f"commands/{claim.command_id}.{kind}")
-                    if len(raw) != getattr(claim, f"{kind}_size") or hashlib.sha256(raw).hexdigest() != getattr(claim, f"{kind}_sha256"):
+                    if len(raw) != getattr(claim, f"{kind}_size") or hashlib.sha256(raw).hexdigest() != getattr(
+                        claim, f"{kind}_sha256"
+                    ):
                         raise ValueError("raw command evidence does not match reported digest")
         patch = validate_candidate(req)
         with tempfile.TemporaryDirectory(prefix="oneshot-independent-") as work:
             base = Path(work)
-            before = extract_verified_tar(Path(req.source_snapshot_ref), base / "before",
-                archive_digest=req.source_snapshot_sha256, expected_tree_digest=req.expected_source_tree_digest,
-                max_archive_bytes=req.limits.max_archive_bytes, max_extracted_bytes=req.limits.max_extracted_bytes)
+            before = extract_verified_tar(
+                Path(req.source_snapshot_ref),
+                base / "before",
+                archive_digest=req.source_snapshot_sha256,
+                expected_tree_digest=req.expected_source_tree_digest,
+                max_archive_bytes=req.limits.max_archive_bytes,
+                max_extracted_bytes=req.limits.max_extracted_bytes,
+            )
             if not result.output_tree_digest:
                 raise ValueError("missing output tree identity")
-            after = extract_verified_tar(after_tar, base / "after",
-                archive_digest=result.after_archive_sha256, expected_tree_digest=result.output_tree_digest,
-                max_archive_bytes=req.limits.max_archive_bytes, max_extracted_bytes=req.limits.max_extracted_bytes)
+            after = extract_verified_tar(
+                after_tar,
+                base / "after",
+                archive_digest=result.after_archive_sha256,
+                expected_tree_digest=result.output_tree_digest,
+                max_archive_bytes=req.limits.max_archive_bytes,
+                max_extracted_bytes=req.limits.max_extracted_bytes,
+            )
             observed = changed_paths(before, after)
             if observed != result.changed_paths:
                 raise ValueError("independent changed-path manifest mismatch")
@@ -263,14 +352,18 @@ class StandaloneRunner:
                     raise ValueError("export does not match candidate patch bytes")
         specs = req.baseline_checks + req.focused_checks + req.broader_checks
         results = result.baseline_results + result.focused_results + result.broader_results
-        if len({r.command_id for r in results}) != len(results) or any(r.command_id not in {c.command_id for c in specs} for r in results):
+        if len({r.command_id for r in results}) != len(results) or any(
+            r.command_id not in {c.command_id for c in specs} for r in results
+        ):
             raise ValueError("unknown or duplicated command result")
         for item in results:
             spec = next(c for c in specs if c.command_id == item.command_id)
             if item.argv_digest != canonical_digest(spec.argv):
                 raise ValueError("command execution binding mismatch")
         if result.execution_status == Outcome.COMPLETED:
-            if len(result.focused_results) != len(req.focused_checks) or len(result.broader_results) != len(req.broader_checks):
+            if len(result.focused_results) != len(req.focused_checks) or len(result.broader_results) != len(
+                req.broader_checks
+            ):
                 raise ValueError("missing successful verification commands")
             if not all(matches_oracle(c, next(r for r in results if r.command_id == c.command_id)) for c in specs):
                 raise ValueError("claimed success contradicts command oracle")

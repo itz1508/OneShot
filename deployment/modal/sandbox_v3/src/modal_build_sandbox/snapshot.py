@@ -1,13 +1,15 @@
 """Deterministic regular-file snapshots and fail-closed nofollow extraction."""
+
 from __future__ import annotations
 
 import hashlib
 import os
 import stat
 import tarfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, cast
+from typing import cast
 
 from .policy import normalize_path
 
@@ -99,7 +101,9 @@ def secure_remove(root: Path, path: str) -> None:
         os.unlink(name, dir_fd=fd)
 
 
-def scan_tree(root: Path, *, max_files: int = MAX_MEMBERS, max_bytes: int = 250 * 1024 * 1024) -> dict[str, dict[str, object]]:
+def scan_tree(
+    root: Path, *, max_files: int = MAX_MEMBERS, max_bytes: int = 250 * 1024 * 1024
+) -> dict[str, dict[str, object]]:
     """Reject links/special files; include every ordinary file and executable-mode identity."""
     root = Path(root)
     if root.is_symlink() or not root.is_dir():
@@ -149,6 +153,7 @@ def archive_directory(root: Path, target: Path, *, max_bytes: int = 50 * 1024 * 
             info.mtime = info.uid = info.gid = 0
             info.mode = cast(int, meta["mode"])
             import io
+
             tar.addfile(info, io.BytesIO(content))
     if target.stat().st_size > max_bytes:
         target.unlink()
@@ -156,9 +161,15 @@ def archive_directory(root: Path, target: Path, *, max_bytes: int = 50 * 1024 * 
     return sha256_file(target), tree_digest(entries)
 
 
-def extract_verified_tar(src: Path, target: Path, *, archive_digest: str, expected_tree_digest: str,
-                         max_archive_bytes: int = 50 * 1024 * 1024,
-                         max_extracted_bytes: int = 250 * 1024 * 1024) -> dict[str, dict[str, object]]:
+def extract_verified_tar(
+    src: Path,
+    target: Path,
+    *,
+    archive_digest: str,
+    expected_tree_digest: str,
+    max_archive_bytes: int = 50 * 1024 * 1024,
+    max_extracted_bytes: int = 250 * 1024 * 1024,
+) -> dict[str, dict[str, object]]:
     src, target = Path(src), Path(target)
     if src.stat().st_size > max_archive_bytes or sha256_file(src) != archive_digest:
         raise ValueError("archive byte identity mismatch")

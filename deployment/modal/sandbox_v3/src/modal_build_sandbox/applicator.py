@@ -1,4 +1,5 @@
 """Preflight-only trusted text patch interpreter; never execute candidate instructions."""
+
 from __future__ import annotations
 
 import hashlib
@@ -34,16 +35,26 @@ def parse_patch(payload: bytes) -> tuple[FilePatch, ...]:
         path = normalize_path(match.group(1))
         i += 1
         while i < len(lines) and not lines[i].startswith("--- "):
-            if not (lines[i].startswith("index ") or lines[i].startswith("new file mode 100") or lines[i].startswith("deleted file mode 100")):
+            if not (
+                lines[i].startswith("index ")
+                or lines[i].startswith("new file mode 100")
+                or lines[i].startswith("deleted file mode 100")
+            ):
                 raise ValueError("unsupported patch metadata (rename/binary/mode)")
-            if lines[i].startswith(("new file mode", "deleted file mode")) and not lines[i].strip().endswith(("644", "755")):
+            if lines[i].startswith(("new file mode", "deleted file mode")) and not lines[i].strip().endswith(
+                ("644", "755")
+            ):
                 raise ValueError("unsupported file permissions")
             i += 1
         if i + 1 >= len(lines) or not lines[i].startswith("--- ") or not lines[i + 1].startswith("+++ "):
             raise ValueError("missing patch file markers")
         old = lines[i][4:].strip()
         new = lines[i + 1][4:].strip()
-        if old not in ("/dev/null", f"a/{path}") or new not in ("/dev/null", f"b/{path}") or (old == new == "/dev/null"):
+        if (
+            old not in ("/dev/null", f"a/{path}")
+            or new not in ("/dev/null", f"b/{path}")
+            or (old == new == "/dev/null")
+        ):
             raise ValueError("patch path mismatch")
         i += 2
         hunks: list[tuple[int, int, int, int, tuple[str, ...]]] = []
@@ -60,7 +71,10 @@ def parse_patch(payload: bytes) -> tuple[FilePatch, ...]:
                     raise ValueError("unsupported hunk line")
                 contents.append(lines[i])
                 i += 1
-            if sum(s[0] in (" ", "-") for s in contents) != count_old or sum(s[0] in (" ", "+") for s in contents) != count_new:
+            if (
+                sum(s[0] in (" ", "-") for s in contents) != count_old
+                or sum(s[0] in (" ", "+") for s in contents) != count_new
+            ):
                 raise ValueError("hunk length mismatch")
             hunks.append((start_old, count_old, start_new, count_new, tuple(contents)))
         if not hunks:
@@ -71,8 +85,9 @@ def parse_patch(payload: bytes) -> tuple[FilePatch, ...]:
     return tuple(result)
 
 
-def prepare_changes(root: Path, patch: bytes, allowed: tuple[str, ...],
-                    expected_preimages: dict[str, str | None]) -> dict[str, bytes | None]:
+def prepare_changes(
+    root: Path, patch: bytes, allowed: tuple[str, ...], expected_preimages: dict[str, str | None]
+) -> dict[str, bytes | None]:
     result: dict[str, bytes | None] = {}
     for file_patch in parse_patch(patch):
         path = file_patch.path
@@ -83,7 +98,9 @@ def prepare_changes(root: Path, patch: bytes, allowed: tuple[str, ...],
         except FileNotFoundError:
             original = None
         expected = expected_preimages[path]
-        if (original is None) != (expected is None) or (original is not None and hashlib.sha256(original).hexdigest() != expected):
+        if (original is None) != (expected is None) or (
+            original is not None and hashlib.sha256(original).hexdigest() != expected
+        ):
             raise ValueError("source preimage mismatch")
         if file_patch.old_null != (original is None) or file_patch.new_null and file_patch.old_null:
             raise ValueError("patch operation/preimage mismatch")

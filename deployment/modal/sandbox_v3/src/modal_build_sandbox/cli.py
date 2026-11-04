@@ -1,4 +1,5 @@
 """Explicit standalone actions; never infer authorization from CLI or candidate data."""
+
 from __future__ import annotations
 
 import argparse
@@ -35,7 +36,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "unresolved":
             for record in AttemptStore(args.state).unresolved():
-                print(json.dumps({key: record[key] for key in ("operation_id", "attempt_id", "state", "sandbox_name", "sandbox_id")}))
+                print(
+                    json.dumps(
+                        {
+                            key: record[key]
+                            for key in ("operation_id", "attempt_id", "state", "sandbox_name", "sandbox_id")
+                        }
+                    )
+                )
             return 0
         if args.cmd == "inspect":
             if not (os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET")):
@@ -52,8 +60,9 @@ def main(argv: list[str] | None = None) -> int:
         if not (os.environ.get("MODAL_TOKEN_ID") and os.environ.get("MODAL_TOKEN_SECRET")):
             print("BLOCKED: Modal credentials absent in this process", file=sys.stderr)
             return 2
-        result = StandaloneRunner(ModalRuntime(args.app, create_app=args.create_app),
-                                  AttemptStore(args.state), args.output).execute(req)
+        result = StandaloneRunner(
+            ModalRuntime(args.app, create_app=args.create_app), AttemptStore(args.state), args.output
+        ).execute(req)
         print(result.model_dump_json(indent=2))
         return 0 if result.execution_status == "completed" and result.cleanup_state == "confirmed" else 1
     except Exception as exc:

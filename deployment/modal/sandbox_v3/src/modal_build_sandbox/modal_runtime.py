@@ -1,4 +1,5 @@
 """Modal Sandbox mechanics only; host admission and authoritative promotion live elsewhere."""
+
 from __future__ import annotations
 
 import re
@@ -33,12 +34,25 @@ class ModalRuntime:
         modal = self._modal()
         app = modal.App.lookup(self.app_name, create_if_missing=self.create_app)
         image = modal.Image.from_id(req.image_id)
-        return modal.Sandbox.create("sleep", "infinity", app=app, name=sandbox_name, image=image,
-            block_network=True, workdir="/workspace", cpu=(req.limits.cpu_request, req.limits.cpu_limit),
+        return modal.Sandbox.create(
+            "sleep",
+            "infinity",
+            app=app,
+            name=sandbox_name,
+            image=image,
+            block_network=True,
+            workdir="/workspace",
+            cpu=(req.limits.cpu_request, req.limits.cpu_limit),
             memory=(req.limits.ram_request_mib, req.limits.ram_limit_mib),
-            timeout=req.limits.lifetime_seconds, idle_timeout=req.limits.idle_seconds,
-            secrets=None, env={}, volumes={}, network_file_systems={}, pty=False,
-            include_oidc_identity_token=False)
+            timeout=req.limits.lifetime_seconds,
+            idle_timeout=req.limits.idle_seconds,
+            secrets=None,
+            env={},
+            volumes={},
+            network_file_systems={},
+            pty=False,
+            include_oidc_identity_token=False,
+        )
 
     def recover(self, sandbox_name: str, sandbox_id: str | None) -> Any:
         modal = self._modal()
@@ -52,7 +66,15 @@ class ModalRuntime:
         sb.filesystem.copy_from_local(req.candidate_bundle_ref, "/input/bundle.zip")
         # Copy only trusted runner source, never host credentials / authoritative repository.
         source = Path(__file__).parent
-        for filename in ("__init__.py", "contracts.py", "policy.py", "snapshot.py", "applicator.py", "evidence.py", "runner.py"):
+        for filename in (
+            "__init__.py",
+            "contracts.py",
+            "policy.py",
+            "snapshot.py",
+            "applicator.py",
+            "evidence.py",
+            "runner.py",
+        ):
             sb.filesystem.copy_from_local(source / filename, "/opt/oneshot-v3/modal_build_sandbox/" + filename)
         sb.filesystem.write_text(req.model_dump_json(), "/input/request.json")
         sb.filesystem.write_text(str(sb.object_id), "/input/sandbox-id.txt")

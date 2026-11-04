@@ -1,4 +1,5 @@
 """Data validation at the sandbox boundary. This does not replace host admission."""
+
 from __future__ import annotations
 
 import hashlib
@@ -26,14 +27,20 @@ def normalize_path(p: str, *, allow_root: bool = False) -> str:
 
 
 def canonical_digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    ).hexdigest()
 
 
 def commands_digest(request: SandboxExecutionRequest) -> str:
-    return canonical_digest({"baseline": [c.model_dump(mode="json") for c in request.baseline_checks],
-                             "focused": [c.model_dump(mode="json") for c in request.focused_checks],
-                             "broader": [c.model_dump(mode="json") for c in request.broader_checks],
-                             "expectation": request.baseline_expectation})
+    return canonical_digest(
+        {
+            "baseline": [c.model_dump(mode="json") for c in request.baseline_checks],
+            "focused": [c.model_dump(mode="json") for c in request.focused_checks],
+            "broader": [c.model_dump(mode="json") for c in request.broader_checks],
+            "expectation": request.baseline_expectation,
+        }
+    )
 
 
 def check_commands(request: SandboxExecutionRequest) -> None:

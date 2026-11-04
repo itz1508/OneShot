@@ -1,4 +1,5 @@
 """Read-only Modal readiness check. Never print token values or create resources."""
+
 from __future__ import annotations
 
 import importlib.util

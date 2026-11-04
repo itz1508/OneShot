@@ -1,10 +1,27 @@
 import pytest
-
-from modal_build_sandbox.policy import check_commands, normalize_path
 from test_contracts import make_request
 
+from modal_build_sandbox.policy import check_commands, normalize_path
 
-@pytest.mark.parametrize("p", ["../passwd", "/tmp/a", "C:/x", "a\\b", ".git/config", ".env", "x//y", "x/./y", "x/../y", "x/.ssh/id", "a\x00b", "node_modules/a", "x/.env.secret"])
+
+@pytest.mark.parametrize(
+    "p",
+    [
+        "../passwd",
+        "/tmp/a",
+        "C:/x",
+        "a\\b",
+        ".git/config",
+        ".env",
+        "x//y",
+        "x/./y",
+        "x/../y",
+        "x/.ssh/id",
+        "a\x00b",
+        "node_modules/a",
+        "x/.env.secret",
+    ],
+)
 def test_unsafe_paths(p):
     with pytest.raises(ValueError):
         normalize_path(p)
@@ -24,6 +41,7 @@ def test_reject_model_chosen_shell_command(tmp_path):
     req = make_request(tmp_path)
     malicious = req.focused_checks[0].model_copy(update={"argv": ("sh", "-c", "echo out")})
     from modal_build_sandbox.policy import commands_digest
+
     changed = req.model_copy(update={"focused_checks": (malicious,)})
     changed = changed.model_copy(update={"command_plan_sha256": commands_digest(changed)})
     with pytest.raises(ValueError, match="unadmitted command"):

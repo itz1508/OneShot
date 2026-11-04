@@ -1,4 +1,5 @@
 """Local fake transport tests; never presented as a real Modal execution."""
+
 from __future__ import annotations
 
 import shutil
@@ -6,12 +7,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from test_contracts import make_request
 
 from modal_build_sandbox.contracts import Cleanup, Outcome
 from modal_build_sandbox.modal_runtime import ModalRuntime
 from modal_build_sandbox.recovery import AttemptStore
 from modal_build_sandbox.runner import StandaloneRunner, _run_worker
-from test_contracts import make_request
 
 
 class FakeModalRuntime:
@@ -38,8 +39,12 @@ class FakeModalRuntime:
     def execute(self, sb, _timeout):
         if self.error == "execute":
             raise RuntimeError("fake uncertain execution")
-        req = self.req.model_copy(update={"source_snapshot_ref": str(sb.root / "input" / "source.tar"),
-            "candidate_bundle_ref": str(sb.root / "input" / "bundle.zip")})
+        req = self.req.model_copy(
+            update={
+                "source_snapshot_ref": str(sb.root / "input" / "source.tar"),
+                "candidate_bundle_ref": str(sb.root / "input" / "bundle.zip"),
+            }
+        )
         _run_worker(req, sb.root / "workspace", sb.root / "output", sb.object_id)
         return 0
 
@@ -106,9 +111,11 @@ def test_modal_runtime_requires_configured_app_and_sdk():
 def test_local_fake_rejects_unauthorized_execution_effect(tmp_path):
     fake = FakeModalRuntime(tmp_path / "fake")
     state = AttemptStore(tmp_path / "attempts.sqlite")
-    replacement = ("    from pathlib import Path\n"
-                   "    Path('unauthorized.py').write_text('side effect')\n"
-                   "    return value.strip().lower()\n")
+    replacement = (
+        "    from pathlib import Path\n"
+        "    Path('unauthorized.py').write_text('side effect')\n"
+        "    return value.strip().lower()\n"
+    )
     req = make_request(tmp_path / "request", attempt="attempt-side-effect", replacement=replacement)
     fake.req = req
     runner = StandaloneRunner(fake, state, tmp_path / "exports")
@@ -120,8 +127,9 @@ def test_local_fake_rejects_unauthorized_execution_effect(tmp_path):
 
 
 def test_modal_create_does_not_inject_secrets_or_network(monkeypatch, tmp_path):
-    from types import ModuleType
     import sys
+    from types import ModuleType
+
     modal = ModuleType("modal")
     captured = {}
 
