@@ -11,7 +11,7 @@ from agent.contracts.planning import (
     MoveAction,
     RemoveAction,
 )
-from agent.contracts.task_todo import Build, TaskTodo
+from agent.contracts.task_todo import Build, TaskTodo, paths_overlap
 from agent.contracts.tool_registry import safe_relative_path
 
 
@@ -73,7 +73,7 @@ def compile_build(spec: BuildSpecification, frozen_plan_ref: ArtifactRef) -> Bui
         paths: set[str] = set()
         batch: list[str] = []
         for todo in ready:
-            if not paths.isdisjoint(todo.authorized_paths):
+            if any(paths_overlap(path, occupied) for path in todo.authorized_paths for occupied in paths):
                 continue
             paths.update(todo.authorized_paths)
             batch.append(todo.todo_id)
