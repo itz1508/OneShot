@@ -130,9 +130,7 @@ def test_mvp_import_targets_are_checked(tmp_path: Path) -> None:
 
 
 def test_unimplemented_function_is_reported_as_candidate(tmp_path: Path) -> None:
-    (tmp_path / "service.py").write_text(
-        "def unfinished():\n    raise NotImplementedError()\n"
-    )
+    (tmp_path / "service.py").write_text("def unfinished():\n    raise NotImplementedError()\n")
     result = scan(tmp_path, capabilities=("completeness",))
     assert [item.code for item in result.findings] == ["NOT_IMPLEMENTED_STUB"]
     assert result.findings[0].status == "candidate"
