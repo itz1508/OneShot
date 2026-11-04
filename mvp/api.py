@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.runtime.providers.base import ProviderError
@@ -21,11 +21,32 @@ from mvp.mcp_research import mcp_transport_config
 from mvp.service import MVPError, MVPService
 
 DEFAULT_ROOT = Path(os.environ.get("ONESHOT_STATE_ROOT", "./.oneshot-state"))
+WEB_LIVE_HTML = Path(__file__).resolve().parents[1] / "web" / "public" / "live.html"
+
+
+def _csv_env(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    values = [value.strip() for value in raw.split(",") if value.strip()]
+    return values or default
+
+
+allowed_hosts = _csv_env(
+    "ONESHOT_ALLOWED_HOSTS",
+    ["localhost", "127.0.0.1", "[::1]", "testserver", "*.modal.run"],
+)
+allowed_origin_regex = os.environ.get(
+    "ONESHOT_WEB_ORIGIN_REGEX",
+    r"^(https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|https://.*\.modal\.run)$",
+)
+
 app = FastAPI(title="OneShot MVP API", version="0.1.0")
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("ONESHOT_WEB_ORIGIN", "http://localhost:5173")],
+    allow_origin_regex=allowed_origin_regex,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Content-Type", "Last-Event-ID"],
 )
@@ -49,6 +70,18 @@ def failure(exc: MVPError) -> HTTPException:
         status_code=404 if "not found" in message else 409 if "conflict" in message else 400,
         detail=message,
     )
+
+
+@app.get("/", include_in_schema=False)
+def index() -> RedirectResponse:
+    return RedirectResponse(url="/live.html", status_code=307)
+
+
+@app.get("/live.html", include_in_schema=False)
+def live_page() -> FileResponse:
+    if not WEB_LIVE_HTML.exists():
+        raise HTTPException(status_code=404, detail="live.html is missing from the deployment bundle")
+    return FileResponse(WEB_LIVE_HTML, media_type="text/html; charset=utf-8")
 
 
 @app.get("/api/health")
