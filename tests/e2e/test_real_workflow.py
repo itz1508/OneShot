@@ -271,6 +271,17 @@ class TestScenarios:
             _advance_with_receipt(controller, "task-001", "run-001", stage)
         state = controller.get_state("task-001")
         assert state.current_stage == Stage.BUILD_VALIDATION
+        final_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.BUILD_VALIDATION)
+        final_receipt = controller.issue_stage_receipt(
+            Stage.BUILD_VALIDATION, task_id="task-001", run_id="run-001"
+        )
+        with pytest.raises(TransitionError, match="final-stage work list"):
+            controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=None)
+        state = controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=final_ref)
+        assert Stage.BUILD_VALIDATION in state.completed_stages
+        from agent.cli import cmd_verify
+
+        assert cmd_verify("task-001", state_root=str(tmp_path)) == 0
 
     def test_s2_unsupported_claim_do_not_use(self, tmp_path):
         """S2: Unsupported capability returns BLOCKED, not pass."""
