@@ -2,6 +2,11 @@ name: Deploy Modal Serverless
 
 on:
   workflow_dispatch:
+    inputs:
+      modal_environment:
+        description: Existing Modal environment to deploy into
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,8 @@ jobs:
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          MODAL_ENVIRONMENT: ${{ inputs.modal_environment }}
         run: |
           test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET"
-          uvx --from "modal==1.6.3" modal deploy deployment/modal/app.py
+          test -n "$MODAL_ENVIRONMENT"
+          uvx --from "modal==1.6.3" modal deploy --env "$MODAL_ENVIRONMENT" deployment/modal/app.py
