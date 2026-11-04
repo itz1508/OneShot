@@ -10,13 +10,13 @@ from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
-from mvp.mcp_research import ResearchMCPOutput, register_mcp_research
+from mvp.mcp_research import ResearchMCPOutput, register_mcp_research, research_artifact_id
 from mvp.service import MVPError, MVPService
 
 
 def research_ref(task_id: str, run_id: str, digest: str) -> ArtifactRef:
     return ArtifactRef(
-        artifact_id=f"research-{task_id}-{run_id}",
+        artifact_id=research_artifact_id(task_id, run_id),
         artifact_revision=1,
         artifact_digest=digest,
         contract_id="research_record",
@@ -61,7 +61,8 @@ def execute_research(service: MVPService, task_id: str) -> dict[str, object]:
     _, running_ref = service.host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
     service.host.event_store.append(task_id, "mcp_research_started", "Invoking oneshot_research")
     try:
-        register_mcp_research(service.host.providers)
+        if "mcp_research" not in service.host.providers.registered_providers:
+            register_mcp_research(service.host.providers)
         request = ProviderRequest(
             run_id=state.run_id,
             prompt=json.dumps(
