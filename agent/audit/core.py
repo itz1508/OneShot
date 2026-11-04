@@ -35,7 +35,14 @@ class AuditResult:
 
 
 def evidence(
-    root: Path, path: Path, line: int, code: str, capability: str, severity: str, message: str, status: str = "candidate"
+    root: Path,
+    path: Path,
+    line: int,
+    code: str,
+    capability: str,
+    severity: str,
+    message: str,
+    status: str = "candidate",
 ) -> Finding:
     """Capture file digest so a later host can reconcile stale findings."""
     data = path.read_bytes()
@@ -54,7 +61,10 @@ def evidence(
 def python_files(root: Path, scope: Path) -> Iterable[Path]:
     """Walk only ordinary files; never recurse through directory symlinks."""
     for path in sorted(scope.rglob("*.py")):
-        if any(part in {".git", ".venv", "venv", "node_modules", "__pycache__"} for part in path.relative_to(root).parts):
+        if any(
+            part in {".git", ".venv", "venv", "node_modules", "__pycache__"}
+            for part in path.relative_to(root).parts
+        ):
             continue
         if path.is_file() and not path.is_symlink():
             yield path
@@ -104,7 +114,12 @@ def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = ()) -> Au
         except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
             limitations.append(f"{name} not completed: {type(exc).__name__}")
     findings.sort(key=lambda f: (f.capability, f.path, f.line, f.code))
-    disposition = "blocked" if len(executed) != len(set(requested)) else "findings_open" if findings else "not_e2e_verified"
+    if len(executed) != len(set(requested)):
+        disposition = "blocked"
+    elif findings:
+        disposition = "findings_open"
+    else:
+        disposition = "not_e2e_verified"
     return AuditResult(
         str(root),
         target.relative_to(root).as_posix(),
