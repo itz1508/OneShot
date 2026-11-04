@@ -1,5 +1,457 @@
 id: audit_discovery
+stage: audit_discovery
 version: 1
-phases: [preflight, repository_baseline, inspection, findings, code_intent, package, validation_handoff]
-input: _research.json
-output: _audit_discovery.json
+# ============================================================
+# Audit Discovery workflow
+# ============================================================
+
+workflow:
+  stage_id: audit_discovery
+  role_id: audit_discovery
+  executor_id: audit_discovery_executor
+  stage_revision_source: host_controller
+
+  purpose:
+    summary: >-
+      Inspect the registered repository read-only, connect accepted Research
+      findings to physical source evidence, assess current behavior, and
+      produce candidate CodeIntent for Planning.
+
+  success_contract:
+    derived_from: accepted_user_intent_and_supplied_criteria
+    success_meaning: Establish observable repository reality against the accepted user outcome; 
+      distinguish existing behavior, gaps, and new features with source evidence; propose CodeIntent 
+      without implementation decisions.
+    observable_conditions:
+      - actual_source_inspected
+      - requirements_assessed_with_evidence
+      - source_stability_checked
+      - no_source_changes
+    criteria_completeness_gate: false
+  request_result_exchange:
+    mode: bidirectional_request_result
+    receives_information_from: research
+    may_request_information_from:
+      - research
+    returns_result_to: planning
+    routing_authority: host_controller
+    prohibits:
+      - source_modification
+      - implementation_strategy
+    input_request_ref_source: host_request_router
+  input_schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    title: audit input request/result contract
+    type: object
+    additionalProperties: false
+    required:
+      - request_id
+      - request_revision
+      - task_id
+      - user_intent_ref
+      - research_output_ref
+      - research_receipt_ref
+    properties:
+      request_id:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,128}$
+      request_revision:
+        type: integer
+        minimum: 1
+      task_id:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,128}$
+      user_intent_ref:
+        $ref: urn:oneshot:contract:artifact_ref:1.0
+      research_output_ref:
+        $ref: urn:oneshot:contract:artifact_ref:1.0
+      research_receipt_ref:
+        $ref: urn:oneshot:contract:receipt_ref:1.0
+      inspection_question:
+        type: string
+        minLength: 1
+  output_schema:
+    $schema: https://json-schema.org/draft/2020-12/schema
+    title: audit output request/result contract
+    type: object
+    additionalProperties: false
+    required:
+      - request_id
+      - request_revision
+      - task_id
+      - user_intent_ref
+      - status
+      - input_request_ref
+    properties:
+      request_id:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,128}$
+      request_revision:
+        type: integer
+        minimum: 1
+      task_id:
+        type: string
+        pattern: ^[A-Za-z0-9_-]{1,128}$
+      user_intent_ref:
+        $ref: urn:oneshot:contract:artifact_ref:1.0
+      status:
+        type: string
+        enum:
+          - completed
+          - failed
+          - blocked
+          - not_run
+          - skipped
+      unresolved:
+        type: array
+        items:
+          type: string
+      audit_record_ref:
+        $ref: urn:oneshot:contract:artifact_ref:1.0
+      source_checkpoint_before_ref:
+        $ref: urn:oneshot:contract:source_checkpoint:1.0
+      source_checkpoint_after_ref:
+        $ref: urn:oneshot:contract:source_checkpoint:1.0
+      requirement_assessments:
+        type: array
+        items:
+          type: object
+      findings:
+        type: array
+        items:
+          type: object
+      code_intents:
+        type: array
+        items:
+          type: object
+      input_request_ref:
+        $ref: urn:oneshot:contract:artifact_ref:1.0
+    allOf:
+      - if:
+          required:
+            - status
+          properties:
+            status:
+              const: completed
+        then:
+          required:
+            - audit_record_ref
+            - source_checkpoint_before_ref
+            - source_checkpoint_after_ref
+            - requirement_assessments
+            - findings
+            - code_intents
+  schema_validation:
+    validator_owner: host
+    dialect: json_schema_2020_12
+    external_contract_refs: resolve_from_registered_contracts
+    unresolved_external_ref: reject
+    exact_request_revision_binding: true
+    user_intent_binding_required: true
+    receipt_authority: trusted_host_only
+    validate_before_persistence: true
+    validate_after_reopen: true
+    failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+    cross_reference_validation:
+      - request_id
+      - request_revision
+      - task_id
+      - user_intent_ref
+      - parent_artifact_revision
+      - receipt_subject_and_issuer
+    require_output_input_request_ref_match: true
+  inputs:
+    required:
+      - input_id: input_request
+        contract_id: audit_discovery_input_request
+        schema_source: workflow.input_schema
+        resolution: host_bound_request_artifact
+        source: host_request_router
+        receipt_required: true
+      - input_id: workflow_input
+        contract_id: workflow_input
+        resolution: exact_artifact_ref
+        source_stage: workflow_entry
+        receipt_required: true
+
+      - input_id: research_record
+        contract_id: research_record
+        resolution: exact_artifact_ref
+        source_stage: research
+        receipt_required: true
+
+      - input_id: research_completion_receipt
+        contract_id: receipt_ref
+        resolution: exact_receipt_ref
+        source_stage: research
+
+    optional:
+      - input_id: repository_instructions
+        contract_id: evidence_ref
+        resolution: registered_repository_instructions
+        multiple: true
+
+      - input_id: catalog_match
+        contract_id: catalog_match
+        resolution: exact_artifact_ref
+        source_stage: research
+
+      - input_id: research_preparation
+        contract_id: research_preparation
+        resolution: exact_artifact_ref
+        source_stage: research
+
+  execution:
+    provider_session_required: true
+
+    model_loop:
+      enabled: true
+      maximum_tool_calls: 120
+      maximum_output_attempts: 3
+      completion_condition: primary_output_submitted
+
+    source_checkpoints:
+      entry:
+        checkpoint_id: audit_source_entry
+        capture:
+          - commit_oid
+          - inspected_path_digests
+          - inspected_path_inventory
+          - tracked_dirty_state
+          - relevant_untracked_files
+        persistence: checkpoint_store
+
+      exit:
+        checkpoint_id: audit_source_exit
+        capture:
+          - commit_oid
+          - inspected_path_digests
+          - inspected_path_inventory
+          - tracked_dirty_state
+          - relevant_untracked_files
+        persistence: checkpoint_store
+
+      comparison:
+        compare_commit_oid: true
+        compare_inspected_path_digests: true
+
+        changed_during_stage:
+          execution_status: blocked
+          diagnostic_status: uncertainty
+          resume_point: audit_source_reconciliation
+
+        compare_inspected_path_inventory: true
+        compare_relevant_dirty_state: true
+    required_work:
+      - step_id: load_upstream_artifacts
+        produces:
+          - accepted_research_context
+          - catalog_lineage
+          - research_checklist
+
+      - step_id: load_repository_instructions
+        produces:
+          - applicable_repository_rules
+
+      - step_id: capture_source_entry
+        produces:
+          - source_checkpoint_before
+
+      - step_id: inspect_repository
+        produces:
+          - repository_observations
+          - file_line_evidence
+
+      - step_id: assess_requirements
+        produces:
+          - requirement_assessments
+
+      - step_id: record_findings
+        produces:
+          - audit_findings
+
+      - step_id: produce_code_intents
+        produces:
+          - existing_gap_intents
+          - new_feature_intents
+
+      - step_id: capture_source_exit
+        produces:
+          - source_checkpoint_after
+          - source_stability_result
+
+      - step_id: submit_audit_record
+        produces:
+          - audit_discovery_record_candidate
+
+  tool_projection:
+    registry_ref_source: active_tool_registry_snapshot
+
+    capabilities:
+      - capability_id: repository.list_files
+        wire_name: list_files
+        permission_token: repository.read
+
+      - capability_id: repository.read_file
+        wire_name: read_file
+        permission_token: repository.read
+
+      - capability_id: repository.search_files
+        wire_name: search_files
+        permission_token: repository.search
+
+      - capability_id: repository.git_diff
+        wire_name: git_diff
+        permission_token: repository.git_read
+
+      - capability_id: repository.git_log
+        wire_name: git_log
+        permission_token: repository.git_read
+
+      - capability_id: artifacts.get_artifact
+        wire_name: get_artifact
+        permission_token: artifacts.read
+
+    root_binding:
+      source: registered_workspace
+      model_selectable: false
+
+    result_policy:
+      retain_tool_outcome_refs: true
+      maximum_model_text_characters: 20000
+      persist_truncated_results: true
+
+  outputs:
+    - output_slot: primary
+      contract_id: audit_discovery_record
+      contract_version: "1.0"
+      media_type: application/json
+
+      required_sections:
+        - workflow_input_ref
+        - research_record_ref
+        - source_checkpoint_before_ref
+        - source_checkpoint_after_ref
+        - requirement_assessments
+        - findings
+        - code_intents
+        - tool_outcome_refs
+        - unresolved
+        - limitations
+      intent_requirements:
+        existing_gap:
+          finding_refs_required: true
+          evidence_refs_required: true
+
+        new_feature:
+          accepted_requirement_refs_required: true
+          finding_refs_required: false
+
+  persistence:
+    temporary_output:
+      allocation_owner: host
+      runtime_root_source: runtime_root_registry
+      workflow_stage_source: workflow_registry
+      filename_generation: host_generated
+      authoritative: false
+
+    authoritative_output:
+      owner: host
+      backend: artifact_store
+      canonical_serializer_profile: rfc8785-jcs-sha256-v1
+      digest_algorithm: sha256
+      immutable: true
+      reopen_after_persist: true
+      verify_digest_after_reopen: true
+
+  completion:
+    receipt:
+      issuer: host
+      subject_contract_id: audit_discovery_completion_subject
+      subject_contract_version: "1.0"
+
+      binds:
+        - workspace_id
+        - task_id
+        - run_id
+        - stage_id
+        - stage_revision
+        - workflow_input_ref
+        - research_record_ref
+        - audit_discovery_record_ref
+        - source_checkpoint_before_ref
+        - source_checkpoint_after_ref
+
+        - request_id
+        - request_revision
+        - input_request_ref
+    successful_result:
+      execution_status: completed
+      diagnostic_status_is_not_a_completion_gate: true
+    host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+  handoff:
+    target_stage: planning
+    contract_id: audit_planning_handoff
+    contract_version: "1.0"
+
+    required_refs:
+      - input_request_ref
+      - workflow_input_ref
+      - research_record_ref
+      - audit_discovery_record_ref
+      - research_completion_receipt_ref
+      - audit_completion_receipt_ref
+      - source_checkpoint_after_ref
+    transition_owner: host_controller
+
+    feedback_request_path: audit_discovery_can_request_more_research_information_via_host
+  checkpoints:
+    - checkpoint_id: audit_entry
+      resume_point: load_upstream_artifacts
+
+    - checkpoint_id: audit_source_captured
+      resume_point: inspect_repository
+
+    - checkpoint_id: audit_output_persisted
+      resume_point: issue_completion_receipt
+
+    - checkpoint_id: audit_handoff_ready
+      resume_point: host_transition_to_planning
+
+  recovery:
+    inspect:
+      - source_checkpoints
+      - temporary_output
+      - authoritative_output
+      - tool_outcome_artifacts
+      - completion_receipt
+      - handoff_artifact
+      - lifecycle_events
+
+    classifications:
+      - not_started
+      - source_captured
+      - inspection_in_progress
+      - output_submitted
+      - output_persisted
+      - receipt_issued
+      - handoff_ready
+      - completed
+      - uncertainty
+
+  cleanup:
+    after_successful_handoff:
+      delete:
+        - temporary_model_drafts
+        - duplicate_source_excerpts
+        - temporary_rendered_reports
+        - unaccepted_output_projections
+
+      retain:
+        - audit_discovery_record
+        - source_checkpoints
+        - evidence_artifacts
+        - tool_outcome_artifacts
+        - completion_receipt
+        - handoff_artifact
+        - material_checkpoints
