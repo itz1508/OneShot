@@ -7,7 +7,6 @@ from pathlib import Path
 
 from agent.audit.core import Finding, evidence, python_files
 
-
 DANGEROUS = {("subprocess", "run"), ("subprocess", "Popen"), ("os", "system")}
 
 
