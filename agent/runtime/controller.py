@@ -14,8 +14,8 @@ from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult, Recei
 from agent.contracts.scanner import ScannerResult
 from agent.contracts.work_todo import TodoList, WorkBinding
 from agent.runtime.artifact_store import ArtifactStore
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.authorization import AuthorizationEngine
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
 from agent.runtime.event_store import EventStore
 from agent.runtime.host_gap_analyzer import (
@@ -402,9 +402,11 @@ class HostController:
                 f"{task_id}:{state.run_id}:{stage.value}:"
                 f"{input_request_ref.artifact_id}:{input_request_ref.artifact_revision}:"
                 f"{input_request_ref.artifact_digest}:{information_needed.strip()}"
-            ).encode("utf-8")
+            ).encode()
         ).hexdigest()[:24]
-        request_id = f"research-{task_id}" if stage is Stage.RESEARCH and len(task_id) <= 119 else f"dispatch-{fingerprint}"
+        request_id = (
+            f"research-{task_id}" if stage is Stage.RESEARCH and len(task_id) <= 119 else f"dispatch-{fingerprint}"
+        )
         envelope = HostDispatchEnvelope(
             task_id=task_id,
             run_id=state.run_id,
