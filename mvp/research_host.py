@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 from agent.contracts.common import ArtifactRef
 from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult
 from agent.contracts.research import ResearchRecord
-from agent.contracts.work_todo import WorkBinding, WorkStatus
+from agent.contracts.work_todo import WorkStatus
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
@@ -201,23 +201,15 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
-    dispatch, _ = service.host.prepare_agent_dispatch(
-        task_id, input_ref, input_record.text, requested_role="researcher"
-    )
-    service.host.verify_agent_dispatch(dispatch)
-    binding = WorkBinding(
-        task_id=dispatch.task_id,
-        run_id=dispatch.run_id,
-        stage="research",
-        request_id=dispatch.request_id,
-        request_revision=dispatch.request_revision,
-        input_request_ref=dispatch.input_request_ref,
-    )
-    _, todo_ref = service.host.assign_work(
-        binding,
+    dispatch, _, todo_ref = service.host.prepare_agent_dispatch(
+        task_id,
+        input_ref,
+        input_record.text,
+        requested_role="researcher",
         action="Execute verified MCP Research",
         expected_result="ResearchRecord validated and persisted by the host",
     )
+    service.host.verify_agent_dispatch(dispatch)
     _, running_ref = service.host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
     service.host.event_store.append(task_id, "mcp_research_started", "Invoking oneshot_research")
     try:
