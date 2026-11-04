@@ -132,8 +132,7 @@ class HostMemoryManager:
                 for result in validation.criterion_results
             )
             or any(
-                result.outcome is not CriterionResult.PASS or result.exit_code != 0
-                for result in validation.e2e_results
+                result.outcome is not CriterionResult.PASS or result.exit_code != 0 for result in validation.e2e_results
             )
             or any(step.status is not StepStatus.COMPLETED for step in validation.step_results)
         ):
@@ -158,9 +157,7 @@ class HostMemoryManager:
         self._verify_receipt(memory.approval_receipt_ref, approval_subject)
 
         memory_artifact_id = f"build-memory:{workspace_id}:{memory.memory_id}"
-        digest = self._artifacts.put_immutable(
-            memory, memory_artifact_id, 1, "verified_build_memory", "1.0"
-        )
+        digest = self._artifacts.put_immutable(memory, memory_artifact_id, 1, "verified_build_memory", "1.0")
         memory_ref = ArtifactRef(
             artifact_id=memory_artifact_id,
             artifact_revision=1,
@@ -203,8 +200,7 @@ class HostMemoryManager:
                 }
             )
             rev, next_digest = self._artifacts.put_cas(
-                promoted, memory.source_plan_template_ref.artifact_id,
-                latest, "plan_template", "1.0"
+                promoted, memory.source_plan_template_ref.artifact_id, latest, "plan_template", "1.0"
             )
         else:
             rev = latest
