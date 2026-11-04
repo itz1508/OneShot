@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True, help="Actual deployed HTTPS Modal URL")
+    parser.add_argument("--verify-task-id", default="", help="Only check a task persisted before container replacement")
     args = parser.parse_args()
     base = args.base_url.rstrip("/")
     parsed = urlsplit(base)
@@ -42,6 +43,22 @@ def main() -> int:
             raise RuntimeError(f"{method} {path} returned HTTP {exc.code}") from exc
         except URLError as exc:
             raise RuntimeError(f"{method} {path} is unreachable") from exc
+
+    if args.verify_task_id:
+        if not re.fullmatch(r"[a-f0-9]{32}", args.verify_task_id):
+            parser.error("invalid persisted task ID")
+        task_id = args.verify_task_id
+        restored = api("GET", f"/api/tasks/{task_id}")
+        if not isinstance(restored, dict) or restored.get("execution_status") != "audit_completed":
+            raise RuntimeError("Audit state was not retained across the container replacement")
+        artifacts = api("GET", f"/api/tasks/{task_id}/artifacts")
+        if not isinstance(artifacts, list) or not any(a.get("kind") == "audit" for a in artifacts):
+            raise RuntimeError("Audit artifact was not retained across the container replacement")
+        events = api("GET", f"/api/tasks/{task_id}/events?after=0")
+        if not isinstance(events, list) or not any(event.get("type") == "audit_completed" for event in events):
+            raise RuntimeError("Audit event log was not retained across the container replacement")
+        print(json.dumps({"status": "recovered", "task_id": task_id, "events": len(events)}))
+        return 0
 
     page = get("/live.html")
     if b"<html" not in page.lower() or b"/api/tasks" not in page:
