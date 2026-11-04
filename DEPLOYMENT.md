@@ -6,6 +6,8 @@
 
 The App is the API serving layer; the Modal Sandbox is independent, isolated Builder execution. No new login system, server implementation, or competing API is introduced.
 
+The newer `main` branch also contains a **separate** health-only entrypoint `deployment/modal/app.py`, its read-only reference files, and `.github/workflows/deploy-modal.yml`. That deployment is *not* the OneShot ASGI API. This document and `.github/workflows/modal-deploy.yml` apply only to `modal_app.py`; keep both workflows distinct, do not deploy the health-only app in place of the API, and do not change the standalone package as part of this repair.
+
 1. In the authorized Modal workspace, inspect existing resources before creating any: `modal app list --json`, `modal app info <app>`, `modal volume list`. For named Sandboxes, use `modal.Sandbox.list()`/`from_name()` or the Modal dashboard. Preserve any existing Sandbox and Volume.
 2. Reuse their names via `ONESHOT_MODAL_APP_NAME` and `ONESHOT_MODAL_VOLUME_NAME` in the deploying process; defaults are `oneshot` and `oneshot-state`.
 3. Ensure the executor is authenticated with `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` (or an active Modal CLI profile). **Proxy tokens are not deployment credentials.** Never put tokens in Git or browser JavaScript.
