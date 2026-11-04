@@ -84,7 +84,9 @@ def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), reque
     from agent.audit.contracts import scan_contracts
     from agent.audit.dependencies import scan_dependencies
     from agent.audit.frontend import scan_frontend
+    from agent.audit.integration import scan_integration
     from agent.audit.paths import scan_paths
+    from agent.audit.recovery import scan_recovery
     from agent.audit.security import scan_security
     from agent.audit.state import scan_state
     from agent.audit.verification import scan_verification
@@ -100,6 +102,8 @@ def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), reque
         "frontend": scan_frontend,
         "state": scan_state,
         "dependencies": scan_dependencies,
+        "integration": scan_integration,
+        "recovery": scan_recovery,
     }
     requested = capabilities or tuple(scanners)
     unknown = sorted(set(requested) - set(scanners))
