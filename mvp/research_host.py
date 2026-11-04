@@ -10,9 +10,9 @@ from agent.contracts.common import ArtifactRef
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
-from agent.runtime.work_todo import WorkTodoManager
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
+from agent.runtime.work_todo import WorkTodoManager
 from mvp.mcp_research import ResearchMCPOutput, research_artifact_id
 from mvp.service import MVPError, MVPService
 
