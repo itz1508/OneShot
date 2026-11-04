@@ -338,7 +338,6 @@ def test_host_evidence_paths_are_forwarded_to_real_mcp_request(tmp_path, monkeyp
         '["README.md"',
     ],
 )
-
 def test_invalid_host_evidence_paths_fail_before_work_assignment(tmp_path, monkeypatch, bad):
     service = MVPService(tmp_path)
     task_id = service.create("Inspect repository source")["task_id"]
