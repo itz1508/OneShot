@@ -96,8 +96,11 @@ class MVPService:
 
     def revise_input(self, task_id: str, text: str, expected_revision: int) -> dict[str, object]:
         self._check_id(task_id)
-        if self.host.get_state(task_id) is None:
+        state = self.host.get_state(task_id)
+        if state is None:
             raise MVPError("task not found")
+        if state.current_stage.value != "research" or state.active_work_artifact_id is not None:
+            raise MVPError("input locked after Research starts")
         if expected_revision < 1:
             raise MVPError("invalid expected revision")
         content = text.strip()
