@@ -1,0 +1,38 @@
+name: Deploy Modal Serverless
+
+on:
+  workflow_dispatch:
+    inputs:
+      modal_environment:
+        description: Existing Modal environment to deploy into
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modal-serverless-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: modal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+      - name: Validate Python syntax
+        run: python -m py_compile deployment/modal/app.py
+      - name: Deploy to Modal
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+          MODAL_ENVIRONMENT: ${{ inputs.modal_environment }}
+        run: |
+          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET"
+          test -n "$MODAL_ENVIRONMENT"
+          uvx --from "modal==1.6.3" modal deploy --env "$MODAL_ENVIRONMENT" deployment/modal/app.py
