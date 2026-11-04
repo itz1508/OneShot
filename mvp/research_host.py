@@ -103,9 +103,93 @@ def _audit_finding(f: AuditCoreFinding) -> AuditFinding:
 
 
 def execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
-    """Execute a host-admitted Research capability; never substitute for ResearchRecord."""
+    """Execute or reconcile a host-admitted Research capability without stage advancement."""
     with service.research_slot(task_id):
+        state = service.host.get_state(service._check_id(task_id))
+        if state is not None and state.current_stage is Stage.RESEARCH and state.active_work_artifact_id:
+            return _reconcile_audit(service, task_id)
         return _execute_audit(service, task_id)
+
+
+def _reconcile_audit(service: MVPService, task_id: str) -> dict[str, object]:
+    """Recover verified, persisted Audit findings without repeating the scanner effect."""
+    state = service.host.get_state(task_id)
+    if state is None or state.current_stage is not Stage.RESEARCH or not state.active_work_artifact_id:
+        raise MVPError("Audit reconciliation requires active Research work")
+    input_record, input_revision, input_digest = service.read_input(task_id)
+    if input_record.purpose != "audit":
+        raise MVPError("task purpose is not audit; Audit reconciliation rejected")
+    artifact_id = audit_artifact_id(task_id, state.run_id)
+    if service.artifacts.latest_revision(artifact_id) != 1:
+        raise MVPError("Audit recovery blocked: verified findings unavailable")
+    try:
+        raw = service.artifacts.get_verified(artifact_id, 1)
+        record = AuditFindingsRecord.model_validate_json(raw)
+        if (
+            record.task_id != task_id
+            or record.run_id != state.run_id
+            or record.request != input_record.text
+            or record.stage_revision != 1
+        ):
+            raise ValueError("persisted Audit input or task identity mismatch")
+        if (
+            service.audit_workspace_root is None
+            or record.root != str(service.audit_workspace_root)
+            or os.environ.get("MCP_TRUSTED_ANCESTRY") != "true"
+        ):
+            raise ValueError("persisted Audit scope is not host-authorized")
+        if record.disposition == "blocked" or (set(record.executed_capabilities) != set(record.requested_capabilities)):
+            raise ValueError("incomplete Audit scanners require explicit correction")
+        digest = digest_model(record)
+        if service.artifacts.get_digest(artifact_id, 1) != digest:
+            raise ValueError("persisted Audit digest mismatch")
+        ref = audit_ref(task_id, state.run_id, digest)
+        todo_id = state.active_work_artifact_id
+        todo_revision = service.artifacts.latest_revision(todo_id)
+        todo_digest = service.artifacts.get_digest(todo_id, todo_revision)
+        if todo_revision < 1 or not todo_digest:
+            raise ValueError("persisted Audit work evidence unavailable")
+        todo_ref = WorkTodoManager._ref(todo_id, todo_revision, todo_digest, "work_todo")
+        work = service.host.work_todos.read(todo_ref)
+        if (
+            work.task_id != task_id
+            or work.run_id != state.run_id
+            or work.stage != Stage.RESEARCH.value
+            or work.request_id != f"audit-{task_id}"
+            or work.request_revision != input_revision
+            or work.input_request_ref.artifact_digest != input_digest
+            or len(work.actions) != 1
+        ):
+            raise ValueError("persisted Audit work binding mismatch")
+        action = work.actions[0]
+        if action.status is WorkStatus.RUNNING:
+            _, todo_ref = service.host.work_todos.set_status(
+                todo_ref,
+                action.action_id,
+                WorkStatus.COMPLETED,
+                actual_result="Recovered verified persisted AuditFindingsRecord",
+                evidence_refs=(ref,),
+            )
+        elif action.status is WorkStatus.COMPLETED:
+            if ref not in action.evidence_refs:
+                raise ValueError("completed Audit work does not cite the persisted findings")
+        else:
+            raise ValueError("failed or blocked Audit work cannot be automatically retried")
+        remaining = service.host.finish_capability_work(task_id, state.run_id, Stage.RESEARCH, todo_ref)
+    except Exception as exc:
+        service.host.event_store.append(task_id, "audit_recovery_required", type(exc).__name__)
+        raise MVPError(f"Audit recovery blocked: {type(exc).__name__}") from exc
+    service.host.event_store.append(task_id, "audit_reconciled", artifact_id)
+    return {
+        "task_id": task_id,
+        "run_id": state.run_id,
+        "status": "completed",
+        "stage": "audit",
+        "current_stage": remaining.current_stage.value,
+        "artifact_ref": ref.model_dump(mode="json"),
+        "disposition": record.disposition,
+        "findings_count": len(record.findings),
+    }
 
 
 def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
