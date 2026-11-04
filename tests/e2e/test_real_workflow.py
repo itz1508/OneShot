@@ -580,7 +580,6 @@ class TestScenarios:
             lock_receipt_ref=lock_ref,
             authorized_action_ids=("act-001",),
             lock_subject=lock_subject,
-            authorized_tools=("file_writer",),
         )
 
         # 3. Execute build action

@@ -62,6 +62,7 @@ class PackageLockReceipt(ContractModel):
     frozen_spec_ref: ArtifactRef
     fixture_result_ref: ArtifactRef | None = None
     policy_ref: ArtifactRef | None = None
+    tool_registry_ref: ArtifactRef | None = None
     receipt_ref: ReceiptRef
 
 
@@ -71,9 +72,24 @@ class BuildAdmissionReceipt(ContractModel):
     admission_id: str = Field(min_length=1)
     lock_receipt_ref: ReceiptRef
     authorized_action_ids: tuple[str, ...] = Field(min_length=1)
-    authorized_tools: tuple[str, ...] = ()
+    authorized_tool_ids: tuple[str, ...] = ()
+    tool_registry_ref: ArtifactRef | None = None
     recovery_readiness_ref: str | None = None
     receipt_ref: ReceiptRef
+
+
+def admission_receipt_subject(
+    lock_receipt_ref: ReceiptRef,
+    authorized_action_ids: tuple[str, ...],
+    authorized_tool_ids: tuple[str, ...] = (),
+    tool_registry_ref: ArtifactRef | None = None,
+) -> str:
+    """One canonical host-bound receipt subject for issue AND verification."""
+    return (
+        f"{lock_receipt_ref.receipt_id}:{lock_receipt_ref.receipt_digest}:"
+        f"{':'.join(authorized_action_ids)}:{':'.join(authorized_tool_ids)}:"
+        f"{tool_registry_ref.artifact_digest if tool_registry_ref else 'no-tools'}"
+    )
 
 
 class AuthorizationReceipt(ContractModel):

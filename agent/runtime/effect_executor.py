@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 from agent.contracts.build import BuildActionExecution, BuildActionStatus
-from agent.contracts.host import BuildAdmissionReceipt
+from agent.contracts.host import BuildAdmissionReceipt, admission_receipt_subject
 from agent.runtime.authorization import AuthorizationEngine, AuthorizationError
 from agent.runtime.checkpoint_store import CheckpointStore
 from agent.runtime.receipt_store import ReceiptStore
@@ -169,7 +169,12 @@ class EffectExecutor:
         if not self._receipts.verify(
             admission_receipt.receipt_ref.receipt_id,
             admission_receipt.receipt_ref.receipt_digest,
-            f"{admission_receipt.lock_receipt_ref.receipt_id}:{':'.join(admission_receipt.authorized_action_ids)}",
+            admission_receipt_subject(
+                admission_receipt.lock_receipt_ref,
+                admission_receipt.authorized_action_ids,
+                admission_receipt.authorized_tool_ids,
+                admission_receipt.tool_registry_ref,
+            ),
         ):
             raise EffectExecutionError(f"invalid admission receipt for action {action_id}")
 
