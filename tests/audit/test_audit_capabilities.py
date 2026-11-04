@@ -96,3 +96,28 @@ def test_frontend_missing_research_wiring_and_wrong_artifact_editor(tmp_path: Pa
         "ARTIFACT_EDITOR_INPUT_ALIAS",
         "STATIC_MCP_WARNING",
     }
+
+
+def test_dynamic_frontend_api_prefix_is_not_mistaken_for_missing_route(tmp_path: Path) -> None:
+    api = tmp_path / "mvp"
+    ui = tmp_path / "web" / "src"
+    api.mkdir()
+    ui.mkdir(parents=True)
+    (api / "api.py").write_text(
+        '@app.get("/api/tasks/{task_id}/events")\ndef events(): pass\n'
+    )
+    (ui / "main.jsx").write_text("fetch('/api/tasks/' + taskId + '/events')\n")
+    result = scan(tmp_path, capabilities=("wiring",))
+    assert not result.findings
+
+
+def test_unrecognized_static_api_route_reports_candidate(tmp_path: Path) -> None:
+    api = tmp_path / "mvp"
+    ui = tmp_path / "web" / "src"
+    api.mkdir()
+    ui.mkdir(parents=True)
+    (api / "api.py").write_text('@app.get("/api/health")\ndef health(): pass\n')
+    (ui / "main.jsx").write_text("fetch('/api/does-not-exist')\n")
+    result = scan(tmp_path, capabilities=("wiring",))
+    assert [finding.code for finding in result.findings] == ["API_ROUTE_REVIEW"]
+    assert result.findings[0].status == "candidate"
