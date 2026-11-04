@@ -24,7 +24,10 @@ class PlanTemplateService:
         self._artifacts.get_verified(ref.artifact_id, ref.artifact_revision)
 
     def publish_candidate(
-        self, template: PlanTemplate, *, acceptance_receipt_id: str,
+        self,
+        template: PlanTemplate,
+        *,
+        acceptance_receipt_id: str,
         acceptance_receipt_digest: str,
     ) -> ArtifactRef:
         """Publish only an accepted Plan as a candidate reusable pattern.
@@ -42,9 +45,12 @@ class PlanTemplateService:
         aid = f"plan-template:{template.template_id}"
         digest = self._artifacts.put_immutable(template, aid, template.template_version, "plan_template", "1.0")
         return ArtifactRef(
-            artifact_id=aid, artifact_revision=template.template_version,
-            artifact_digest=digest, contract_id="plan_template",
-            contract_version="1.0", serializer_profile=SERIALIZER_PROFILE,
+            artifact_id=aid,
+            artifact_revision=template.template_version,
+            artifact_digest=digest,
+            contract_id="plan_template",
+            contract_version="1.0",
+            serializer_profile=SERIALIZER_PROFILE,
         )
 
     def load(self, ref: ArtifactRef) -> PlanTemplate:
