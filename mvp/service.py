@@ -6,7 +6,9 @@ fabricated Research/Audit/Plan completion records.
 
 from __future__ import annotations
 
+import os
 import re
+import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -33,6 +35,60 @@ class MVPError(ValueError):
     pass
 
 
+class _ResearchAdmissionStore:
+    """Process-independent admission for local workers sharing one SQLite state root.
+
+    A crashed owner may be reclaimed only after its OS process no longer exists.
+    This is not a distributed lease across separate hosts.
+    """
+
+    def __init__(self, state_root: str | Path) -> None:
+        self.path = Path(state_root) / "research_admission.db"
+        with sqlite3.connect(str(self.path)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS active_research "
+                "(task_id TEXT PRIMARY KEY, owner_token TEXT NOT NULL, owner_pid INTEGER NOT NULL)"
+            )
+
+    @staticmethod
+    def _pid_alive(pid: int) -> bool:
+        if pid < 1:
+            return True
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def acquire(self, task_id: str) -> str:
+        token = uuid4().hex
+        with sqlite3.connect(str(self.path), timeout=10) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT owner_pid FROM active_research WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            if row is not None:
+                pid = int(row[0])
+                if self._pid_alive(pid):
+                    raise MVPError("Research execution conflict: task is already active")
+                conn.execute("DELETE FROM active_research WHERE task_id = ?", (task_id,))
+            conn.execute(
+                "INSERT INTO active_research (task_id, owner_token, owner_pid) VALUES (?, ?, ?)",
+                (task_id, token, os.getpid()),
+            )
+        return token
+
+    def release(self, task_id: str, token: str) -> None:
+        with sqlite3.connect(str(self.path), timeout=10) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                "DELETE FROM active_research WHERE task_id = ? AND owner_token = ?",
+                (task_id, token),
+            )
+
+
 class MVPService:
     def __init__(self, state_root: str | Path) -> None:
         self.host = HostController(state_root)
@@ -41,6 +97,7 @@ class MVPService:
         register_mcp_research(self.host.providers)
         self._active_guard = Lock()
         self._active_requests: set[str] = set()
+        self._admission = _ResearchAdmissionStore(state_root)
 
     @contextmanager
     def research_slot(self, task_id: str) -> Iterator[None]:
@@ -50,15 +107,19 @@ class MVPService:
         in-memory guard as a durable authorization or recovery receipt.
         """
         self._check_id(task_id)
-        with self._active_guard:
-            if task_id in self._active_requests:
-                raise MVPError("Research execution conflict: task is already active")
-            self._active_requests.add(task_id)
+        token = self._admission.acquire(task_id)
         try:
-            yield
-        finally:
             with self._active_guard:
-                self._active_requests.discard(task_id)
+                if task_id in self._active_requests:
+                    raise MVPError("Research execution conflict: task is already active")
+                self._active_requests.add(task_id)
+            try:
+                yield
+            finally:
+                with self._active_guard:
+                    self._active_requests.discard(task_id)
+        finally:
+            self._admission.release(task_id, token)
 
     @staticmethod
     def _check_id(task_id: str) -> str:
