@@ -34,8 +34,7 @@ def _validated_github_url(repo_url: str, branch: str) -> str:
 
     components = parsed.path.strip("/").removesuffix(".git").split("/")
     if len(components) != 2 or any(
-        name in (".", "..") or re.fullmatch(r"[A-Za-z0-9_.-]+", name) is None
-        for name in components
+        name in (".", "..") or re.fullmatch(r"[A-Za-z0-9_.-]+", name) is None for name in components
     ):
         raise ValueError("Repository must have owner/repo path")
 
@@ -77,8 +76,8 @@ def clone_repo(repo_url: str, branch: str = "main") -> list[str]:
             '#!/bin/sh\ncase "$1" in\n'
             '  *Username*) printf "%s" "x-access-token" ;;\n'
             '  *Password*) printf "%s" "$GITHUB_TOKEN" ;;\n'
-            '  *) exit 1 ;;\n'
-            'esac\n'
+            "  *) exit 1 ;;\n"
+            "esac\n"
         )
         askpass.chmod(0o700)
         checkout = Path(root) / "repo"
@@ -88,9 +87,21 @@ def clone_repo(repo_url: str, branch: str = "main") -> list[str]:
         env["GIT_CONFIG_NOSYSTEM"] = "1"
         env["GIT_CONFIG_GLOBAL"] = os.devnull
         cmd = [
-            "git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null",
-            "clone", "--depth", "1", "--single-branch", "--no-tags",
-            "--branch", branch, "--", verified_url, str(checkout),
+            "git",
+            "-c",
+            "credential.helper=",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "clone",
+            "--depth",
+            "1",
+            "--single-branch",
+            "--no-tags",
+            "--branch",
+            branch,
+            "--",
+            verified_url,
+            str(checkout),
         ]
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=150, check=False)
         if result.returncode:
