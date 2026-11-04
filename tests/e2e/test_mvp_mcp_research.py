@@ -181,3 +181,21 @@ def test_http_forged_digest_is_502_and_stage_remains_open(tmp_path, monkeypatch)
     assert failed.status_code == 502
     assert client.get(f"/api/tasks/{task_id}").json()["current_stage"] == "research"
     assert all(file["name"] != "_research.json" for file in client.get(f"/api/tasks/{task_id}/artifacts").json())
+
+
+def test_research_binds_latest_input_and_locks_later_changes(tmp_path, monkeypatch):
+    service = MVPService(tmp_path)
+    task_id = service.create("Initial request")["task_id"]
+    service.revise_input(task_id, "Revised request", expected_revision=1)
+
+    async def invoke(arguments):
+        payload = json.loads(arguments["prompt"])
+        assert payload["stage_payload"]["input_text"] == "Revised request"
+        assert payload["stage_payload"]["input_digest"] == service.get(task_id)["input_digest"]
+        return response(task_id)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    execute_research(service, task_id)
+    with pytest.raises(MVPError, match="input locked"):
+        service.revise_input(task_id, "Stale after Research", expected_revision=2)
+    assert service.get(task_id)["input_text"] == "Revised request"
