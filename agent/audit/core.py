@@ -36,9 +36,7 @@ class AuditResult:
         findings = data["findings"]
         assert isinstance(findings, tuple)
         for finding in findings:
-            identity = "|".join(
-                (finding["capability"], finding["path"], str(finding["line"]), finding["code"])
-            )
+            identity = "|".join((finding["capability"], finding["path"], str(finding["line"]), finding["code"]))
             finding["finding_id"] = "AUD-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
         return data
 
@@ -81,9 +79,7 @@ def python_files(root: Path, scope: Path) -> Iterable[Path]:
 Scanner = Callable[[Path, Path], list[Finding]]
 
 
-def scan(
-    root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), request: str = ""
-) -> AuditResult:
+def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), request: str = "") -> AuditResult:
     from agent.audit.completeness import scan_completeness
     from agent.audit.contracts import scan_contracts
     from agent.audit.dependencies import scan_dependencies
