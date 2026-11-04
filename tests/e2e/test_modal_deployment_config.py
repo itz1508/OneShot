@@ -167,6 +167,7 @@ def test_audit_root_set_before_api_import_and_mutations_committed(monkeypatch: A
     monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "false")
     monkeypatch.setenv("MCP_WORKSPACE_ROOT", "/tmp/untrusted")
     monkeypatch.setenv("ONESHOT_STATE_ROOT", "/tmp/old-state")
+    monkeypatch.setenv("ONESHOT_RESEARCH_DISABLED", "false")
 
     assert module["web"]() is backend
     import os
