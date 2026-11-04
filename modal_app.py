@@ -70,6 +70,7 @@ def web() -> object:
     os.environ["MCP_TRUSTED_ANCESTRY"] = "true"
 
     from fastapi.responses import JSONResponse
+
     from mvp.api import app as fastapi_app
 
     # Keep the SSE connection outside this lock. Only mutating requests and
