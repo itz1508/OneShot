@@ -417,9 +417,7 @@ class TestAuditModeAndRecovery:
         assert client.post(f"/api/tasks/{research['task_id']}/audit").status_code == 400
         assert client.post(f"/api/tasks/{audit['task_id']}/research").status_code == 400
 
-    def test_crash_after_persisted_findings_recovers_without_rescanning(
-        self, workspace, tmp_path, monkeypatch
-    ):
+    def test_crash_after_persisted_findings_recovers_without_rescanning(self, workspace, tmp_path, monkeypatch):
         from mvp.research_host import audit_artifact_id, execute_audit
         from mvp.service import MVPError, MVPService
 
