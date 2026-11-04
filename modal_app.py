@@ -43,7 +43,7 @@ model_secrets = [modal.Secret.from_name(MODEL_SECRET_NAME)] if MODEL_SECRET_NAME
 def web() -> object:
     import asyncio
 
-    from starlette.requests import Request
+    from fastapi import Request
 
     os.environ["ONESHOT_STATE_ROOT"] = STATE_ROOT
     from mvp.api import app as fastapi_app
