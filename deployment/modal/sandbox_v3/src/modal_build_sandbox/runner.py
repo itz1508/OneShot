@@ -66,16 +66,16 @@ def _run_worker(req: SandboxExecutionRequest, root: Path, output: Path, sandbox_
         if category == "focused":
             if problems:
                 break
-            changes = prepare_changes(root, patch, req.authorized_paths, req.expected_preimages)
-            apply_changes(root, changes)
+            pending_changes = prepare_changes(root, patch, req.authorized_paths, req.expected_preimages)
+            apply_changes(root, pending_changes)
             effect = "patch applied in disposable workspace; pending independent host check"
         if category == "broader" and problems:
             break
         for c in spec_list:
-            result, stdout, stderr = run_command(c, root, output, req.limits.max_output_bytes)
-            into.append(result)
+            command_result, stdout, stderr = run_command(c, root, output, req.limits.max_output_bytes)
+            into.append(command_result)
             records.append((c.command_id, stdout, stderr))
-            if not matches_oracle(c, result):
+            if not matches_oracle(c, command_result):
                 problems.append(f"{category} check {c.command_id} did not match its oracle")
                 break
 
