@@ -164,7 +164,9 @@ class MVPService:
         if purpose == "audit":
             self.host.event_store.append(task_id, "audit_queued", "Read-only audit capability awaiting execution")
         else:
-            self.host.event_store.append(task_id, "mvp_mcp_unavailable", "MCP client not connected; no workflow executed")
+            self.host.event_store.append(
+                task_id, "mvp_mcp_unavailable", "MCP client not connected; no workflow executed"
+            )
         return self.get(task_id)
 
     def get(self, task_id: str) -> dict[str, object]:
