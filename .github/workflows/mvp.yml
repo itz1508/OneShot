@@ -1,5 +1,7 @@
 name: MVP integration
 on:
+  push:
+    branches: [feat/mvp-mcp-research-adapter]
   pull_request:
     branches: [main, feat/mvp-fastapi-react-slice]
     paths:
