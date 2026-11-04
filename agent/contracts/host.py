@@ -78,8 +78,6 @@ class BuildAdmissionReceipt(ContractModel):
     receipt_ref: ReceiptRef
 
 
-
-
 def admission_receipt_subject(
     lock_receipt_ref: ReceiptRef,
     authorized_action_ids: tuple[str, ...],
