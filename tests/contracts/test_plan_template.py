@@ -25,12 +25,17 @@ def stored(artifacts, artifact_id):
 
 def template(artifacts):
     return PlanTemplate(
-        template_id="registry", template_version=1, title="Tool registry",
-        category="integration", source_plan_ref=stored(artifacts, "plan"),
+        template_id="registry",
+        template_version=1,
+        title="Tool registry",
+        category="integration",
+        source_plan_ref=stored(artifacts, "plan"),
         source_audit_ref=stored(artifacts, "audit"),
         source_research_ref=stored(artifacts, "research"),
-        matching_keywords=("registry",), applicable_conditions=("host owns admission",),
-        required_decisions=("pinned tools",), action_pattern=("compile actions",),
+        matching_keywords=("registry",),
+        applicable_conditions=("host owns admission",),
+        required_decisions=("pinned tools",),
+        action_pattern=("compile actions",),
         verification_pattern=("run E2E",),
     )
 
