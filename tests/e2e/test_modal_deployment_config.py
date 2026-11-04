@@ -6,6 +6,8 @@ import asyncio
 import runpy
 import sys
 import types
+
+import pytest
 from pathlib import Path
 from typing import Any
 
@@ -29,12 +31,18 @@ def _load_modal(monkeypatch: Any, *, secret: str = "") -> tuple[dict[str, Any], 
             calls["env"] = vars
             return self
 
+        def workdir(self, directory: str) -> FakeImage:
+            calls["workdir"] = directory
+            return self
+
         def add_local_dir(self, src: str, **kwargs: Any) -> FakeImage:
             calls["dirs"].append((src, kwargs["remote_path"]))
             return self
 
     class FakeVolume:
         def commit(self) -> None:
+            if calls.get("commit_failure"):
+                raise RuntimeError("Commit unavailable")
             calls["commits"] += 1
 
         @staticmethod
@@ -105,6 +113,7 @@ def test_public_modal_image_and_concurrency_contract(monkeypatch: Any) -> None:
     assert calls["volume"] == ("existing-oneshot-volume", {"create_if_missing": True})
     assert calls["uv_sync"] == {"extras": ["meta", "mvp"], "groups": []}
     assert calls["env"] == {"PYTHONPATH": source, "ONESHOT_STATE_ROOT": "/data"}
+    assert calls["workdir"] == source
     assert set(calls["dirs"]) == {
         ("agent", f"{source}/agent"),
         ("mvp", f"{source}/mvp"),
@@ -171,3 +180,43 @@ def test_audit_root_set_before_api_import_and_mutations_committed(monkeypatch: A
     asyncio.run(check("POST"))
     asyncio.run(check("PATCH"))
     assert calls["commits"] == 2
+
+    # Only write requests take the lock, and the commit occurs before the
+    # response. Concurrent requests must not overlap mutations.
+    active = 0
+    peak = 0
+
+    async def slow_write(_request: Request) -> object:
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        active -= 1
+        return object()
+
+    async def parallel_writes() -> None:
+        requests = [
+            Request({"type": "http", "method": "POST", "path": "/api/tasks", "headers": []})
+            for _ in range(4)
+        ]
+        await asyncio.gather(*(backend.middleware_func(req, slow_write) for req in requests))
+
+    asyncio.run(parallel_writes())
+    assert peak == 1
+    assert calls["commits"] == 6
+
+    # A model-backed endpoint is not reachable in the public Audit demo.
+    async def research_blocked() -> object:
+        request = Request(
+            {"type": "http", "method": "POST", "path": "/api/tasks/deadbeef/research", "headers": []}
+        )
+        return await backend.middleware_func(request, call_next)
+
+    blocked = asyncio.run(research_blocked())
+    assert blocked.status_code == 403
+    assert calls["commits"] == 6
+
+    # Commit failures must never be misreported as successful writes.
+    calls["commit_failure"] = True
+    with pytest.raises(RuntimeError, match="Commit unavailable"):
+        asyncio.run(check("POST"))
