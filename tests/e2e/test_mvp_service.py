@@ -59,5 +59,5 @@ def test_event_cursor_no_duplicates(tmp_path):
 
 def test_empty_input_not_persisted(tmp_path):
     service = MVPService(tmp_path)
-    with pytest.raises(MVPError, match="1–20000"):
+    with pytest.raises(MVPError, match="1-20000"):
         service.create("   ")
