@@ -40,10 +40,11 @@ def configured_evidence_sources() -> dict[str, object] | None:
         if (
             not isinstance(path, str)
             or not (1 <= len(path) <= 4096)
-            or "\\x00" in path
+            or chr(0) in path
             or "\\" in path
             or path.startswith("/")
             or ":" in path
+            or path != PurePosixPath(path).as_posix()
             or any(part in ("", ".", "..") for part in PurePosixPath(path).parts)
         ):
             raise MVPError("Research evidence paths must be safe relative POSIX paths")
