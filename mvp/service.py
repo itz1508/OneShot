@@ -63,16 +63,18 @@ class MVPService:
         if state is None:
             raise MVPError("task not found")
         input_record, revision, digest = self.read_input(task_id)
+        research_id = f"research-{task_id}-{state.run_id}"
+        research_done = self.artifacts.latest_revision(research_id) > 0
         return {
             "task_id": task_id,
             "run_id": state.run_id,
             "current_stage": state.current_stage.value,
             "completed_stages": [s.value for s in state.completed_stages],
-            "execution_status": "awaiting_mcp",
+            "execution_status": "research_completed" if research_done and state.current_stage.value != "research" else "awaiting_mcp",
             "input_revision": revision,
             "input_digest": digest,
             "input_text": input_record.text,
-            "mcp_connected": False,
+            "mcp_connected": research_done and state.current_stage.value != "research",
         }
 
     def read_input(self, task_id: str) -> tuple[TaskInput, int, str]:
@@ -126,7 +128,7 @@ class MVPService:
 
     def artifacts_for_task(self, task_id: str) -> list[dict[str, object]]:
         record, revision, digest = self.read_input(task_id)
-        return [
+        files: list[dict[str, object]] = [
             {
                 "name": "_input.json",
                 "kind": "input",
@@ -135,3 +137,15 @@ class MVPService:
                 "content": record.model_dump_json(indent=2),
             }
         ]
+        state = self.host.get_state(task_id)
+        if state is not None:
+            research_id = f"research-{task_id}-{state.run_id}"
+            if self.artifacts.latest_revision(research_id) > 0:
+                files.append({
+                    "name": "_research.json",
+                    "kind": "research",
+                    "revision": 1,
+                    "digest": self.artifacts.get_digest(research_id, 1),
+                    "content": self.artifacts.get_verified(research_id, 1).decode("utf-8"),
+                })
+        return files
