@@ -36,15 +36,20 @@ def main() -> int:
     artifact = ResearchRecord.model_validate_json(research_bytes)
     if digest_model(artifact) != ref["artifact_digest"]:
         raise RuntimeError("Persisted Research digest mismatch")
-    print(json.dumps({
-        "status": "verified",
-        "task_id": task_id,
-        "current_stage": checkpoint.current_stage.value,
-        "research_artifact_id": ref["artifact_id"],
-        "research_digest": ref["artifact_digest"],
-        "evidence_count": len(artifact.evidence),
-        "unresolved_count": len(artifact.unknowns),
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {
+                "status": "verified",
+                "task_id": task_id,
+                "current_stage": checkpoint.current_stage.value,
+                "research_artifact_id": ref["artifact_id"],
+                "research_digest": ref["artifact_digest"],
+                "evidence_count": len(artifact.evidence),
+                "unresolved_count": len(artifact.unknowns),
+            },
+            sort_keys=True,
+        )
+    )
     return 0
 
 
