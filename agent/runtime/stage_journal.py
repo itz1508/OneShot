@@ -11,7 +11,9 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+from agent.contracts.host import ReceiptRef
 from agent.contracts.stage_log import StageLogEvent, StageName
+from agent.runtime.receipt_store import ReceiptStore
 
 STAGES: tuple[StageName, ...] = ("search", "audit", "plan", "build", "mem")
 
@@ -65,9 +67,42 @@ class StageJournalService:
         return root
 
     def append(self, event: StageLogEvent) -> StageLogEvent:
-        """Assign a per-run sequence and commit an idempotent authoritative event."""
+        """Append an ordinary stage event; memory promotion is a separate host gate."""
         if event.stage == "mem":
             raise StageJournalError("mem.log requires verified host memory promotion")
+        return self._append_authoritative(event)
+
+    def append_verified_memory(
+        self,
+        event: StageLogEvent,
+        *,
+        receipts: ReceiptStore,
+        verification_receipt_ref: ReceiptRef,
+        verification_subject: str,
+        approval_receipt_ref: ReceiptRef,
+        approval_subject: str,
+    ) -> StageLogEvent:
+        """Host-only memory append, bound to trusted verification and approval."""
+        if event.stage != "mem" or event.status != "verified":
+            raise StageJournalError("memory events must be verified")
+        if verification_receipt_ref.issuer_id != "host" or approval_receipt_ref.issuer_id != "host":
+            raise StageJournalError("untrusted memory receipt issuer")
+        if not receipts.verify(
+            verification_receipt_ref.receipt_id,
+            verification_receipt_ref.receipt_digest,
+            verification_subject,
+        ):
+            raise StageJournalError("invalid Build verification receipt")
+        if not receipts.verify(
+            approval_receipt_ref.receipt_id,
+            approval_receipt_ref.receipt_digest,
+            approval_subject,
+        ):
+            raise StageJournalError("reusable-memory approval required")
+        return self._append_authoritative(event)
+
+    def _append_authoritative(self, event: StageLogEvent) -> StageLogEvent:
+        """Assign run sequence transactionally; never use JSONL as authoritative state."""
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             previous = conn.execute(
@@ -76,7 +111,7 @@ class StageJournalService:
             if previous is not None:
                 saved = StageLogEvent.model_validate_json(previous[0])
                 comparable = event.model_copy(update={"sequence": saved.sequence})
-                if comparable != saved:
+                if comparable.model_copy(update={"created_at": saved.created_at}) != saved:
                     raise StageJournalError("conflicting duplicate event_id")
                 persisted = saved
             else:
