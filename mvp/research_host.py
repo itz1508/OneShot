@@ -6,10 +6,13 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 
+from agent.audit.core import Finding as AuditCoreFinding
+from agent.contracts.audit import AuditFinding, AuditFindingsRecord
 from agent.contracts.common import ArtifactRef
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
+from agent.runtime.authorization import Capability
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_dict, digest_model
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
 from agent.runtime.work_todo import WorkTodoManager
@@ -65,9 +68,173 @@ def research_ref(task_id: str, run_id: str, digest: str) -> ArtifactRef:
     )
 
 
+def audit_artifact_id(task_id: str, run_id: str) -> str:
+    """Distinct, stable artifact identity for the selected Research capability."""
+    identity = digest_dict({"run_id": run_id, "stage": "research", "task_id": task_id, "capability": "audit"})
+    return f"audit-{identity[:32]}"
+
+
+def audit_ref(task_id: str, run_id: str, digest: str) -> ArtifactRef:
+    return ArtifactRef(
+        artifact_id=audit_artifact_id(task_id, run_id),
+        artifact_revision=1,
+        artifact_digest=digest,
+        contract_id="audit_findings",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
+    )
+
+
+def _audit_finding(f: AuditCoreFinding) -> AuditFinding:
+    import hashlib
+
+    identity = "|".join((f.capability, f.path, str(f.line), f.code))
+    return AuditFinding(
+        finding_id="AUD-" + hashlib.sha256(identity.encode()).hexdigest()[:16],
+        capability=f.capability,
+        code=f.code,
+        status=f.status,
+        severity=f.severity,
+        path=f.path,
+        line=f.line,
+        message=f.message,
+        evidence_digest=f.evidence_digest,
+    )
+
+
+def execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
+    """Execute a host-admitted Research capability; never substitute for ResearchRecord."""
+    with service.research_slot(task_id):
+        return _execute_audit(service, task_id)
+
+
+def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
+    from agent.audit import scan as audit_scan
+
+    state = service.host.get_state(service._check_id(task_id))
+    if state is None:
+        raise MVPError("task not found")
+    if state.current_stage is not Stage.RESEARCH:
+        raise MVPError("Research stage is not active")
+    if state.active_work_artifact_id is not None:
+        raise MVPError("Research already assigned; reconcile host state before retry")
+    input_record, input_revision, input_digest = service.read_input(task_id)
+    if input_record.purpose != "audit":
+        raise MVPError("task purpose is not audit; Audit dispatch rejected")
+    if service.artifacts.latest_revision(audit_artifact_id(task_id, state.run_id)) > 0:
+        raise MVPError("Audit already has persisted output; submit a new task for another scan")
+
+    configured_root = os.environ.get("MCP_WORKSPACE_ROOT", "")
+    if not configured_root or not Path(configured_root).is_absolute():
+        raise MVPError("Audit requires an absolute MCP_WORKSPACE_ROOT")
+    if os.environ.get("MCP_TRUSTED_ANCESTRY") != "true":
+        raise MVPError("Audit requires MCP_TRUSTED_ANCESTRY=true")
+    root = Path(configured_root).resolve()
+    if service.audit_workspace_root is None or root != service.audit_workspace_root or not root.is_dir():
+        raise MVPError("Audit workspace is not the host-approved root")
+    service.host.authorization.authorize_tool("research-audit", Capability.SCANNER, str(root))
+    service.host.authorization.check_path_safety(root)
+
+    input_ref = ArtifactRef(
+        artifact_id=f"mvp-input:{task_id}",
+        artifact_revision=input_revision,
+        artifact_digest=input_digest,
+        contract_id="mvp_task_input",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
+    )
+    binding = WorkBinding(
+        task_id=task_id,
+        run_id=state.run_id,
+        stage="research",
+        request_id=f"audit-{task_id}",
+        request_revision=input_revision,
+        input_request_ref=input_ref,
+    )
+    _, todo_ref = service.host.assign_work(
+        binding,
+        action="Execute read-only Audit capability",
+        expected_result="Persist source-grounded AuditFindingsRecord",
+    )
+    _, running_ref = service.host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
+    service.host.event_store.append(task_id, "audit_started", "Invoking read-only Audit scanners")
+    try:
+        result = audit_scan(root, scope=".", request=input_record.text)
+        record = AuditFindingsRecord(
+            task_id=task_id,
+            run_id=state.run_id,
+            stage_revision=1,
+            root=result.root,
+            scope=result.scope,
+            requested_capabilities=result.requested_capabilities,
+            executed_capabilities=result.executed_capabilities,
+            findings=tuple(_audit_finding(f) for f in result.findings),
+            limitations=(*result.limitations, "Source revision not verified by host"),
+            disposition=result.disposition,
+            request=result.request,
+            source_revision="",
+        )
+        ref = audit_ref(task_id, state.run_id, digest_model(record))
+        persisted = service.artifacts.put_immutable(
+            record, ref.artifact_id, ref.artifact_revision, ref.contract_id, ref.contract_version
+        )
+        if persisted != ref.artifact_digest:
+            raise ProviderError("persisted Audit digest mismatch")
+        # Incomplete scanners cannot complete a capability or the Research stage.
+        if record.disposition == "blocked" or (set(record.executed_capabilities) != set(record.requested_capabilities)):
+            service.host.work_todos.set_status(
+                running_ref,
+                "work-1",
+                WorkStatus.BLOCKED,
+                actual_result="Audit scanners incomplete; review stored findings and limitations",
+            )
+            service.host.event_store.append(task_id, "audit_blocked", ref.artifact_id)
+            return {
+                "task_id": task_id,
+                "run_id": state.run_id,
+                "status": "blocked",
+                "stage": "audit",
+                "current_stage": state.current_stage.value,
+                "artifact_ref": ref.model_dump(mode="json"),
+                "disposition": record.disposition,
+                "findings_count": len(record.findings),
+            }
+        _, done_ref = service.host.work_todos.set_status(
+            running_ref,
+            "work-1",
+            WorkStatus.COMPLETED,
+            actual_result="AuditFindingsRecord persisted and digest verified",
+            evidence_refs=(ref,),
+        )
+        remaining = service.host.finish_capability_work(task_id, state.run_id, Stage.RESEARCH, done_ref)
+        service.host.event_store.append(task_id, "audit_completed", ref.artifact_id)
+        return {
+            "task_id": task_id,
+            "run_id": state.run_id,
+            "status": "completed",
+            "stage": "audit",
+            "current_stage": remaining.current_stage.value,
+            "artifact_ref": ref.model_dump(mode="json"),
+            "disposition": record.disposition,
+            "findings_count": len(record.findings),
+        }
+    except Exception as exc:
+        try:
+            service.host.work_todos.set_status(
+                running_ref, "work-1", WorkStatus.FAILED, actual_result=type(exc).__name__
+            )
+        except Exception as recovery_exc:
+            service.host.event_store.append(task_id, "audit_recovery_required", type(recovery_exc).__name__)
+        service.host.event_store.append(task_id, "audit_failed", type(exc).__name__)
+        raise MVPError(f"Audit execution blocked: {type(exc).__name__}") from exc
+
+
 def execute_research(service: MVPService, task_id: str) -> dict[str, object]:
     """Run Research with a per-task in-process admission guard."""
     with service.research_slot(task_id):
+        selected, _, _ = service.read_input(task_id)
+        if selected.purpose != "research":
+            raise MVPError("task purpose is not research; Research dispatch rejected")
         state = service.host.get_state(service._check_id(task_id))
         if state is not None and state.current_stage is Stage.RESEARCH and state.active_work_artifact_id:
             return _reconcile_research(service, task_id)
@@ -166,6 +333,8 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         raise MVPError("Research already assigned; reconcile host state before retry")
     evidence_sources = configured_evidence_sources()
     input_record, input_revision, input_digest = service.read_input(task_id)
+    if input_record.purpose != "research":
+        raise MVPError("task purpose is not research; Research dispatch rejected")
     input_ref = ArtifactRef(
         artifact_id=f"mvp-input:{task_id}",
         artifact_revision=input_revision,

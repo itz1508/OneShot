@@ -149,3 +149,20 @@ independent evidence and an unresolved limitation; do not interpret that
 as evidence-grounded completion. A green connected E2E requires a workspace
 file actually read, its digest independently recomputed by the verifier, and
 the host stage transition committed with a valid receipt.
+
+## Read-only Audit capability
+
+The same Research entry point accepts `POST /api/tasks` with `purpose="audit"`
+(default: `research`). Invoke `POST /api/tasks/{task_id}/audit` to scan the
+host-configured `MCP_WORKSPACE_ROOT` when `MCP_TRUSTED_ANCESTRY=true`
+was set at host startup. The root is pinned and checked before scanning.
+
+The result is an immutable `_audit.json` artifact with candidate findings and
+limitations, and a completed or blocked host-owned work item. Audit does **not**
+produce a `ResearchRecord`, issue a Research completion receipt, or advance
+the workflow to Audit Discovery. Selecting `audit` is not permission to invoke
+`/research`, and `research` tasks cannot invoke `/audit`.
+
+Run the real API/browser acceptance workflow from
+`.github/workflows/audit-capabilities.yml`; fixture tests and source scans
+do not substitute for successful browser or provider-connected E2E evidence.

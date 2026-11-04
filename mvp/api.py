@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 class SubmitTask(BaseModel):
     prompt: str = Field(min_length=1, max_length=20000)
+    purpose: str = Field(default="research", pattern=r"^(research|audit)$")
 
 
 class UpdateInput(BaseModel):
@@ -54,7 +55,7 @@ def health() -> dict[str, object]:
 @app.post("/api/tasks", status_code=201)
 def create_task(input: SubmitTask) -> dict[str, object]:
     try:
-        return service.create(input.prompt)
+        return service.create(input.prompt, input.purpose)
     except MVPError as exc:
         raise failure(exc) from exc
 
@@ -67,6 +68,18 @@ def start_research(task_id: str) -> dict[str, object]:
         return execute_research(service, task_id)
     except MVPError as exc:
         if str(exc).startswith("Research execution blocked:"):
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise failure(exc) from exc
+
+
+@app.post("/api/tasks/{task_id}/audit")
+def start_audit(task_id: str) -> dict[str, object]:
+    from mvp.research_host import execute_audit
+
+    try:
+        return execute_audit(service, task_id)
+    except MVPError as exc:
+        if str(exc).startswith("Audit execution blocked:"):
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         raise failure(exc) from exc
 

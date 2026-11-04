@@ -358,6 +358,35 @@ class HostController:
             self.event_store.append(binding.task_id, "work_assigned", ref.artifact_id)
         return record, ref
 
+    def finish_capability_work(
+        self,
+        task_id: str,
+        run_id: str,
+        stage: Stage,
+        todo_ref: ArtifactRef,
+    ) -> TaskState:
+        """Finish verified role-local work without issuing a stage receipt or advancing."""
+        checkpoint = self.checkpoint_store.load_checkpoint(task_id)
+        if checkpoint is None:
+            raise TransitionError("capability work has no checkpoint")
+        revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if (state.task_id, state.run_id, state.current_stage) != (task_id, run_id, stage):
+            raise TransitionError("capability work stage/task/run mismatch")
+        if state.active_work_artifact_id != todo_ref.artifact_id:
+            raise TransitionError("capability work does not match assigned request")
+        try:
+            self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=stage.value)
+        except WorkTodoError as exc:
+            raise TransitionError(f"capability work not verified: {exc}") from exc
+        updated = state.model_copy(update={"active_work_artifact_id": None})
+        try:
+            self.checkpoint_store.checkpoint_cas(task_id, revision, updated.model_dump(mode="json"))
+        except CompetingWriterError as exc:
+            raise TransitionError(f"capability work checkpoint conflict: {exc}") from exc
+        self.event_store.append(task_id, "capability_work_completed", todo_ref.artifact_id)
+        return updated
+
     def get_state(self, task_id: str) -> TaskState | None:
         """Get current task state from checkpoint."""
         checkpoint = self.checkpoint_store.load_checkpoint(task_id)
