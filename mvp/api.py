@@ -105,6 +105,8 @@ def create_task(input: SubmitTask) -> dict[str, object]:
 
 @app.post("/api/tasks/{task_id}/research")
 def start_research(task_id: str) -> dict[str, object]:
+    if os.environ.get("ONESHOT_RESEARCH_DISABLED") == "true":
+        raise HTTPException(status_code=403, detail="Research disabled in public Audit mode")
     from mvp.research_host import execute_research
 
     try:
