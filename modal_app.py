@@ -29,7 +29,11 @@ image = (
     .add_local_dir("api_fundamentals", remote_path=f"{SOURCE_ROOT}/api_fundamentals")
     .add_local_dir(".agents", remote_path=f"{SOURCE_ROOT}/.agents")
     .add_local_dir("settings", remote_path=f"{SOURCE_ROOT}/settings")
-    .add_local_dir("web/public", remote_path=f"{SOURCE_ROOT}/web/public")
+    .add_local_dir(
+        "web",
+        remote_path=f"{SOURCE_ROOT}/web",
+        ignore=["**/node_modules/**", "**/dist/**", "**/.env*", "**/playwright-report/**", "**/test-results/**"],
+    )
 )
 state_volume = modal.Volume.from_name(STATE_VOLUME_NAME, create_if_missing=True)
 app = modal.App(APP_NAME)
