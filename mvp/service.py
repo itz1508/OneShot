@@ -203,15 +203,17 @@ class MVPService:
             execution_status = (
                 "audit_blocked"
                 if audit_disposition == "blocked" or audit_work_status == WorkStatus.BLOCKED.value
-                else "audit_completed" if audit_done
-                else "audit_running" if audit_work_status == WorkStatus.RUNNING.value
-                else "audit_recovery_required" if state.active_work_artifact_id is not None
+                else "audit_completed"
+                if audit_done
+                else "audit_running"
+                if audit_work_status == WorkStatus.RUNNING.value
+                else "audit_recovery_required"
+                if state.active_work_artifact_id is not None
                 else "audit_pending"
             )
         else:
             execution_status = (
-                "research_completed" if research_done and state.current_stage.value != "research"
-                else "awaiting_mcp"
+                "research_completed" if research_done and state.current_stage.value != "research" else "awaiting_mcp"
             )
         return {
             "task_id": task_id,

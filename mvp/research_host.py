@@ -91,9 +91,14 @@ def _audit_finding(f: AuditCoreFinding) -> AuditFinding:
     identity = "|".join((f.capability, f.path, str(f.line), f.code))
     return AuditFinding(
         finding_id="AUD-" + hashlib.sha256(identity.encode()).hexdigest()[:16],
-        capability=f.capability, code=f.code, status=f.status,
-        severity=f.severity, path=f.path, line=f.line,
-        message=f.message, evidence_digest=f.evidence_digest,
+        capability=f.capability,
+        code=f.code,
+        status=f.status,
+        severity=f.severity,
+        path=f.path,
+        line=f.line,
+        message=f.message,
+        evidence_digest=f.evidence_digest,
     )
 
 
@@ -125,28 +130,30 @@ def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
     if os.environ.get("MCP_TRUSTED_ANCESTRY") != "true":
         raise MVPError("Audit requires MCP_TRUSTED_ANCESTRY=true")
     root = Path(configured_root).resolve()
-    if (
-        service.audit_workspace_root is None
-        or root != service.audit_workspace_root
-        or not root.is_dir()
-    ):
+    if service.audit_workspace_root is None or root != service.audit_workspace_root or not root.is_dir():
         raise MVPError("Audit workspace is not the host-approved root")
     service.host.authorization.authorize_tool("research-audit", Capability.SCANNER, str(root))
     service.host.authorization.check_path_safety(root)
 
     input_ref = ArtifactRef(
         artifact_id=f"mvp-input:{task_id}",
-        artifact_revision=input_revision, artifact_digest=input_digest,
-        contract_id="mvp_task_input", contract_version="1.0",
+        artifact_revision=input_revision,
+        artifact_digest=input_digest,
+        contract_id="mvp_task_input",
+        contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
     binding = WorkBinding(
-        task_id=task_id, run_id=state.run_id, stage="research",
-        request_id=f"audit-{task_id}", request_revision=input_revision,
+        task_id=task_id,
+        run_id=state.run_id,
+        stage="research",
+        request_id=f"audit-{task_id}",
+        request_revision=input_revision,
         input_request_ref=input_ref,
     )
     _, todo_ref = service.host.assign_work(
-        binding, action="Execute read-only Audit capability",
+        binding,
+        action="Execute read-only Audit capability",
         expected_result="Persist source-grounded AuditFindingsRecord",
     )
     _, running_ref = service.host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
@@ -154,13 +161,17 @@ def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
     try:
         result = audit_scan(root, scope=".", request=input_record.text)
         record = AuditFindingsRecord(
-            task_id=task_id, run_id=state.run_id, stage_revision=1,
-            root=result.root, scope=result.scope,
+            task_id=task_id,
+            run_id=state.run_id,
+            stage_revision=1,
+            root=result.root,
+            scope=result.scope,
             requested_capabilities=result.requested_capabilities,
             executed_capabilities=result.executed_capabilities,
             findings=tuple(_audit_finding(f) for f in result.findings),
             limitations=(*result.limitations, "Source revision not verified by host"),
-            disposition=result.disposition, request=result.request,
+            disposition=result.disposition,
+            request=result.request,
             source_revision="",
         )
         ref = audit_ref(task_id, state.run_id, digest_model(record))
@@ -170,30 +181,39 @@ def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
         if persisted != ref.artifact_digest:
             raise ProviderError("persisted Audit digest mismatch")
         # Incomplete scanners cannot complete a capability or the Research stage.
-        if record.disposition == "blocked" or (
-            set(record.executed_capabilities) != set(record.requested_capabilities)
-        ):
+        if record.disposition == "blocked" or (set(record.executed_capabilities) != set(record.requested_capabilities)):
             service.host.work_todos.set_status(
-                running_ref, "work-1", WorkStatus.BLOCKED,
+                running_ref,
+                "work-1",
+                WorkStatus.BLOCKED,
                 actual_result="Audit scanners incomplete; review stored findings and limitations",
             )
             service.host.event_store.append(task_id, "audit_blocked", ref.artifact_id)
             return {
-                "task_id": task_id, "run_id": state.run_id, "status": "blocked",
-                "stage": "audit", "current_stage": state.current_stage.value,
+                "task_id": task_id,
+                "run_id": state.run_id,
+                "status": "blocked",
+                "stage": "audit",
+                "current_stage": state.current_stage.value,
                 "artifact_ref": ref.model_dump(mode="json"),
-                "disposition": record.disposition, "findings_count": len(record.findings),
+                "disposition": record.disposition,
+                "findings_count": len(record.findings),
             }
         _, done_ref = service.host.work_todos.set_status(
-            running_ref, "work-1", WorkStatus.COMPLETED,
+            running_ref,
+            "work-1",
+            WorkStatus.COMPLETED,
             actual_result="AuditFindingsRecord persisted and digest verified",
             evidence_refs=(ref,),
         )
         remaining = service.host.finish_capability_work(task_id, state.run_id, Stage.RESEARCH, done_ref)
         service.host.event_store.append(task_id, "audit_completed", ref.artifact_id)
         return {
-            "task_id": task_id, "run_id": state.run_id, "status": "completed",
-            "stage": "audit", "current_stage": remaining.current_stage.value,
+            "task_id": task_id,
+            "run_id": state.run_id,
+            "status": "completed",
+            "stage": "audit",
+            "current_stage": remaining.current_stage.value,
             "artifact_ref": ref.model_dump(mode="json"),
             "disposition": record.disposition, "findings_count": len(record.findings),
         }
@@ -203,9 +223,7 @@ def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
                 running_ref, "work-1", WorkStatus.FAILED, actual_result=type(exc).__name__
             )
         except Exception as recovery_exc:
-            service.host.event_store.append(
-                task_id, "audit_recovery_required", type(recovery_exc).__name__
-            )
+            service.host.event_store.append(task_id, "audit_recovery_required", type(recovery_exc).__name__)
         service.host.event_store.append(task_id, "audit_failed", type(exc).__name__)
         raise MVPError(f"Audit execution blocked: {type(exc).__name__}") from exc
 
