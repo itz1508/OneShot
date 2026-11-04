@@ -143,9 +143,7 @@ class HostController:
         if todo_ref is None:
             raise TransitionError("completed work list reference required before stage transition")
         try:
-            self.work_todos.require_complete(
-                todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value
-            )
+            self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
             raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
 

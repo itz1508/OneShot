@@ -18,12 +18,13 @@ class WorkEvidence(BaseModel):
 
 
 def stored(controller: HostController, name: str, value: str) -> ArtifactRef:
-    digest = controller.artifact_store.put_immutable(
-        WorkEvidence(value=value), name, 1, "test_evidence", "1.0"
-    )
+    digest = controller.artifact_store.put_immutable(WorkEvidence(value=value), name, 1, "test_evidence", "1.0")
     return ArtifactRef(
-        artifact_id=name, artifact_revision=1, artifact_digest=digest,
-        contract_id="test_evidence", contract_version="1.0",
+        artifact_id=name,
+        artifact_revision=1,
+        artifact_digest=digest,
+        contract_id="test_evidence",
+        contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
 
@@ -31,8 +32,12 @@ def stored(controller: HostController, name: str, value: str) -> ArtifactRef:
 def binding(controller: HostController, stage: str, label: str) -> WorkBinding:
     request = stored(controller, f"input-{label}", f"Assigned work: {label}")
     return WorkBinding(
-        task_id="real-work", run_id="run-real", stage=stage,
-        request_id=label, request_revision=1, input_request_ref=request,
+        task_id="real-work",
+        run_id="run-real",
+        stage=stage,
+        request_id=label,
+        request_revision=1,
+        input_request_ref=request,
     )
 
 
@@ -40,8 +45,11 @@ def run_action(controller: HostController, ref: ArtifactRef, action_id: str, res
     _item, running = controller.work_todos.set_status(ref, action_id, WorkStatus.RUNNING)
     evidence = stored(controller, f"evidence-{action_id}", result)
     _item, done = controller.work_todos.set_status(
-        running, action_id, WorkStatus.COMPLETED,
-        actual_result=result, evidence_refs=(evidence,),
+        running,
+        action_id,
+        WorkStatus.COMPLETED,
+        actual_result=result,
+        evidence_refs=(evidence,),
     )
     return done
 
@@ -72,12 +80,15 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
         **audit_scope.model_dump(),
         actions=(
             PlannedAction(
-                action_id="inspect", action="Inspect existing source",
+                action_id="inspect",
+                action="Inspect existing source",
                 expected_result="Current behavior identified",
             ),
             PlannedAction(
-                action_id="create-plan", action="Create plan.md with source-grounded findings",
-                expected_result="plan.md written", depends_on=("inspect",),
+                action_id="create-plan",
+                action="Create plan.md with source-grounded findings",
+                expected_result="plan.md written",
+                depends_on=("inspect",),
             ),
         ),
     )
@@ -94,12 +105,8 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
 
     restarted = HostController(tmp_path / "state")
     assert all(x.status is WorkStatus.COMPLETED for x in restarted.work_todos.read(a2).actions)
-    audit_receipt = restarted.issue_stage_receipt(
-        Stage.AUDIT_DISCOVERY, task_id="real-work", run_id="run-real"
-    )
-    state = restarted.advance_stage(
-        "real-work", "run-real", Stage.AUDIT_DISCOVERY, audit_receipt, todo_ref=a2
-    )
+    audit_receipt = restarted.issue_stage_receipt(Stage.AUDIT_DISCOVERY, task_id="real-work", run_id="run-real")
+    state = restarted.advance_stage("real-work", "run-real", Stage.AUDIT_DISCOVERY, audit_receipt, todo_ref=a2)
     assert state.current_stage is Stage.PLANNING
     events = restarted.event_store.list("real-work")
     assert sum(e["event_type"] == "work_todo_created" for e in events) == 2
@@ -159,10 +166,16 @@ def test_completed_todo_requires_actual_stored_evidence(tmp_path) -> None:
     with pytest.raises(WorkTodoError, match="requires actual result and evidence"):
         controller.work_todos.set_status(running, "work-1", WorkStatus.COMPLETED, actual_result="claimed")
     with pytest.raises(ValueError, match="completed actions"):
-        TodoList.model_validate({
-            **controller.work_todos.read(running).model_dump(mode="json"),
-            "actions": [{
-                **controller.work_todos.read(running).actions[0].model_dump(mode="json"),
-                "status": "completed", "actual_result": "claimed", "evidence_refs": [],
-            }],
-        })
+        TodoList.model_validate(
+            {
+                **controller.work_todos.read(running).model_dump(mode="json"),
+                "actions": [
+                    {
+                        **controller.work_todos.read(running).actions[0].model_dump(mode="json"),
+                        "status": "completed",
+                        "actual_result": "claimed",
+                        "evidence_refs": [],
+                    }
+                ],
+            }
+        )

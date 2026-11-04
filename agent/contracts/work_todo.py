@@ -13,9 +13,7 @@ from pydantic import Field, model_validator
 
 from agent.contracts.common import ArtifactRef, ContractModel
 
-StageId = Literal[
-    "research", "audit_discovery", "planning", "fixture_validation", "build", "build_validation"
-]
+StageId = Literal["research", "audit_discovery", "planning", "fixture_validation", "build", "build_validation"]
 
 
 class WorkStatus(StrEnum):
@@ -64,9 +62,7 @@ class TodoAction(PlannedAction):
             raise ValueError("completed actions require actual result and persisted evidence")
         if self.status in {WorkStatus.FAILED, WorkStatus.BLOCKED} and not self.actual_result:
             raise ValueError("failed or blocked actions require an actual reason")
-        if self.status in {WorkStatus.PENDING, WorkStatus.RUNNING} and (
-            self.actual_result or self.evidence_refs
-        ):
+        if self.status in {WorkStatus.PENDING, WorkStatus.RUNNING} and (self.actual_result or self.evidence_refs):
             raise ValueError("uncompleted actions cannot claim results or evidence")
         return self
 

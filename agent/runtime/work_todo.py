@@ -136,7 +136,9 @@ class WorkTodoManager:
         if found.status is WorkStatus.PENDING and status is not WorkStatus.RUNNING:
             raise WorkTodoError("action must enter running before reporting completion")
         if found.status is WorkStatus.RUNNING and status not in {
-            WorkStatus.COMPLETED, WorkStatus.FAILED, WorkStatus.BLOCKED
+            WorkStatus.COMPLETED,
+            WorkStatus.FAILED,
+            WorkStatus.BLOCKED,
         }:
             raise WorkTodoError("running action must finish with a terminal status")
         if found.status not in {WorkStatus.PENDING, WorkStatus.RUNNING}:
@@ -151,22 +153,24 @@ class WorkTodoManager:
             raise WorkTodoError("completed action requires actual result and evidence")
         for evidence in evidence_refs:
             self._check_input(evidence)
-        replacement = TodoAction.model_validate({
-            **found.model_dump(mode="json"),
-            "status": status,
-            "actual_result": actual_result,
-            "evidence_refs": [r.model_dump(mode="json") for r in evidence_refs],
-        })
-        updated = TodoList.model_validate({
-            **record.model_dump(mode="json"),
-            "actions": [
-                replacement.model_dump(mode="json") if a.action_id == action_id else a.model_dump(mode="json")
-                for a in record.actions
-            ],
-        })
-        revision, digest = self._artifacts.put_cas(
-            updated, ref.artifact_id, ref.artifact_revision, "work_todo", "1.0"
+        replacement = TodoAction.model_validate(
+            {
+                **found.model_dump(mode="json"),
+                "status": status,
+                "actual_result": actual_result,
+                "evidence_refs": [r.model_dump(mode="json") for r in evidence_refs],
+            }
         )
+        updated = TodoList.model_validate(
+            {
+                **record.model_dump(mode="json"),
+                "actions": [
+                    replacement.model_dump(mode="json") if a.action_id == action_id else a.model_dump(mode="json")
+                    for a in record.actions
+                ],
+            }
+        )
+        revision, digest = self._artifacts.put_cas(updated, ref.artifact_id, ref.artifact_revision, "work_todo", "1.0")
         new_ref = self._ref(ref.artifact_id, revision, digest, "work_todo")
         self._events.append(record.task_id, "work_todo_updated", f"{action_id}:{status.value}:rev{revision}")
         return updated, new_ref
