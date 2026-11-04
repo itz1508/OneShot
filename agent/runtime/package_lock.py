@@ -23,6 +23,11 @@ class PackageLock:
         self._store = artifact_store
         self._receipts = receipt_store
 
+    def _verify_ref(self, ref: ArtifactRef) -> None:
+        actual = self._store.get_digest(ref.artifact_id, ref.artifact_revision)
+        if actual != ref.artifact_digest:
+            raise PackageLockError(f"missing or stale artifact: {ref.artifact_id}")
+
     def lock(
         self,
         lock_id: str,
@@ -31,20 +36,27 @@ class PackageLock:
         frozen_spec_ref: ArtifactRef,
         fixture_result_ref: ArtifactRef | None = None,
         policy_ref: ArtifactRef | None = None,
+        tool_registry_ref: ArtifactRef | None = None,
         issuer_id: str = "host",
     ) -> PackageLockReceipt:
         """Create a package lock binding all upstream artifacts."""
         # Verify all artifacts exist
         for ref in [research_ref, audit_ref, frozen_spec_ref]:
-            self._store.get_digest(ref.artifact_id, ref.artifact_revision)
+            self._verify_ref(ref)
         if fixture_result_ref:
-            self._store.get_digest(fixture_result_ref.artifact_id, fixture_result_ref.artifact_revision)
+            self._verify_ref(fixture_result_ref)
         if policy_ref:
-            self._store.get_digest(policy_ref.artifact_id, policy_ref.artifact_revision)
+            self._verify_ref(policy_ref)
+        if tool_registry_ref:
+            if tool_registry_ref.contract_id != "tool_registry":
+                raise PackageLockError("wrong tool registry contract")
+            self._verify_ref(tool_registry_ref)
 
         # Issue lock receipt
         lock_receipt_id = f"lock-{lock_id}"
         subject = f"{research_ref.artifact_digest}:{audit_ref.artifact_digest}:{frozen_spec_ref.artifact_digest}"
+        if tool_registry_ref is not None:
+            subject += f":{tool_registry_ref.artifact_digest}"
         _, lock_receipt_digest = self._receipts.issue_verified(lock_receipt_id, issuer_id, subject)
 
         return PackageLockReceipt(
@@ -54,6 +66,7 @@ class PackageLock:
             frozen_spec_ref=frozen_spec_ref,
             fixture_result_ref=fixture_result_ref,
             policy_ref=policy_ref,
+            tool_registry_ref=tool_registry_ref,
             receipt_ref=ReceiptRef(
                 receipt_id=lock_receipt_id,
                 receipt_digest=lock_receipt_digest,

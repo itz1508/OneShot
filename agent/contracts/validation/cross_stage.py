@@ -7,6 +7,8 @@ from collections import defaultdict, deque
 from agent.contracts.audit_discovery import AuditDiscoveryPackage
 from agent.contracts.planning import BuildSpecification
 from agent.contracts.research import AuthorizationStatus, ResearchRecord
+from agent.contracts.tool_registry import ToolRegistrySnapshot
+from agent.contracts.validation.structural import tool_invocation_gaps
 
 
 def normalize_relative_path(value: str) -> str:
@@ -73,8 +75,9 @@ def validate_build_specification(
     spec: BuildSpecification,
     research: ResearchRecord,
     audit: AuditDiscoveryPackage,
+    tool_registry: ToolRegistrySnapshot | None = None,
 ) -> None:
-    """Validate that a BuildSpecification covers all accepted requirements."""
+    """Validate requirement coverage AND executable tool provenance before freeze."""
     accepted = {
         r.requirement_id for r in research.requirements if r.authorization_status is AuthorizationStatus.GRANTED
     }
@@ -100,3 +103,7 @@ def validate_build_specification(
             path = getattr(action, attr, None)
             if path:
                 normalize_relative_path(path)
+
+    tool_errors = tool_invocation_gaps(spec, tool_registry)
+    if tool_errors:
+        raise ValueError("BuildSpecification tool provenance failed: " + "; ".join(tool_errors))

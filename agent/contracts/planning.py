@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
+from agent.contracts.tool_registry import ToolInvocation
+
 from agent.contracts.common import (
     ArtifactRef,
     ContractModel,
@@ -181,7 +183,7 @@ class ValidationStep(ContractModel):
 
     check_id: str = Field(min_length=1)
     order: int = Field(ge=1)
-    command: str = Field(min_length=1)
+    invocation: ToolInvocation
     expected_result: str = Field(min_length=1)
     failure_observation: str = ""
 
@@ -203,7 +205,8 @@ class ActionBase(ContractModel):
     supporting_issue_or_finding_refs: tuple[str, ...] = ()
     preconditions: tuple[str, ...] = Field(min_length=1)
     depends_on: tuple[str, ...] = ()
-    validation_steps: tuple[str, ...] = Field(min_length=1)
+    validation_steps: tuple[str, ...] = Field(min_length=1)  # expected checks, NEVER executable argv
+    verification_tools: tuple[ToolInvocation, ...] = ()
     expected_result: str = Field(min_length=1)
     effect_scope: Literal["filesystem"] = "filesystem"
     retry_semantics: Literal["idempotent", "non_idempotent"] = "idempotent"

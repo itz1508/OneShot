@@ -62,6 +62,7 @@ class PackageLockReceipt(ContractModel):
     frozen_spec_ref: ArtifactRef
     fixture_result_ref: ArtifactRef | None = None
     policy_ref: ArtifactRef | None = None
+    tool_registry_ref: ArtifactRef | None = None
     receipt_ref: ReceiptRef
 
 
@@ -71,7 +72,8 @@ class BuildAdmissionReceipt(ContractModel):
     admission_id: str = Field(min_length=1)
     lock_receipt_ref: ReceiptRef
     authorized_action_ids: tuple[str, ...] = Field(min_length=1)
-    authorized_tools: tuple[str, ...] = ()
+    authorized_tool_ids: tuple[str, ...] = ()
+    tool_registry_ref: ArtifactRef | None = None
     recovery_readiness_ref: str | None = None
     receipt_ref: ReceiptRef
 
