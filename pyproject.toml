@@ -57,4 +57,7 @@ addopts = "-q"
 known_first_party = ["agent", "mvp", "api_fundamentals"]
 
 [tool.deptry.per_rule_ignores]
+# modal_app.py is a standalone deployment CLI entrypoint. Modal is installed in
+# that deploy environment, not in OneShot's application runtime image.
+DEP001 = ["modal"]
 DEP002 = ["claude-agent-sdk", "openai-codex", "uvicorn"]
