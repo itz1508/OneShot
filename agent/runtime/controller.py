@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from hashlib import sha256
 from pathlib import Path
 
+import yaml
 from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
-from agent.contracts.host import ReceiptRef
+from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult, ReceiptRef
 from agent.contracts.scanner import ScannerResult
 from agent.contracts.work_todo import TodoList, WorkBinding
 from agent.runtime.artifact_store import ArtifactStore
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
 from agent.runtime.event_store import EventStore
@@ -324,6 +327,165 @@ class HostController:
             raise TransitionError(f"final stage checkpoint CAS failed: {exc}") from exc
         self.event_store.append(task_id, "stage_completed", Stage.BUILD_VALIDATION.value)
         return completed
+
+    def _declared_dispatch_role(self, stage: Stage) -> str:
+        """Resolve the single workflow-owned stage role, rejecting missing configuration."""
+        config_path = Path(__file__).resolve().parents[2] / ".agents" / "contracts" / "workflow.yaml"
+        try:
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            bundle = config["bundle"]
+            declared = config["role_workflows"][stage.value]
+            role = declared["workflow"]["role_id"]
+            stage_id = declared["workflow"]["stage_id"]
+        except (OSError, KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise TransitionError("registered workflow role unavailable") from exc
+        if bundle.get("transition_owner") != "host_controller" or stage_id != stage.value or not isinstance(role, str):
+            raise TransitionError("workflow dispatch ownership or stage mismatch")
+        return role
+
+    @staticmethod
+    def _dispatch_ref(envelope: HostDispatchEnvelope, digest: str) -> ArtifactRef:
+        return ArtifactRef(
+            artifact_id=f"agent-dispatch:{envelope.request_id}",
+            artifact_revision=envelope.request_revision,
+            artifact_digest=digest,
+            contract_id="host_dispatch_envelope",
+            contract_version="1.0",
+            serializer_profile=SERIALIZER_PROFILE,
+        )
+
+    def prepare_agent_dispatch(
+        self,
+        task_id: str,
+        input_request_ref: ArtifactRef,
+        information_needed: str,
+        *,
+        requested_role: str | None = None,
+        requester_role: str = "workflow_entry",
+    ) -> tuple[HostDispatchEnvelope, ArtifactRef]:
+        """Allocate and persist the exact host route before any agent can run.
+
+        Do not accept agent-supplied identity fields or a caller-defined return target.
+        """
+        state = self.get_state(task_id)
+        if state is None or not information_needed.strip():
+            raise TransitionError("dispatch requires an initialized task and nonempty objective")
+        stage = state.current_stage
+        role = self._declared_dispatch_role(stage)
+        if requested_role is not None and requested_role != role:
+            raise TransitionError("incorrect agent role for active workflow stage")
+        if stage is Stage.RESEARCH:
+            if requester_role not in {"workflow_entry", "audit_discovery", "planning"}:
+                raise TransitionError("Research requester is not authorized")
+            respond_to = requester_role
+        else:
+            if requester_role != "workflow_entry":
+                raise TransitionError("stage result must return to the host")
+            respond_to = "host_controller"
+        if input_request_ref.artifact_revision < 1 or (
+            self.artifact_store.get_digest(
+                input_request_ref.artifact_id, input_request_ref.artifact_revision
+            )
+            != input_request_ref.artifact_digest
+        ):
+            raise TransitionError("dispatch input artifact revision or digest mismatch")
+        try:
+            self.artifact_store.get_verified(
+                input_request_ref.artifact_id, input_request_ref.artifact_revision
+            )
+        except Exception as exc:
+            raise TransitionError("dispatch input is not verified") from exc
+        fingerprint = sha256(
+            (
+                f"{task_id}:{state.run_id}:{stage.value}:"
+                f"{input_request_ref.artifact_id}:{input_request_ref.artifact_revision}:"
+                f"{input_request_ref.artifact_digest}:{information_needed.strip()}"
+            ).encode("utf-8")
+        ).hexdigest()[:24]
+        request_id = f"research-{task_id}" if stage is Stage.RESEARCH and len(task_id) <= 119 else f"dispatch-{fingerprint}"
+        envelope = HostDispatchEnvelope(
+            task_id=task_id,
+            run_id=state.run_id,
+            stage=stage.value,
+            role=role,
+            request_id=request_id,
+            request_revision=input_request_ref.artifact_revision,
+            respond_to=respond_to,
+            requester_role=requester_role,
+            input_request_ref=input_request_ref,
+            information_needed=information_needed.strip(),
+        )
+        aid = f"agent-dispatch:{request_id}"
+        try:
+            digest = self.artifact_store.put_immutable(
+                envelope, aid, envelope.request_revision, "host_dispatch_envelope", "1.0"
+            )
+        except Exception as exc:
+            raise TransitionError("conflicting or unpersisted host dispatch identity") from exc
+        self.event_store.append(task_id, "agent_dispatch_prepared", f"{stage.value}:{role}:{request_id}")
+        return envelope, self._dispatch_ref(envelope, digest)
+
+    def verify_agent_dispatch(self, envelope: HostDispatchEnvelope) -> None:
+        """Fail closed on substituted, stale or wrongly staged dispatch requests."""
+        state = self.get_state(envelope.task_id)
+        if state is None or state.run_id != envelope.run_id or state.current_stage.value != envelope.stage:
+            raise TransitionError("stale or mismatched agent dispatch stage identity")
+        if self._declared_dispatch_role(state.current_stage) != envelope.role:
+            raise TransitionError("agent dispatch targets unauthorized role")
+        aid = f"agent-dispatch:{envelope.request_id}"
+        try:
+            raw = self.artifact_store.get_verified(aid, envelope.request_revision)
+            stored = HostDispatchEnvelope.model_validate_json(raw)
+        except Exception as exc:
+            raise TransitionError("host dispatch envelope is missing or unverified") from exc
+        if stored != envelope:
+            raise TransitionError("agent dispatch differs from persisted host assignment")
+        if state.current_stage is Stage.RESEARCH:
+            if envelope.respond_to != envelope.requester_role or envelope.respond_to not in {
+                "workflow_entry", "audit_discovery", "planning"
+            }:
+                raise TransitionError("invalid Research respond_to binding")
+        elif envelope.respond_to != "host_controller":
+            raise TransitionError("invalid host return route")
+        if (
+            self.artifact_store.get_digest(
+                envelope.input_request_ref.artifact_id, envelope.input_request_ref.artifact_revision
+            )
+            != envelope.input_request_ref.artifact_digest
+        ):
+            raise TransitionError("stale or changed dispatch input")
+
+    def receive_agent_result(
+        self, envelope: HostDispatchEnvelope, result: HostDispatchResult
+    ) -> ArtifactRef:
+        """Receive an agent result at the host-controlled route, not at another agent."""
+        self.verify_agent_dispatch(envelope)
+        for field in ("task_id", "run_id", "stage", "role", "request_id", "request_revision", "respond_to"):
+            if getattr(result, field) != getattr(envelope, field):
+                raise TransitionError(f"agent result routing mismatch: {field}")
+        output = result.output_ref
+        if self.artifact_store.get_digest(output.artifact_id, output.artifact_revision) != output.artifact_digest:
+            raise TransitionError("agent result output artifact digest mismatch")
+        try:
+            self.artifact_store.get_verified(output.artifact_id, output.artifact_revision)
+        except Exception as exc:
+            raise TransitionError("agent result output is not verified") from exc
+        aid = f"agent-dispatch-result:{envelope.request_id}"
+        try:
+            digest = self.artifact_store.put_immutable(
+                result, aid, envelope.request_revision, "host_dispatch_result", "1.0"
+            )
+        except Exception as exc:
+            raise TransitionError("agent return is conflicting or unpersisted") from exc
+        self.event_store.append(envelope.task_id, "agent_result_received", f"{envelope.respond_to}:{aid}")
+        return ArtifactRef(
+            artifact_id=aid,
+            artifact_revision=envelope.request_revision,
+            artifact_digest=digest,
+            contract_id="host_dispatch_result",
+            contract_version="1.0",
+            serializer_profile=SERIALIZER_PROFILE,
+        )
 
     def assign_work(
         self,
