@@ -121,6 +121,18 @@ class ReceiptStore:
         finally:
             conn.close()
 
+    def get_subject(self, receipt_id: str) -> str | None:
+        """Read the immutable subject; callers must independently verify issuer and digest."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            row = conn.execute(
+                "SELECT subject_digest FROM receipts WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+            return str(row[0]) if row is not None else None
+        finally:
+            conn.close()
+
     def verify_receipt(self, receipt_id: str, receipt_digest: str) -> bool:
         """Verify a receipt exists and digest matches, without subject verification."""
         conn = sqlite3.connect(str(self.db_path))

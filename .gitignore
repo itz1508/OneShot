@@ -34,3 +34,8 @@ oneshot-state/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local MVP runtime and frontend dependencies
+.oneshot-state/
+web/node_modules/
+web/dist/

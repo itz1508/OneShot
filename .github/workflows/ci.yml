@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [main]
+    branches: [main, feat/mvp-mcp-research-adapter]
   pull_request:
-    branches: [main]
+    branches: [main, feat/mvp-mcp-research-adapter]
 
 jobs:
   test:

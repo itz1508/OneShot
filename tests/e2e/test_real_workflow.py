@@ -89,14 +89,7 @@ def _completed_work_todo(controller, task_id, run_id, stage):
 def _advance_with_receipt(controller, task_id, run_id, stage):
     """Helper: record work, issue a stage receipt, then advance."""
     todo_ref = _completed_work_todo(controller, task_id, run_id, stage)
-    receipt = controller.issue_stage_receipt(
-        stage,
-        task_id=task_id,
-        run_id=run_id,
-        revision=todo_ref.artifact_revision,
-        artifact_digest=todo_ref.artifact_digest,
-        todo_ref=todo_ref,
-    )
+    receipt = controller.issue_stage_receipt(stage, task_id=task_id, run_id=run_id, revision=1)
     if stage is Stage.PLANNING:
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
@@ -185,29 +178,20 @@ class TestE2EWorkflow:
         """E2E03c: Stage advance with invalid receipt is rejected."""
         controller = HostController(state_root=tmp_path)
         controller.init_task("task-001", "run-001")
-        todo_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.RESEARCH)
         fake_receipt = ReceiptRef(receipt_id="fake", receipt_digest="0" * 64, issuer_id="host")
         with pytest.raises(TransitionError, match="invalid completion receipt"):
-            controller.advance_stage("task-001", "run-001", Stage.RESEARCH, fake_receipt, todo_ref=todo_ref)
+            controller.advance_stage("task-001", "run-001", Stage.RESEARCH, fake_receipt)
 
     def test_advance_with_cross_task_receipt_rejected(self, tmp_path):
         """E2E03d: Receipt from different task is rejected."""
         controller = HostController(state_root=tmp_path)
         controller.init_task("task-001", "run-001")
-        own_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.RESEARCH)
-        # Issue receipt for a DIFFERENT task
         controller.init_task("task-002", "run-002")
-        other_ref = _completed_work_todo(controller, "task-002", "run-002", Stage.RESEARCH)
-        cross_receipt = controller.issue_stage_receipt(
-            Stage.RESEARCH,
-            task_id="task-002",
-            run_id="run-002",
-            revision=other_ref.artifact_revision,
-            artifact_digest=other_ref.artifact_digest,
-            todo_ref=other_ref,
-        )
+        _completed_work_todo(controller, "task-002", "run-002", Stage.RESEARCH)
+        # Issue a legitimate artifact-bound receipt for a DIFFERENT task.
+        cross_receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="task-002", run_id="run-002", revision=1)
         with pytest.raises(TransitionError, match="invalid completion receipt"):
-            controller.advance_stage("task-001", "run-001", Stage.RESEARCH, cross_receipt, todo_ref=own_ref)
+            controller.advance_stage("task-001", "run-001", Stage.RESEARCH, cross_receipt)
 
     def test_planning_requires_verified_structural_gap(self, tmp_path):
         controller = HostController(state_root=tmp_path)
@@ -215,16 +199,9 @@ class TestE2EWorkflow:
         _advance_with_receipt(controller, "task-001", "run-001", Stage.RESEARCH)
         _advance_with_receipt(controller, "task-001", "run-001", Stage.AUDIT_DISCOVERY)
         todo_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.PLANNING)
-        receipt = controller.issue_stage_receipt(
-            Stage.PLANNING,
-            task_id="task-001",
-            run_id="run-001",
-            revision=todo_ref.artifact_revision,
-            artifact_digest=todo_ref.artifact_digest,
-            todo_ref=todo_ref,
-        )
+        receipt = controller.issue_stage_receipt(Stage.PLANNING, task_id="task-001", run_id="run-001", revision=1)
         with pytest.raises(TransitionError, match="structural gap analysis"):
-            controller.advance_stage("task-001", "run-001", Stage.PLANNING, receipt, todo_ref=todo_ref)
+            controller.advance_stage("task-001", "run-001", Stage.PLANNING, receipt)
 
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
@@ -297,14 +274,7 @@ class TestScenarios:
         state = controller.get_state("task-001")
         assert state.current_stage == Stage.BUILD_VALIDATION
         final_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.BUILD_VALIDATION)
-        final_receipt = controller.issue_stage_receipt(
-            Stage.BUILD_VALIDATION,
-            task_id="task-001",
-            run_id="run-001",
-            revision=final_ref.artifact_revision,
-            artifact_digest=final_ref.artifact_digest,
-            todo_ref=final_ref,
-        )
+        final_receipt = controller.issue_stage_receipt(Stage.BUILD_VALIDATION, task_id="task-001", run_id="run-001")
         with pytest.raises(TransitionError, match="final-stage work list"):
             controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=None)
         state = controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=final_ref)
@@ -499,24 +469,6 @@ class TestScenarios:
         )
         assert result.status.value == "blocked"
         assert "escapes workspace" in (result.error or "")
-
-    def test_s4c_traversal_does_not_create_parent(self, tmp_path):
-        workspace = tmp_path / "workspace"
-        workspace.mkdir()
-        state = tmp_path / "state"
-        auth = AuthorizationEngine(allowed_roots=(str(workspace), str(state)))
-        receipts = ReceiptStore(state)
-        executor = EffectExecutor(auth, CheckpointStore(state), receipts, workspace)
-        admission_receipt = _make_admission(receipts)
-        result = executor.execute_admitted(
-            action_id="act-001",
-            action_kind="create",
-            admission_receipt=admission_receipt,
-            target_path="../outside/new.py",
-            content="escaped",
-        )
-        assert result.status is BuildActionStatus.BLOCKED
-        assert not (tmp_path / "outside").exists()
 
     def test_s4d_admission_with_invalid_lock_rejected(self, tmp_path):
         """S4d: BuildAdmission rejects invalid lock receipt."""

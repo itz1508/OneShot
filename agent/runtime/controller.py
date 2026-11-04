@@ -8,11 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
-from agent.contracts.host import (
-    ReceiptRef,
-    stage_receipt_id,
-    stage_receipt_subject,
-)
+from agent.contracts.host import ReceiptRef
 from agent.contracts.scanner import ScannerResult
 from agent.contracts.work_todo import TodoList, WorkBinding
 from agent.runtime.artifact_store import ArtifactStore
@@ -67,30 +63,6 @@ class TaskState(BaseModel):
     model_config = {"frozen": True}
 
 
-class TaskRecoveryDisposition(StrEnum):
-    """Deterministic host recovery outcome — never auto-advances a stage."""
-
-    READY_TO_ADVANCE = "ready_to_advance"
-    RETRY_WORK = "retry_work"
-    BLOCKED = "blocked"
-    CONTRADICTORY = "contradictory"
-    NO_WORK = "no_work"
-
-
-class TaskRecovery(BaseModel):
-    """Result of reconciling persisted checkpoints, TODOs, artifacts, and receipts."""
-
-    task_id: str = Field(min_length=1)
-    run_id: str = Field(min_length=1)
-    stage: Stage
-    checkpoint_revision: int
-    disposition: TaskRecoveryDisposition
-    detail: str = ""
-    work_ref: ArtifactRef | None = None
-
-    model_config = {"frozen": True}
-
-
 class HostController:
     """Single host transition authority.
 
@@ -137,9 +109,6 @@ class HostController:
 
         Requires a valid completion receipt from the current stage to
         prove the stage produced verified output before transitioning.
-        The receipt is bound to the exact verified work artifact
-        (``todo_ref``); mismatched tasks, runs, stages, revisions, or
-        digests are rejected.
         """
         checkpoint = self.checkpoint_store.load_checkpoint(task_id)
         if checkpoint is None:
@@ -153,8 +122,10 @@ class HostController:
         if state.run_id != run_id or state.task_id != task_id:
             raise TransitionError("stage transition task/run binding mismatch")
 
-        if completion_receipt_ref is None:
-            raise TransitionError("stage completion receipt required")
+        receipt_artifact = self._verify_stage_receipt(state, completion_receipt_ref)
+        if state.current_stage is Stage.PLANNING:
+            self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
+
         # Task tracking is a mandatory observation gate, never permission to execute.
         if todo_ref is None:
             raise TransitionError("completed work list reference required before stage transition")
@@ -164,10 +135,7 @@ class HostController:
             self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
             raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
-
-        self._verify_stage_receipt(state, completion_receipt_ref, todo_ref)
-        if state.current_stage is Stage.PLANNING:
-            self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
+        self._verify_stage_evidence(receipt_artifact, todo_ref)
 
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
@@ -195,44 +163,62 @@ class HostController:
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
 
-    def _verify_stage_receipt(
-        self, state: TaskState, completion_receipt_ref: ReceiptRef | None, todo_ref: ArtifactRef | None
-    ) -> None:
-        """Verify a host completion receipt bound to the exact verified work artifact."""
-        # Verify stage-completion receipt
+    def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> ArtifactRef:
+        """Verify host provenance and exact stage artifact; never accept legacy subjects."""
         if completion_receipt_ref is None:
             raise TransitionError("stage completion receipt required")
         if completion_receipt_ref.issuer_id != "host":
-            raise TransitionError(f"untrusted completion receipt issuer for stage {state.current_stage}")
-        if todo_ref is None:
-            raise TransitionError("completed work list reference required before stage transition")
-        # The receipt must bind the exact verified artifact revision and digest.
-        # Mismatched tasks, runs, stages, revisions, or digests are rejected.
-        stored_digest = self.artifact_store.get_digest(todo_ref.artifact_id, todo_ref.artifact_revision)
-        if stored_digest is None or stored_digest != todo_ref.artifact_digest:
-            raise TransitionError(f"invalid completion receipt artifact for stage {state.current_stage}")
-        expected_subject = stage_receipt_subject(
-            state.task_id,
-            state.run_id,
-            state.current_stage.value,
-            todo_ref.artifact_revision,
-            todo_ref.artifact_digest,
-        )
-        expected_receipt_id = stage_receipt_id(
-            state.task_id,
-            state.run_id,
-            state.current_stage.value,
-            todo_ref.artifact_revision,
-            todo_ref.artifact_digest,
-        )
-        if completion_receipt_ref.receipt_id != expected_receipt_id:
-            raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
+            raise TransitionError("invalid completion receipt: untrusted issuer")
+        subject = self.receipt_store.get_subject(completion_receipt_ref.receipt_id)
+        prefix = f"stage_complete:{state.task_id}:{state.run_id}:{state.current_stage.value}:"
+        if subject is None or not subject.startswith(prefix):
+            raise TransitionError("invalid completion receipt: identity mismatch")
+        try:
+            artifact_id, revision_text, digest = subject[len(prefix) :].rsplit(":", 2)
+            revision = int(revision_text)
+        except (ValueError, AttributeError) as exc:
+            raise TransitionError("invalid completion receipt: artifact identity") from exc
+        if not artifact_id or revision < 1 or len(digest) != 64:
+            raise TransitionError("invalid completion receipt: missing artifact evidence")
         if not self.receipt_store.verify(
             completion_receipt_ref.receipt_id,
             completion_receipt_ref.receipt_digest,
-            expected_subject,
+            subject,
         ):
-            raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
+            raise TransitionError("invalid completion receipt: unverified host provenance")
+        try:
+            if self.artifact_store.get_digest(artifact_id, revision) != digest:
+                raise ValueError("artifact digest mismatch")
+            self.artifact_store.get_verified(artifact_id, revision)
+        except Exception as exc:
+            raise TransitionError("invalid completion receipt: artifact not verified") from exc
+        return ArtifactRef(
+            artifact_id=artifact_id,
+            artifact_revision=revision,
+            artifact_digest=digest,
+            contract_id="stage_receipt_evidence",
+            contract_version="1.0",
+            serializer_profile="rfc8785-jcs-sha256-v1",
+        )
+
+    def _verify_stage_evidence(self, receipt_artifact: ArtifactRef, todo_ref: ArtifactRef) -> None:
+        """Receipt must bind the completed work list or an artifact it actually cites."""
+        if (
+            receipt_artifact.artifact_id == todo_ref.artifact_id
+            and receipt_artifact.artifact_revision == todo_ref.artifact_revision
+            and receipt_artifact.artifact_digest == todo_ref.artifact_digest
+        ):
+            return
+        work = self.work_todos.read(todo_ref)
+        for action in work.actions:
+            for ref in action.evidence_refs:
+                if (
+                    ref.artifact_id == receipt_artifact.artifact_id
+                    and ref.artifact_revision == receipt_artifact.artifact_revision
+                    and ref.artifact_digest == receipt_artifact.artifact_digest
+                ):
+                    return
+        raise TransitionError("invalid completion receipt: evidence not in completed work")
 
     def _verify_structural_gap(
         self,
@@ -316,15 +302,16 @@ class HostController:
             raise TransitionError("final stage task/run mismatch")
         if state.current_stage is not Stage.BUILD_VALIDATION or Stage.BUILD_VALIDATION in state.completed_stages:
             raise TransitionError("task is not at an unfinished final verification stage")
+        receipt_artifact = self._verify_stage_receipt(state, completion_receipt_ref)
         if todo_ref is None:
             raise TransitionError("completed final-stage work list required")
         if state.active_work_artifact_id != todo_ref.artifact_id:
-            raise TransitionError("work list does not match the host-assigned request")
+            raise TransitionError("final work list does not match host assignment")
         try:
             self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
         except WorkTodoError as exc:
-            raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
-        self._verify_stage_receipt(state, completion_receipt_ref, todo_ref)
+            raise TransitionError(f"invalid or unfinished final work list: {exc}") from exc
+        self._verify_stage_evidence(receipt_artifact, todo_ref)
         completed = state.model_copy(
             update={
                 "completed_stages": (*state.completed_stages, Stage.BUILD_VALIDATION),
@@ -379,115 +366,6 @@ class HostController:
         _, state_dict, _ = checkpoint
         return TaskState(**state_dict)
 
-    def _recovery_ref(self, artifact_id: str) -> ArtifactRef | None:
-        """Resolve the latest persisted revision of an assigned work list."""
-        from agent.contracts.common import ArtifactRef as _ArtifactRef
-        from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
-
-        latest = self.artifact_store.latest_revision(artifact_id)
-        if latest < 1:
-            return None
-        digest = self.artifact_store.get_digest(artifact_id, latest)
-        if digest is None:
-            return None
-        return _ArtifactRef(
-            artifact_id=artifact_id,
-            artifact_revision=latest,
-            artifact_digest=digest,
-            contract_id="work_todo",
-            contract_version="1.0",
-            serializer_profile=SERIALIZER_PROFILE,
-        )
-
-    def recover_task(self, task_id: str, run_id: str) -> TaskRecovery:
-        """Reconcile checkpoints, TODOs, artifacts, and receipts after restart.
-
-        Deterministic host-owned recovery — never auto-advances a stage, never
-        deletes or overwrites evidence, never claims false completion.
-        """
-        checkpoint = self.checkpoint_store.load_checkpoint(task_id)
-        if checkpoint is None:
-            raise TransitionError("task has no checkpoint")
-        checkpoint_revision, state_dict, _ = checkpoint
-        state = TaskState(**state_dict)
-        if state.run_id != run_id or state.task_id != task_id:
-            self.event_store.append(task_id, "recovery_contradiction", f"run_id={run_id}")
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.CONTRADICTORY,
-                detail="checkpoint task/run does not match recovery request",
-            )
-        if state.active_work_artifact_id is None:
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.NO_WORK,
-                detail="no work assigned for the current stage",
-            )
-        work_ref = self._recovery_ref(state.active_work_artifact_id)
-        if work_ref is None:
-            self.event_store.append(task_id, "recovery_contradiction", "assigned work artifact missing")
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.CONTRADICTORY,
-                detail="assigned work artifact is missing",
-            )
-        try:
-            record = self.work_todos.read(work_ref)
-        except Exception as exc:
-            self.event_store.append(task_id, "recovery_contradiction", f"unreadable work: {exc}")
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.CONTRADICTORY,
-                detail=f"assigned work is unreadable: {exc}",
-                work_ref=work_ref,
-            )
-        if (record.task_id, record.run_id, record.stage) != (task_id, run_id, state.current_stage.value):
-            self.event_store.append(task_id, "recovery_contradiction", "work task/run/stage mismatch")
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.CONTRADICTORY,
-                detail="assigned work belongs to a different task, run, or stage",
-                work_ref=work_ref,
-            )
-        try:
-            self.work_todos.require_complete(work_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
-        except WorkTodoError as exc:
-            self.event_store.append(task_id, "recovery_retry_work", str(exc))
-            return TaskRecovery(
-                task_id=task_id,
-                run_id=run_id,
-                stage=state.current_stage,
-                checkpoint_revision=checkpoint_revision,
-                disposition=TaskRecoveryDisposition.RETRY_WORK,
-                detail=f"work is not complete: {exc}",
-                work_ref=work_ref,
-            )
-        self.event_store.append(task_id, "recovery_ready", state.current_stage.value)
-        return TaskRecovery(
-            task_id=task_id,
-            run_id=run_id,
-            stage=state.current_stage,
-            checkpoint_revision=checkpoint_revision,
-            disposition=TaskRecoveryDisposition.READY_TO_ADVANCE,
-            detail="completed work persisted; issue a bound receipt and advance explicitly",
-            work_ref=work_ref,
-        )
-
     def init_task(self, task_id: str, run_id: str) -> TaskState:
         """Initialize a new task."""
         state = TaskState(task_id=task_id, run_id=run_id)
@@ -502,56 +380,35 @@ class HostController:
         run_id: str = "",
         revision: int = 0,
         artifact_digest: str = "",
-        todo_ref: ArtifactRef | None = None,
+        artifact_id: str = "",
     ) -> ReceiptRef:
-        """Issue a stage-completion receipt bound to the exact verified work artifact.
+        """Issue an artifact-bound receipt from verified host evidence.
 
-        The receipt subject binds task, run, stage, artifact revision, and
-        artifact digest. ``todo_ref`` is the verified completed work list;
-        ``revision``/``artifact_digest`` are accepted only as explicit
-        cross-checks and must match ``todo_ref`` when both are given.
+        Without an explicit result artifact, bind the latest assigned work-list
+        revision. The work-list must be verified during stage transition.
         """
         if not task_id or not run_id:
-            raise TransitionError("stage receipt requires task and run")
-        if todo_ref is None:
-            raise TransitionError("stage receipt requires the verified work artifact reference")
-        if revision and revision != todo_ref.artifact_revision:
-            raise TransitionError("stage receipt revision does not match verified work artifact")
-        if artifact_digest and artifact_digest != todo_ref.artifact_digest:
-            raise TransitionError("stage receipt digest does not match verified work artifact")
+            raise TransitionError("stage receipt requires task/run identity")
         state = self.get_state(task_id)
         if state is None or state.run_id != run_id or state.current_stage != stage:
-            raise TransitionError("stage receipt does not match current task state")
-        if state.active_work_artifact_id != todo_ref.artifact_id:
-            raise TransitionError("stage receipt does not match the host-assigned work request")
-        stored_digest = self.artifact_store.get_digest(todo_ref.artifact_id, todo_ref.artifact_revision)
-        if stored_digest is None or stored_digest != todo_ref.artifact_digest:
-            raise TransitionError("stage receipt work artifact is missing or changed")
+            raise TransitionError("stage receipt must belong to active host task")
+        if not artifact_id:
+            if state.active_work_artifact_id is None:
+                raise TransitionError("stage receipt requires assigned artifact evidence")
+            artifact_id = state.active_work_artifact_id
+            revision = self.artifact_store.latest_revision(artifact_id)
+            artifact_digest = self.artifact_store.get_digest(artifact_id, revision) or ""
+        if revision < 1 or len(artifact_digest) != 64:
+            raise TransitionError("stage receipt requires complete artifact identity")
         try:
-            record = self.work_todos.read(todo_ref)
+            if self.artifact_store.get_digest(artifact_id, revision) != artifact_digest:
+                raise ValueError("artifact digest mismatch")
+            self.artifact_store.get_verified(artifact_id, revision)
         except Exception as exc:
-            raise TransitionError(f"stage receipt work artifact is unverified: {exc}") from exc
-        if (record.task_id, record.run_id, record.stage) != (task_id, run_id, stage.value):
-            raise TransitionError("stage receipt work belongs to a different task, run, or stage")
-        subject = stage_receipt_subject(
-            task_id,
-            run_id,
-            stage.value,
-            todo_ref.artifact_revision,
-            todo_ref.artifact_digest,
-        )
-        receipt_id = stage_receipt_id(
-            task_id,
-            run_id,
-            stage.value,
-            todo_ref.artifact_revision,
-            todo_ref.artifact_digest,
-        )
-        _, receipt_digest = self.receipt_store.issue_verified(
-            receipt_id,
-            "host",
-            subject,
-        )
+            raise TransitionError("stage receipt artifact is not verified") from exc
+        subject = f"stage_complete:{task_id}:{run_id}:{stage.value}:{artifact_id}:{revision}:{artifact_digest}"
+        receipt_id = f"receipt-{task_id}-{stage.value}-{artifact_digest[:16]}"
+        _, receipt_digest = self.receipt_store.issue_verified(receipt_id, "host", subject)
         return ReceiptRef(
             receipt_id=receipt_id,
             receipt_digest=receipt_digest,
