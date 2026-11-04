@@ -15,6 +15,18 @@ roles:
     artifact_writer: planning_only
     shell: denied
     scanner: request_only
+  fixture_validator:
+    repository: read_only
+    artifact_writer: fixture_validation_only
+    shell: denied
+  builder:
+    repository: admitted_paths_only
+    artifact_writer: build_only
+    shell: denied
+  build_verifier:
+    repository: read_only
+    artifact_writer: build_validation_only
+    shell: denied
 authorization:
   preflight: required
   on_policy_error: deny
