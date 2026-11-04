@@ -72,9 +72,7 @@ def scan_dependencies(root: Path, scope: Path) -> list[Finding]:
         if version >= 2:
             packages = lock.get("packages")
             entry = packages.get("") if isinstance(packages, dict) else None
-            if not isinstance(entry, dict) or any(
-                entry.get(kind, {}) != values for kind, values in declared.items()
-            ):
+            if not isinstance(entry, dict) or any(entry.get(kind, {}) != values for kind, values in declared.items()):
                 findings.append(
                     evidence(
                         root,
