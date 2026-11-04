@@ -52,6 +52,9 @@ class Build(ContractModel):
         lookup = {todo.todo_id: todo for todo in self.todos}
         if len(lookup) != len(self.todos):
             raise ValueError("duplicate todo ID")
+        action_ids = [action_id for todo in self.todos for action_id in todo.source_action_ids]
+        if len(set(action_ids)) != len(action_ids):
+            raise ValueError("source Build action assigned to multiple TaskTodo records")
         scheduled: set[str] = set()
         for wave in self.waves:
             if not wave or len(set(wave)) != len(wave):
