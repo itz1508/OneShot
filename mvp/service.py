@@ -7,15 +7,18 @@ fabricated Research/Audit/Plan completion records.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from agent.runtime.artifact_store import ArtifactStore, StaleRevisionError
 from agent.runtime.controller import HostController
-from mvp.mcp_research import research_artifact_id
+from mvp.mcp_research import register_mcp_research, research_artifact_id
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -34,6 +37,28 @@ class MVPService:
     def __init__(self, state_root: str | Path) -> None:
         self.host = HostController(state_root)
         self.artifacts: ArtifactStore = self.host.artifact_store
+        # One-time registration eliminates the per-request discovery/registration race.
+        register_mcp_research(self.host.providers)
+        self._active_guard = Lock()
+        self._active_requests: set[str] = set()
+
+    @contextmanager
+    def research_slot(self, task_id: str) -> Iterator[None]:
+        """Guard in-process Research starts and input edits for the same task.
+
+        Cross-process admission is still governed by host CAS; do not use the
+        in-memory guard as a durable authorization or recovery receipt.
+        """
+        self._check_id(task_id)
+        with self._active_guard:
+            if task_id in self._active_requests:
+                raise MVPError("Research execution conflict: task is already active")
+            self._active_requests.add(task_id)
+        try:
+            yield
+        finally:
+            with self._active_guard:
+                self._active_requests.discard(task_id)
 
     @staticmethod
     def _check_id(task_id: str) -> str:
@@ -77,7 +102,7 @@ class MVPService:
             "input_revision": revision,
             "input_digest": digest,
             "input_text": input_record.text,
-            "mcp_connected": research_done and state.current_stage.value != "research",
+            "research_completed": research_done and state.current_stage.value != "research",
         }
 
     def read_input(self, task_id: str) -> tuple[TaskInput, int, str]:
@@ -96,6 +121,10 @@ class MVPService:
         return record, revision, digest
 
     def revise_input(self, task_id: str, text: str, expected_revision: int) -> dict[str, object]:
+        with self.research_slot(task_id):
+            return self._revise_input_locked(task_id, text, expected_revision)
+
+    def _revise_input_locked(self, task_id: str, text: str, expected_revision: int) -> dict[str, object]:
         self._check_id(task_id)
         state = self.host.get_state(task_id)
         if state is None:
