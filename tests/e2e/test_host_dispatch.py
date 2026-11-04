@@ -86,6 +86,8 @@ def test_missing_invalid_and_mismatched_envelopes_rejected(tmp_path) -> None:
     input_ref = _request(service, task_id)
     with pytest.raises(TransitionError, match="incorrect agent role"):
         service.host.prepare_agent_dispatch(task_id, input_ref, "Inspect", requested_role="builder")
+    assert any(event["type"] == "agent_dispatch_rejected" for event in service.events(task_id))
+    assert service.host.get_state(task_id).current_stage is Stage.RESEARCH
     with pytest.raises(TransitionError, match="Research requester"):
         service.host.prepare_agent_dispatch(task_id, input_ref, "Inspect", requester_role="builder")
     with pytest.raises(TransitionError, match="digest mismatch"):
