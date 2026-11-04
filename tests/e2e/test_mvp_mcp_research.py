@@ -52,8 +52,45 @@ def response(task_id: str, *, wrong_digest: bool = False) -> dict:
 def request(task_id: str) -> ProviderRequest:
     return ProviderRequest(
         run_id=f"run-{task_id}",
+        prompt=json.dumps({"stage": "research", "task_id": task_id, "stage_payload": {"question": "inspect"}}),
+    )
+
+
+
+def test_wrong_stage_rejected_before_mcp_invocation(monkeypatch):
+    calls = []
+
+    async def invoke(arguments):
+        calls.append(arguments)
+        raise AssertionError("MCP must not be called for a Build request")
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    task_id = "a" * 32
+    wrong = ProviderRequest(
+        run_id=f"run-{task_id}",
+        prompt=json.dumps({"stage": "build", "task_id": task_id, "stage_payload": {"actions": ["write"]}}),
+    )
+    with pytest.raises(ProviderError, match="invalid host Research request"):
+        MCPResearchAdapter().generate(wrong)
+    assert calls == []
+
+
+def test_missing_stage_rejected_before_mcp_invocation(monkeypatch):
+    calls = []
+
+    async def invoke(arguments):
+        calls.append(arguments)
+        raise AssertionError("MCP must not be called without a stage")
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    task_id = "a" * 32
+    wrong = ProviderRequest(
+        run_id=f"run-{task_id}",
         prompt=json.dumps({"task_id": task_id, "stage_payload": {"question": "inspect"}}),
     )
+    with pytest.raises(ProviderError, match="invalid host Research request"):
+        MCPResearchAdapter().generate(wrong)
+    assert calls == []
 
 
 def test_adapter_registers_class_without_shadowing_echo():
