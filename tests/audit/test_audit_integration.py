@@ -421,6 +421,8 @@ class TestAuditModeAndRecovery:
         from mvp.research_host import audit_artifact_id, execute_audit
         from mvp.service import MVPError, MVPService
 
+        monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(workspace))
+        monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "true")
         state_root = tmp_path / "crash-state"
         first = MVPService(state_root)
         task = first.create("Verify recovery", purpose="audit")
@@ -445,10 +447,12 @@ class TestAuditModeAndRecovery:
         assert "stage_transition" not in [event["type"] for event in second.events(task_id)]
         assert "audit_reconciled" in [event["type"] for event in second.events(task_id)]
 
-    def test_uncertain_effect_without_audit_artifact_fails_closed(self, tmp_path, monkeypatch):
+    def test_uncertain_effect_without_audit_artifact_fails_closed(self, workspace, tmp_path, monkeypatch):
         from mvp.research_host import execute_audit
         from mvp.service import MVPError, MVPService
 
+        monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(workspace))
+        monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "true")
         state_root = tmp_path / "uncertain-state"
         first = MVPService(state_root)
         task = first.create("Audit with failed scan", purpose="audit")
