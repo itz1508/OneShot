@@ -18,7 +18,12 @@ def scan_completeness(root: Path, scope: Path) -> list[Finding]:
                 if any(marker in token.string.upper() for marker in ("TODO", "FIXME")):
                     findings.append(
                         evidence(
-                            root, path, token.start[0], "UNRESOLVED_COMMENT", "completeness", "low",
+                            root,
+                            path,
+                            token.start[0],
+                            "UNRESOLVED_COMMENT",
+                            "completeness",
+                            "low",
                             "Source comment requests follow-up; verify relevance against accepted intent.",
                         )
                     )
