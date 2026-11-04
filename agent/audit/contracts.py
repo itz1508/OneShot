@@ -13,6 +13,7 @@ def scan_contracts(root: Path, scope: Path) -> list[Finding]:
     for path in python_files(root, scope):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
+            names: tuple[str, ...]
             if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                 names = (node.module,)
             elif isinstance(node, ast.Import):
