@@ -26,7 +26,12 @@ def scan_contracts(root: Path, scope: Path) -> list[Finding]:
                 if not rel.with_suffix(".py").is_file() and not (rel / "__init__.py").is_file():
                     findings.append(
                         evidence(
-                            root, path, node.lineno, "INTERNAL_IMPORT_MISSING", "contracts", "high",
+                            root,
+                            path,
+                            node.lineno,
+                            "INTERNAL_IMPORT_MISSING",
+                            "contracts",
+                            "high",
                             f"Internal import target {name!r} is not present as a Python module or package.",
                         )
                     )
