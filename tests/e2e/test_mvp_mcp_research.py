@@ -129,7 +129,7 @@ def test_unstructured_prompt_fails_without_call(monkeypatch):
 
 
 def test_error_result_and_nontext_result_fail_closed():
-    with pytest.raises(ProviderError, match="reported an error"):
+    with pytest.raises(ProviderError, match="MCP Research tool failed: ONESHOT_UPSTREAM_ERROR"):
         _tool_json(SimpleNamespace(is_error=True, content=[], structured_content={"error_class": "ONESHOT_UPSTREAM_ERROR"}))
     with pytest.raises(ProviderError, match="one JSON text"):
         _tool_json(SimpleNamespace(is_error=False, content=[SimpleNamespace(type="image")], structured_content={}))
