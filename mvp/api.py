@@ -132,7 +132,11 @@ async def stream(task_id: str, request: Request, after: int = 0) -> StreamingRes
                 yield 'event: stream_error\ndata: {"code":"EVENT_READ_FAILED","retryable":true}\n\n'
                 return
             for event in batch:
-                seq = int(event["sequence"])
+                seq = event.get("sequence")
+                if not isinstance(seq, int) or isinstance(seq, bool):
+                    logger.error("SSE event record has invalid sequence")
+                    yield 'event: stream_error\ndata: {"code":"EVENT_SEQUENCE_INVALID","retryable":false}\n\n'
+                    return
                 yield f"id: {seq}\nevent: activity\ndata: {json.dumps(event)}\n\n"
                 cursor = seq
             await asyncio.sleep(0.5)
