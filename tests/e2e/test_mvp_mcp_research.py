@@ -351,6 +351,6 @@ def test_host_evidence_requires_trusted_workspace_root(tmp_path, monkeypatch):
     monkeypatch.setenv("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", '["README.md"]')
     monkeypatch.delenv("MCP_TRUSTED_ANCESTRY", raising=False)
     monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(tmp_path))
-    with pytest.raises(MVPError, match="trusted"):
+    with pytest.raises(MVPError, match="MCP_TRUSTED_ANCESTRY"):
         execute_research(service, task_id)
     assert service.host.get_state(task_id).active_work_artifact_id is None
