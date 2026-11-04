@@ -201,7 +201,6 @@ class TestAuditReceipt:
         task = service.create("Receipt test", purpose="audit")
         execute_audit(service, task["task_id"])
         task_id = task["task_id"]
-        run_id = task["run_id"]
 
         import sqlite3
 

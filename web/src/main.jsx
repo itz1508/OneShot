@@ -184,7 +184,7 @@ function App() {
               {task.purpose === 'audit' && task.execution_status === 'audit_completed' &&
                 <div className="integration-warning"><Check size={17}/><div><strong>Audit findings persisted</strong><p>Static scanning completed. The Research stage remains open until a valid ResearchRecord is accepted.</p></div></div>}
               {task.execution_status === 'audit_blocked' &&
-                <div className="integration-warning"><CircleAlert size={17}/><div><strong>Audit blocked</strong><p>Review the stored findings and limitations; no stage advancement occurred.</p></div></div>
+                <div className="integration-warning"><CircleAlert size={17}/><div><strong>Audit blocked</strong><p>Review the stored findings and limitations; no stage advancement occurred.</p></div></div>}
             </>}
           </div>
         </div>

@@ -18,10 +18,10 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from agent.runtime.artifact_store import ArtifactStore, StaleRevisionError
-from agent.runtime.controller import HostController
-from agent.runtime.authorization import Capability
 from agent.contracts.work_todo import WorkStatus
+from agent.runtime.artifact_store import ArtifactStore, StaleRevisionError
+from agent.runtime.authorization import Capability
+from agent.runtime.controller import HostController
 from agent.runtime.work_todo import WorkTodoManager
 from mvp.mcp_research import register_mcp_research, research_artifact_id
 
@@ -199,7 +199,8 @@ class MVPService:
                     audit_work_status = todo.actions[0].status.value
         if input_record.purpose == "audit":
             execution_status = (
-                "audit_blocked" if audit_disposition == "blocked" or audit_work_status == WorkStatus.BLOCKED.value
+                "audit_blocked"
+                if audit_disposition == "blocked" or audit_work_status == WorkStatus.BLOCKED.value
                 else "audit_completed" if audit_done
                 else "audit_running" if audit_work_status == WorkStatus.RUNNING.value
                 else "audit_recovery_required" if state.active_work_artifact_id is not None

@@ -9,9 +9,9 @@ from pathlib import Path, PurePosixPath
 from agent.audit.core import Finding as AuditCoreFinding
 from agent.contracts.audit import AuditFinding, AuditFindingsRecord
 from agent.contracts.common import ArtifactRef
-from agent.runtime.authorization import Capability
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
+from agent.runtime.authorization import Capability
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_dict, digest_model
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
