@@ -56,6 +56,18 @@ def create_task(input: SubmitTask) -> dict[str, object]:
         raise failure(exc) from exc
 
 
+@app.post("/api/tasks/{task_id}/research")
+def start_research(task_id: str) -> dict[str, object]:
+    from mvp.research_host import execute_research
+
+    try:
+        return execute_research(service, task_id)
+    except MVPError as exc:
+        if str(exc).startswith("Research execution blocked:"):
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise failure(exc) from exc
+
+
 @app.get("/api/tasks/{task_id}")
 def task_detail(task_id: str) -> dict[str, object]:
     try:
