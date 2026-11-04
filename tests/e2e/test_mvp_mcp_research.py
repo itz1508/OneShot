@@ -414,3 +414,48 @@ def test_dispatch_rejects_wrong_workflow_role_before_upstream_call(tmp_path, mon
         service.host.prepare_agent_dispatch(task["task_id"], input_ref, "Inspect sources", requested_role="planner")
     assert service.host.get_state(task["task_id"]).active_work_artifact_id is None
     assert service.artifacts.latest_revision(f"agent-dispatch:research-{task['task_id']}") == 0
+
+
+def test_cli_run_executes_existing_host_research(tmp_path, monkeypatch, capsys):
+    """CLI run executes a real registered Research provider, not only task initialization."""
+    from agent.cli import cmd_run
+
+    service = MVPService(tmp_path)
+    task = service.create("Investigate repository evidence")
+    task_id = task["task_id"]
+
+    async def invoke(arguments):
+        assert json.loads(arguments["prompt"])["task_id"] == task_id
+        return response(task_id)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    assert cmd_run(task_id, state_root=str(tmp_path)) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "completed"
+    assert result["current_stage"] == "audit_discovery"
+    assert service.host.get_state(task_id).current_stage.value == "audit_discovery"
+    assert service.artifacts.latest_revision(f"agent-dispatch-result:research-{task_id}") == 1
+
+
+def test_cli_run_unknown_task_fails_without_creating_fake_work(tmp_path, capsys):
+    from agent.cli import cmd_run
+
+    task_id = "a" * 32
+    assert cmd_run(task_id, state_root=str(tmp_path)) == 1
+    assert "not found" in capsys.readouterr().err
+    assert MVPService(tmp_path).host.get_state(task_id) is None
+
+
+def test_cli_run_blocks_missing_upstream_provider(tmp_path, monkeypatch, capsys):
+    from agent.cli import cmd_run
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect repository")["task_id"]
+
+    async def unavailable(_arguments):
+        raise ProviderError("provider not configured")
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", unavailable)
+    assert cmd_run(task_id, state_root=str(tmp_path)) == 1
+    assert "Research blocked" in capsys.readouterr().err
+    assert service.host.get_state(task_id).current_stage.value == "research"
