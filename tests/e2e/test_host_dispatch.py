@@ -65,10 +65,16 @@ def test_host_creates_and_persists_routing_and_todo_before_dispatch(tmp_path) ->
     assert envelope.request_id
     assert envelope.request_revision == 1
     assert envelope.respond_to == "workflow_entry"
-    assert service.artifacts.get_digest(dispatch_ref.artifact_id, dispatch_ref.artifact_revision) == dispatch_ref.artifact_digest
-    assert HostDispatchEnvelope.model_validate_json(
-        service.artifacts.get_verified(dispatch_ref.artifact_id, dispatch_ref.artifact_revision)
-    ) == envelope
+    assert (
+        service.artifacts.get_digest(dispatch_ref.artifact_id, dispatch_ref.artifact_revision)
+        == dispatch_ref.artifact_digest
+    )
+    assert (
+        HostDispatchEnvelope.model_validate_json(
+            service.artifacts.get_verified(dispatch_ref.artifact_id, dispatch_ref.artifact_revision)
+        )
+        == envelope
+    )
     service.host.verify_agent_dispatch(envelope)
     assert service.host.work_todos.read(todo_ref).actions[0].status is WorkStatus.PENDING
     assert service.host.get_state(task_id).active_work_artifact_id == todo_ref.artifact_id
@@ -140,13 +146,19 @@ def test_host_return_validates_request_and_output_then_advances(tmp_path) -> Non
         running, "work-1", WorkStatus.COMPLETED, actual_result="Research persisted", evidence_refs=(output_ref,)
     )
     receipt = service.host.issue_stage_receipt(
-        Stage.RESEARCH, task_id=task_id, run_id=str(task["run_id"]),
-        artifact_id=output_ref.artifact_id, revision=output_ref.artifact_revision,
-        artifact_digest=output_ref.artifact_digest
+        Stage.RESEARCH,
+        task_id=task_id,
+        run_id=str(task["run_id"]),
+        artifact_id=output_ref.artifact_id,
+        revision=output_ref.artifact_revision,
+        artifact_digest=output_ref.artifact_digest,
     )
-    assert service.host.advance_stage(
-        task_id, str(task["run_id"]), Stage.RESEARCH, receipt, todo_ref=completed
-    ).current_stage is Stage.AUDIT_DISCOVERY
+    assert (
+        service.host.advance_stage(
+            task_id, str(task["run_id"]), Stage.RESEARCH, receipt, todo_ref=completed
+        ).current_stage
+        is Stage.AUDIT_DISCOVERY
+    )
     audit, _, audit_todo = service.host.prepare_agent_dispatch(
         task_id, output_ref, "Discover code paths", requested_role="audit_discovery"
     )
@@ -154,9 +166,7 @@ def test_host_return_validates_request_and_output_then_advances(tmp_path) -> Non
     assert audit.respond_to == "host_controller"
     assert service.host.work_todos.read(audit_todo).stage == "audit_discovery"
     with pytest.raises(TransitionError, match="incorrect agent role"):
-        service.host.prepare_agent_dispatch(
-            task_id, output_ref, "Attempt wrong routing", requested_role="researcher"
-        )
+        service.host.prepare_agent_dispatch(task_id, output_ref, "Attempt wrong routing", requested_role="researcher")
 
 
 def test_build_stage_cannot_be_sent_to_researcher(tmp_path) -> None:
@@ -167,8 +177,15 @@ def test_build_stage_cannot_be_sent_to_researcher(tmp_path) -> None:
     assert host.get_state("task-001").current_stage is Stage.BUILD
     with pytest.raises(TransitionError, match="incorrect agent role"):
         host.prepare_agent_dispatch(
-            "task-001", ArtifactRef(
-                artifact_id="missing", artifact_revision=1, artifact_digest="f" * 64,
-                contract_id="fixture", contract_version="1.0", serializer_profile=SERIALIZER_PROFILE
-            ), "Implement admitted actions", requested_role="researcher"
+            "task-001",
+            ArtifactRef(
+                artifact_id="missing",
+                artifact_revision=1,
+                artifact_digest="f" * 64,
+                contract_id="fixture",
+                contract_version="1.0",
+                serializer_profile=SERIALIZER_PROFILE,
+            ),
+            "Implement admitted actions",
+            requested_role="researcher",
         )
