@@ -67,6 +67,30 @@ class TaskState(BaseModel):
     model_config = {"frozen": True}
 
 
+class TaskRecoveryDisposition(StrEnum):
+    """Deterministic host recovery outcome — never auto-advances a stage."""
+
+    READY_TO_ADVANCE = "ready_to_advance"
+    RETRY_WORK = "retry_work"
+    BLOCKED = "blocked"
+    CONTRADICTORY = "contradictory"
+    NO_WORK = "no_work"
+
+
+class TaskRecovery(BaseModel):
+    """Result of reconciling persisted checkpoints, TODOs, artifacts, and receipts."""
+
+    task_id: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    stage: Stage
+    checkpoint_revision: int
+    disposition: TaskRecoveryDisposition
+    detail: str = ""
+    work_ref: ArtifactRef | None = None
+
+    model_config = {"frozen": True}
+
+
 class HostController:
     """Single host transition authority.
 
@@ -354,6 +378,115 @@ class HostController:
             return None
         _, state_dict, _ = checkpoint
         return TaskState(**state_dict)
+
+    def _recovery_ref(self, artifact_id: str) -> ArtifactRef | None:
+        """Resolve the latest persisted revision of an assigned work list."""
+        from agent.contracts.common import ArtifactRef as _ArtifactRef
+        from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
+
+        latest = self.artifact_store.latest_revision(artifact_id)
+        if latest < 1:
+            return None
+        digest = self.artifact_store.get_digest(artifact_id, latest)
+        if digest is None:
+            return None
+        return _ArtifactRef(
+            artifact_id=artifact_id,
+            artifact_revision=latest,
+            artifact_digest=digest,
+            contract_id="work_todo",
+            contract_version="1.0",
+            serializer_profile=SERIALIZER_PROFILE,
+        )
+
+    def recover_task(self, task_id: str, run_id: str) -> TaskRecovery:
+        """Reconcile checkpoints, TODOs, artifacts, and receipts after restart.
+
+        Deterministic host-owned recovery — never auto-advances a stage, never
+        deletes or overwrites evidence, never claims false completion.
+        """
+        checkpoint = self.checkpoint_store.load_checkpoint(task_id)
+        if checkpoint is None:
+            raise TransitionError("task has no checkpoint")
+        checkpoint_revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if state.run_id != run_id or state.task_id != task_id:
+            self.event_store.append(task_id, "recovery_contradiction", f"run_id={run_id}")
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.CONTRADICTORY,
+                detail="checkpoint task/run does not match recovery request",
+            )
+        if state.active_work_artifact_id is None:
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.NO_WORK,
+                detail="no work assigned for the current stage",
+            )
+        work_ref = self._recovery_ref(state.active_work_artifact_id)
+        if work_ref is None:
+            self.event_store.append(task_id, "recovery_contradiction", "assigned work artifact missing")
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.CONTRADICTORY,
+                detail="assigned work artifact is missing",
+            )
+        try:
+            record = self.work_todos.read(work_ref)
+        except Exception as exc:
+            self.event_store.append(task_id, "recovery_contradiction", f"unreadable work: {exc}")
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.CONTRADICTORY,
+                detail=f"assigned work is unreadable: {exc}",
+                work_ref=work_ref,
+            )
+        if (record.task_id, record.run_id, record.stage) != (task_id, run_id, state.current_stage.value):
+            self.event_store.append(task_id, "recovery_contradiction", "work task/run/stage mismatch")
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.CONTRADICTORY,
+                detail="assigned work belongs to a different task, run, or stage",
+                work_ref=work_ref,
+            )
+        try:
+            self.work_todos.require_complete(work_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
+        except WorkTodoError as exc:
+            self.event_store.append(task_id, "recovery_retry_work", str(exc))
+            return TaskRecovery(
+                task_id=task_id,
+                run_id=run_id,
+                stage=state.current_stage,
+                checkpoint_revision=checkpoint_revision,
+                disposition=TaskRecoveryDisposition.RETRY_WORK,
+                detail=f"work is not complete: {exc}",
+                work_ref=work_ref,
+            )
+        self.event_store.append(task_id, "recovery_ready", state.current_stage.value)
+        return TaskRecovery(
+            task_id=task_id,
+            run_id=run_id,
+            stage=state.current_stage,
+            checkpoint_revision=checkpoint_revision,
+            disposition=TaskRecoveryDisposition.READY_TO_ADVANCE,
+            detail="completed work persisted; issue a bound receipt and advance explicitly",
+            work_ref=work_ref,
+        )
 
     def init_task(self, task_id: str, run_id: str) -> TaskState:
         """Initialize a new task."""
