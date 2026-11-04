@@ -147,6 +147,7 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
         "progress_revisions": "compare_and_swap",
         "events": "event_store",
         "transition_gate": "completed_with_persisted_evidence",
+        "final_stage_gate": "verified_completion_receipt_and_todo",
         "effect_authorization": "none",
     }
     if any(tracking.get(k) != v for k, v in required_tracking.items()):
