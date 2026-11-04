@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from agent.runtime.artifact_store import ArtifactStore, StaleRevisionError
 from agent.runtime.controller import HostController
+from mvp.mcp_research import research_artifact_id
 
 _ID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -63,7 +64,7 @@ class MVPService:
         if state is None:
             raise MVPError("task not found")
         input_record, revision, digest = self.read_input(task_id)
-        research_id = f"research-{task_id}-{state.run_id}"
+        research_id = research_artifact_id(task_id, state.run_id)
         research_done = self.artifacts.latest_revision(research_id) > 0
         return {
             "task_id": task_id,
@@ -144,7 +145,7 @@ class MVPService:
         ]
         state = self.host.get_state(task_id)
         if state is not None:
-            research_id = f"research-{task_id}-{state.run_id}"
+            research_id = research_artifact_id(task_id, state.run_id)
             if self.artifacts.latest_revision(research_id) > 0:
                 files.append(
                     {
