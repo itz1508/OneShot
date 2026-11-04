@@ -215,7 +215,8 @@ def _execute_audit(service: MVPService, task_id: str) -> dict[str, object]:
             "stage": "audit",
             "current_stage": remaining.current_stage.value,
             "artifact_ref": ref.model_dump(mode="json"),
-            "disposition": record.disposition, "findings_count": len(record.findings),
+            "disposition": record.disposition,
+            "findings_count": len(record.findings),
         }
     except Exception as exc:
         try:
