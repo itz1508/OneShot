@@ -1,5 +1,7 @@
 """FastAPI route smoke tests. Requires optional MVP runtime dependencies."""
 
+import sqlite3
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -59,3 +61,26 @@ def test_real_http_create_restore_and_revision():
     )
     assert stale.status_code == 409
     assert client.get(f"/api/tasks/{task_id}").json()["input_text"] == "Review the actual source"
+
+
+def test_sse_database_error_is_classified_and_does_not_create_fake_events(tmp_path, monkeypatch):
+    import mvp.api
+    from mvp.service import MVPService
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Check SSE recovery")["task_id"]
+    original_events = service.events
+    recorded_before = original_events(task_id)
+    monkeypatch.setattr(mvp.api, "service", service)
+
+    def broken_events(_task_id, _cursor=0):
+        raise sqlite3.OperationalError("private database details must not leak")
+
+    monkeypatch.setattr(service, "events", broken_events)
+    response = TestClient(mvp.api.app).get(f"/api/tasks/{task_id}/stream")
+    assert response.status_code == 200
+    assert "event: stream_error\ndata:" in response.text
+    assert '"code":"EVENT_READ_FAILED"' in response.text
+    assert "private database details" not in response.text
+    assert "id:" not in response.text
+    assert original_events(task_id) == recorded_before
