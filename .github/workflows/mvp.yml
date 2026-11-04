@@ -1,7 +1,7 @@
 name: MVP integration
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/mvp-fastapi-react-slice]
     paths:
       - 'mvp/**'
       - 'web/**'
