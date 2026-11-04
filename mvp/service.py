@@ -70,7 +70,9 @@ class MVPService:
             "run_id": state.run_id,
             "current_stage": state.current_stage.value,
             "completed_stages": [s.value for s in state.completed_stages],
-            "execution_status": "research_completed" if research_done and state.current_stage.value != "research" else "awaiting_mcp",
+            "execution_status": (
+                "research_completed" if research_done and state.current_stage.value != "research" else "awaiting_mcp"
+            ),
             "input_revision": revision,
             "input_digest": digest,
             "input_text": input_record.text,
