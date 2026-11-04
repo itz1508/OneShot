@@ -111,13 +111,14 @@ def test_public_modal_image_and_concurrency_contract(monkeypatch: Any) -> None:
         ("api_fundamentals", f"{source}/api_fundamentals"),
         (".agents", f"{source}/.agents"),
         ("settings", f"{source}/settings"),
-        ("web/public", f"{source}/web/public"),
+        ("web", f"{source}/web"),
     }
     assert calls["events"] == ["asgi", "concurrent", "function"]
     assert calls["max_inputs"] == 20
     assert calls["secrets"] == []
     assert calls["function"]["max_containers"] == 1
-    assert calls["function"]["volumes"] == {"/data": calls["function"]["volumes"]["/data"]}
+    assert list(calls["function"]["volumes"]) == ["/data"]
+    assert callable(calls["function"]["volumes"]["/data"].commit)
     assert calls["function"]["secrets"] == []
     assert callable(module["web"])
 
