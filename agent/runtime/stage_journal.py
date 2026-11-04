@@ -5,7 +5,6 @@ accepted. Successful append is committed to SQLite before its projection.
 """
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import tempfile
