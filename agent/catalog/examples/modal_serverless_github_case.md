@@ -35,9 +35,7 @@ Original unsafe token-in-URL approach — **rejected**:
 
 ```python
 # Do not adopt this pattern.
-repo_url_with_creds = repo_url.replace(
-    "https://", "https://" + os.environ["GITHUB_TOKEN"] + "@"
-)
+repo_url_with_creds = repo_url.replace("https://", "https://" + os.environ["GITHUB_TOKEN"] + "@")
 ```
 
 Normalized Git clone boundary — **applied in PR #16**:
@@ -56,10 +54,28 @@ env["GIT_TERMINAL_PROMPT"] = "0"
 env["GIT_CONFIG_NOSYSTEM"] = "1"
 env["GIT_CONFIG_GLOBAL"] = os.devnull
 subprocess.run(
-    ["git", "-c", "credential.helper=", "-c", "core.hooksPath=/dev/null",
-     "clone", "--depth", "1", "--single-branch", "--no-tags",
-     "--branch", validated_branch, "--", verified_url, checkout_dir],
-    env=env, capture_output=True, text=True, timeout=150, check=False,
+    [
+        "git",
+        "-c",
+        "credential.helper=",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "clone",
+        "--depth",
+        "1",
+        "--single-branch",
+        "--no-tags",
+        "--branch",
+        validated_branch,
+        "--",
+        verified_url,
+        checkout_dir,
+    ],
+    env=env,
+    capture_output=True,
+    text=True,
+    timeout=150,
+    check=False,
 )
 ```
 
