@@ -26,6 +26,7 @@ _ID = re.compile(r"^[0-9a-f]{32}$")
 class TaskInput(BaseModel):
     task_id: str
     text: str = Field(min_length=1, max_length=20000)
+    purpose: str = Field(default="research", pattern=r"^(research|audit)$")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -70,13 +71,15 @@ class MVPService:
     def _artifact_id(task_id: str) -> str:
         return f"mvp-input:{task_id}"
 
-    def create(self, prompt: str) -> dict[str, object]:
+    def create(self, prompt: str, purpose: str = "research") -> dict[str, object]:
         cleaned = prompt.strip()
         if not cleaned or len(cleaned) > 20000:
             raise MVPError("task text must contain 1-20000 characters")
+        if purpose not in ("research", "audit"):
+            raise MVPError("purpose must be research or audit")
         task_id = uuid4().hex
         run_id = f"run-{task_id}"
-        record = TaskInput(task_id=task_id, text=cleaned)
+        record = TaskInput(task_id=task_id, text=cleaned, purpose=purpose)
         self.artifacts.put_immutable(record, self._artifact_id(task_id), 1, "mvp_task_input", "1.0")
         self.host.init_task(task_id, run_id)
         self.host.event_store.append(task_id, "mvp_input_persisted", "input revision 1")
@@ -102,6 +105,7 @@ class MVPService:
             "input_revision": revision,
             "input_digest": digest,
             "input_text": input_record.text,
+            "purpose": input_record.purpose,
             "research_completed": research_done and state.current_stage.value != "research",
         }
 
@@ -183,6 +187,19 @@ class MVPService:
                         "revision": 1,
                         "digest": self.artifacts.get_digest(research_id, 1),
                         "content": self.artifacts.get_verified(research_id, 1).decode("utf-8"),
+                    }
+                )
+            from mvp.research_host import audit_artifact_id
+
+            audit_id = audit_artifact_id(task_id, state.run_id)
+            if self.artifacts.latest_revision(audit_id) > 0:
+                files.append(
+                    {
+                        "name": "_audit.json",
+                        "kind": "audit",
+                        "revision": 1,
+                        "digest": self.artifacts.get_digest(audit_id, 1),
+                        "content": self.artifacts.get_verified(audit_id, 1).decode("utf-8"),
                     }
                 )
         return files
