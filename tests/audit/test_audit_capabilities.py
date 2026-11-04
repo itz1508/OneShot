@@ -139,7 +139,7 @@ def test_unimplemented_function_is_reported_as_candidate(tmp_path: Path) -> None
 def test_audit_mode_unwired_reported_without_new_workflow(tmp_path: Path) -> None:
     ui = tmp_path / "web" / "src"
     ui.mkdir(parents=True)
-    (ui / "main.jsx").write_text("const name = 'Research'\n")
+    (ui / "main.jsx").write_text("const name = 'Research, Audit, Planning'\n")
     host = tmp_path / "mvp"
     host.mkdir()
     (host / "research_host.py").write_text("def research(): pass\n")
