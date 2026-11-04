@@ -95,3 +95,28 @@ result requires the command to exit successfully against the actual server.
 For this first slice, zero independently retrieved evidence items is possible;
 an artifact digest cannot establish factual grounding. Never expose the
 unauthenticated MVP API or untrusted model endpoint publicly.
+
+## Verification boundaries and concurrency
+
+The Research adapter is registered once when `MVPService` initializes, not in
+individual requests. A per-task in-process admission slot prevents concurrent
+Research calls or input edits in one API worker; the host's immutable artifacts,
+Todo CAS and checkpoint CAS remain separate durable safeguards. This local
+development slice is **single-process only**: the in-memory slot is not a
+distributed lock and cannot by itself guarantee safe multi-worker execution.
+Do not deploy multiple Uvicorn workers until host-owned cross-process admission,
+idempotent retry reconciliation and interruption tests are complete.
+
+`MCPResearchAdapter.generate()` is synchronous and calls `asyncio.run()`.
+FastAPI's synchronous `def start_research` route runs in a worker thread, not
+on the application's event loop. Async callers must use an explicit thread
+boundary; they must not invoke `generate()` directly inside an active loop.
+The server is contacted on demand; a completed Research artifact reports
+`research_completed` on task details. The health endpoint's
+`mcp_connected: false` indicates no persistent MCP session is maintained,
+not that a past Research call failed. A connection probe is not yet offered.
+
+An MCP invocation failure leaves the host stage unadvanced. If a work item is
+already assigned or an interruption leaves partial effects, an explicit
+host-owned reconciliation is required before retry. This is not crash-safe
+automatic resume. Recovery events record failure classifications, not secrets.
