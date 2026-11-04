@@ -37,6 +37,7 @@ def scan_integration(root: Path, scope: Path) -> list[Finding]:
                     1,
                     "AUDIT_HOST_INVOCATION_UNWIRED",
                     "integration",
+                    "medium",
                     "Research host has no recognizable invocation of the Audit capability package.",
                 )
             )
