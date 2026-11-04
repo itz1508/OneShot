@@ -141,16 +141,14 @@ class WorkTodoManager:
             raise WorkTodoError("running action must finish with a terminal status")
         if found.status not in {WorkStatus.PENDING, WorkStatus.RUNNING}:
             raise WorkTodoError("terminal work action is immutable; create a new work request to retry")
-        if status is WorkStatus.RUNNING:
-            if any(
-                predecessor.status is not WorkStatus.COMPLETED
-                for predecessor in record.actions
-                if predecessor.action_id in found.depends_on
-            ):
-                raise WorkTodoError("action dependencies are not complete")
-        if status is WorkStatus.COMPLETED:
-            if not evidence_refs or not actual_result:
-                raise WorkTodoError("completed action requires actual result and evidence")
+        if status is WorkStatus.RUNNING and any(
+            predecessor.status is not WorkStatus.COMPLETED
+            for predecessor in record.actions
+            if predecessor.action_id in found.depends_on
+        ):
+            raise WorkTodoError("action dependencies are not complete")
+        if status is WorkStatus.COMPLETED and (not evidence_refs or not actual_result):
+            raise WorkTodoError("completed action requires actual result and evidence")
         for evidence in evidence_refs:
             self._check_input(evidence)
         replacement = TodoAction.model_validate({

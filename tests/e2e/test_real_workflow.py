@@ -17,10 +17,10 @@ from agent.contracts.research import (
 )
 from agent.contracts.scanner import ScannerFinding
 from agent.contracts.work_todo import WorkBinding, WorkStatus
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.build_admission import BuildAdmission, BuildAdmissionError
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.checkpoint_store import CheckpointStore
 from agent.runtime.controller import STAGE_ORDER, HostController, Stage, TransitionError
 from agent.runtime.effect_executor import EffectExecutor
