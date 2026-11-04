@@ -1,0 +1,41 @@
+name: Modal v3 one-time formatting and lock repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/modal-v3-autofix-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.number == 30 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@v6
+      - name: Generate standalone lock and apply safe Ruff changes
+        working-directory: deployment/modal/sandbox_v3
+        run: |
+          uv python install 3.11
+          uv lock --python 3.11
+          uv sync --locked --python 3.11 --extra modal --group dev
+          uv run --no-sync ruff format src tests scripts
+          uv run --no-sync ruff check src tests scripts --fix || true
+          uv run --no-sync ruff format src tests scripts
+      - name: Commit only standalone source and lockfile
+        run: |
+          git add deployment/modal/sandbox_v3/src deployment/modal/sandbox_v3/tests deployment/modal/sandbox_v3/scripts deployment/modal/sandbox_v3/uv.lock
+          if git diff --cached --quiet; then
+            echo "No formatting or lockfile changes required."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "style(modal): apply Ruff formatting and commit standalone lock"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
