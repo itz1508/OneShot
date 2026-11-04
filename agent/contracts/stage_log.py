@@ -33,8 +33,9 @@ class StageLogEvent(ContractModel):
     @field_validator("created_at")
     @classmethod
     def require_utc(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
+        offset = value.utcoffset()
+        if value.tzinfo is None or offset is None:
             raise ValueError("created_at must be timezone aware")
-        if value.utcoffset().total_seconds() != 0:
+        if offset.total_seconds() != 0:
             raise ValueError("created_at must be UTC")
         return value
