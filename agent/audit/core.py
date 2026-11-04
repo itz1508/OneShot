@@ -29,9 +29,18 @@ class AuditResult:
     findings: tuple[Finding, ...]
     limitations: tuple[str, ...]
     disposition: str
+    request: str = ""
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        data = asdict(self)
+        findings = data["findings"]
+        assert isinstance(findings, tuple)
+        for finding in findings:
+            identity = "|".join(
+                (finding["capability"], finding["path"], str(finding["line"]), finding["code"])
+            )
+            finding["finding_id"] = "AUD-" + hashlib.sha256(identity.encode()).hexdigest()[:16]
+        return data
 
 
 def evidence(
@@ -72,8 +81,13 @@ def python_files(root: Path, scope: Path) -> Iterable[Path]:
 Scanner = Callable[[Path, Path], list[Finding]]
 
 
-def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = ()) -> AuditResult:
+def scan(
+    root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), request: str = ""
+) -> AuditResult:
     from agent.audit.completeness import scan_completeness
+    from agent.audit.dependencies import scan_dependencies
+    from agent.audit.frontend import scan_frontend
+    from agent.audit.state import scan_state
     from agent.audit.contracts import scan_contracts
     from agent.audit.paths import scan_paths
     from agent.audit.security import scan_security
@@ -87,6 +101,9 @@ def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = ()) -> Au
         "contracts": scan_contracts,
         "completeness": scan_completeness,
         "verification": scan_verification,
+        "frontend": scan_frontend,
+        "state": scan_state,
+        "dependencies": scan_dependencies,
     }
     requested = capabilities or tuple(scanners)
     unknown = sorted(set(requested) - set(scanners))
@@ -127,4 +144,5 @@ def scan(root: Path, scope: str = ".", capabilities: tuple[str, ...] = ()) -> Au
         tuple(findings),
         tuple(limitations),
         disposition,
+        request,
     )
