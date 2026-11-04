@@ -24,6 +24,7 @@ image = (
     modal.Image.debian_slim(python_version="3.11")
     .uv_sync(extras=["meta", "mvp"], groups=[])
     .env({"PYTHONPATH": SOURCE_ROOT, "ONESHOT_STATE_ROOT": STATE_ROOT})
+    .workdir(SOURCE_ROOT)
     .add_local_dir("agent", remote_path=f"{SOURCE_ROOT}/agent")
     .add_local_dir("mvp", remote_path=f"{SOURCE_ROOT}/mvp")
     .add_local_dir("api_fundamentals", remote_path=f"{SOURCE_ROOT}/api_fundamentals")
@@ -62,15 +63,27 @@ def web() -> object:
     os.environ["MCP_WORKSPACE_ROOT"] = SOURCE_ROOT
     os.environ["MCP_TRUSTED_ANCESTRY"] = "true"
 
+    from fastapi.responses import JSONResponse
     from mvp.api import app as fastapi_app
+
+    # Keep the SSE connection outside this lock. Only mutating requests and
+    # their corresponding commit need serialization in the single container.
+    mutation_lock = asyncio.Lock()
 
     @fastapi_app.middleware("http")
     async def persist_mutations(request: Request, call_next):
-        response = await call_next(request)
-        if request.method in {"POST", "PATCH"}:
-            # The Volume is explicit-commit storage, not a transactional DB.
-            # Do not report durable completion if commit fails.
+        # The public Audit demo never exposes model-backed Research, even if
+        # a parent environment accidentally configures an MCP transport.
+        if request.method == "POST" and request.url.path.endswith("/research"):
+            return JSONResponse(status_code=403, content={"detail": "Research disabled on public Audit deployment"})
+        if request.method not in {"POST", "PATCH"}:
+            return await call_next(request)
+        async with mutation_lock:
+            response = await call_next(request)
+            # Mutations are persisted before success is acknowledged. A failure
+            # must propagate; Modal Volume does not offer SQLite transactions
+            # across separately mounted containers or active revisions.
             await asyncio.to_thread(state_volume.commit)
-        return response
+            return response
 
     return fastapi_app
