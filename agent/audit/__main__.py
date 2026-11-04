@@ -27,6 +27,8 @@ def main() -> int:
             "frontend",
             "state",
             "dependencies",
+            "integration",
+            "recovery",
         ),
         default=[],
     )
