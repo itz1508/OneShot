@@ -21,6 +21,17 @@ jobs:
         run: |
           uv lock
           uv sync --locked --extra meta
+      - name: Diagnostic lockfile export (temporary)
+        run: |
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          value = base64.b64encode(Path('uv.lock').read_bytes()).decode()
+          print('LOCKFILE_EXPORT_BEGIN')
+          for i in range(0, len(value), 4000):
+              print('LOCK64:' + value[i:i+4000])
+          print('LOCKFILE_EXPORT_END')
+          PY
       - name: Lint
         if: always()
         run: uv run --no-sync ruff check .
