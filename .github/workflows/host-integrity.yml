@@ -7,6 +7,7 @@ on:
       - 'agent/runtime/receipt_store.py'
       - 'mvp/**'
       - 'tests/e2e/test_host_integrity.py'
+      - 'tests/e2e/test_host_dispatch.py'
       - 'tests/e2e/test_mvp_*.py'
       - '.github/workflows/host-integrity.yml'
   workflow_dispatch:
@@ -32,6 +33,7 @@ jobs:
         run: |
           uv run --no-sync pytest -q \
             tests/e2e/test_host_integrity.py \
+            tests/e2e/test_host_dispatch.py \
             tests/e2e/test_mvp_mcp_research.py \
             tests/e2e/test_mvp_api.py \
             tests/e2e/test_mvp_service.py \
