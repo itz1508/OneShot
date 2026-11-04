@@ -205,6 +205,8 @@ class MVPService:
                 if audit_disposition == "blocked" or audit_work_status == WorkStatus.BLOCKED.value
                 else "audit_completed"
                 if audit_done
+                else "audit_recovery_required"
+                if audit_disposition and audit_work_status == WorkStatus.RUNNING.value
                 else "audit_running"
                 if audit_work_status == WorkStatus.RUNNING.value
                 else "audit_recovery_required"

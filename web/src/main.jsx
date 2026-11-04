@@ -166,9 +166,9 @@ function App() {
               <div className="user-message"><div className="message-label">REQUEST · {task.purpose || 'research'}</div><p>{task.input_text}</p></div>
               <div className="execution-control">
                 <span role="status" aria-label="Execution status">{task.execution_status}</span>
-                {task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp'].includes(task.execution_status) &&
+                {task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) &&
                   <button className="primary" type="button" onClick={runTask} disabled={loading}>
-                    {loading ? 'Running...' : 'Run ' + (task.purpose === 'audit' ? 'Audit' : 'Research')}
+                    {loading ? 'Running...' : task.execution_status === 'audit_recovery_required' ? 'Resume Audit' : 'Run ' + (task.purpose === 'audit' ? 'Audit' : 'Research')}
                   </button>}
               </div>
               <div className="timeline-heading"><span>LIVE ACTIVITY</span><span>{events.length} EVENTS</span></div>
