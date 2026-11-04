@@ -18,8 +18,15 @@ def main() -> int:
         "--capability",
         action="append",
         choices=(
-            "paths", "wiring", "security", "contracts", "completeness", "verification",
-            "frontend", "state", "dependencies",
+            "paths",
+            "wiring",
+            "security",
+            "contracts",
+            "completeness",
+            "verification",
+            "frontend",
+            "state",
+            "dependencies",
         ),
         default=[],
     )
