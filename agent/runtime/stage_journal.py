@@ -23,6 +23,7 @@ class StageJournalError(ValueError):
 
 class StageJournalService:
     def __init__(self, runtime_root: str | Path, event_db_path: str | Path) -> None:
+        Path(runtime_root).mkdir(parents=True, exist_ok=True)
         self._root = Path(runtime_root).resolve(strict=True)
         self._db_path = Path(event_db_path)
         with self._connect() as conn:
