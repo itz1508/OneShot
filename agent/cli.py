@@ -51,10 +51,27 @@ def cmd_doctor(state_root: str = "/tmp/oneshot-state") -> int:
 
 
 def cmd_run(task_id: str, state_root: str = "/tmp/oneshot-state") -> int:
-    """Initialize and run a task."""
-    controller = HostController(state_root)
-    state = controller.init_task(task_id, run_id=f"run-{task_id}")
-    print(f"Task {task_id} initialized at stage: {state.current_stage}")
+    """Execute an existing Research task through the registered host, never simulate completion."""
+    from mvp.research_host import execute_research
+    from mvp.service import MVPError, MVPService
+
+    service = MVPService(state_root)
+    state = service.host.get_state(task_id)
+    if state is None:
+        print(f"Task {task_id}: not found; submit a task with an input artifact first", file=sys.stderr)
+        return 1
+    if state.current_stage is not Stage.RESEARCH:
+        print(
+            f"Task {task_id}: no executable runner registered for stage {state.current_stage.value}",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        outcome = execute_research(service, task_id)
+    except (MVPError, ValueError) as exc:
+        print(f"Task {task_id}: Research blocked: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(outcome, sort_keys=True))
     return 0
 
 
@@ -99,7 +116,7 @@ def main() -> int:
     """Main CLI entrypoint."""
     if len(sys.argv) < 2:
         print("Usage: python -m agent <command> [args]")
-        print("Commands: doctor, run, status, resume, verify")
+        print("Commands: doctor, run <existing-task-id>, status, resume, verify")
         return 1
 
     cmd = sys.argv[1]

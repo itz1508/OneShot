@@ -14,6 +14,34 @@ from pydantic import Field
 from agent.contracts.common import ArtifactRef, ContractModel, OperationState, Sha256
 
 
+class HostDispatchEnvelope(ContractModel):
+    """Host-allocated, persisted agent assignment bound to an exact input."""
+
+    task_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    run_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    stage: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    request_revision: int = Field(ge=1)
+    respond_to: str = Field(min_length=1)
+    requester_role: str = Field(min_length=1)
+    input_request_ref: ArtifactRef
+    information_needed: str = Field(min_length=1)
+
+
+class HostDispatchResult(ContractModel):
+    """Host-received result; every identity must match the stored assignment."""
+
+    task_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    run_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    stage: str = Field(min_length=1)
+    role: str = Field(min_length=1)
+    request_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,128}$")
+    request_revision: int = Field(ge=1)
+    respond_to: str = Field(min_length=1)
+    output_ref: ArtifactRef
+
+
 class ReceiptRef(ContractModel):
     """Reference to a host-issued receipt."""
 

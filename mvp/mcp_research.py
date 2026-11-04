@@ -93,7 +93,7 @@ def _tool_json(response: Any) -> dict[str, Any]:
 async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     """One negotiated MCP session over trusted local stdio or configured HTTP."""
     try:
-        from mcp import Client, StdioServerParameters
+        from mcp import Client, StdioServerParameters  # type: ignore[import-not-found]  # optional MVP SDK
     except ImportError as exc:
         raise ProviderError("MCP Python SDK missing; install mvp/requirements.txt") from exc
 
