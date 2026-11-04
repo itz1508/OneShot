@@ -8,7 +8,6 @@ from pathlib import Path
 
 from agent.audit.core import Finding, evidence
 
-
 _API_PREFIX = re.compile(r"/api/[\w/{}-]+")
 
 
@@ -23,13 +22,16 @@ def scan_wiring(root: Path, scope: Path) -> list[Finding]:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for decorator in node.decorator_list:
-            if isinstance(decorator, ast.Call) and decorator.args and isinstance(decorator.args[0], ast.Constant):
-                if isinstance(decorator.func, ast.Attribute) and decorator.func.attr in {
-                    "get", "post", "patch", "put", "delete"
-                }:
-                    value = decorator.args[0].value
-                    if isinstance(value, str):
-                        routes.add(re.sub(r"\{[^}]+\}", "{}", value))
+            if (
+                isinstance(decorator, ast.Call)
+                and decorator.args
+                and isinstance(decorator.args[0], ast.Constant)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr in {"get", "post", "patch", "put", "delete"}
+            ):
+                value = decorator.args[0].value
+                if isinstance(value, str):
+                    routes.add(re.sub(r"\{[^}]+\}", "{}", value))
     findings: list[Finding] = []
     for file in sorted((root / "web" / "src").rglob("*.jsx")):
         if not file.is_relative_to(scope) and scope != root:
