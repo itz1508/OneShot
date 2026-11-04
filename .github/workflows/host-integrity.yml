@@ -26,6 +26,8 @@ jobs:
       - run: uv python install ${{ matrix.python-version }}
       - run: uv sync --locked --extra meta
       - run: uv pip install -r mvp/requirements.txt
+      - name: Strict host and MVP type check
+        run: uv run --no-sync mypy --strict agent/ mvp/
       - name: Verify host and HTTP regression tests
         run: |
           uv run --no-sync pytest -q \
