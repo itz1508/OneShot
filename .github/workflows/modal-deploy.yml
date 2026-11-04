@@ -32,6 +32,7 @@ jobs:
       ONESHOT_MODAL_VOLUME_NAME: ${{ inputs.volume_name }}
       # Public demo: intentionally no MODEL_API_KEY or MCP server.
       ONESHOT_MODAL_MODEL_SECRET: ""
+      ONESHOT_MODAL_PRIVATE_MODE: "false"
       NO_COLOR: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -68,9 +69,15 @@ jobs:
           echo "url=$ENDPOINT" >> "$GITHUB_OUTPUT"
           echo "OneShot Modal HTTPS: $ENDPOINT" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify real API, Audit, persistence and concurrent SSE
+        id: live_probe
+        shell: bash
         env:
           MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
-        run: python3 scripts/modal_live_probe.py --base-url "$MODAL_BASE_URL"
+        run: |
+          set -euo pipefail
+          python3 scripts/modal_live_probe.py --base-url "$MODAL_BASE_URL" | tee "$RUNNER_TEMP/modal-live-probe.json"
+          TASK_ID="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["task_id"])' "$RUNNER_TEMP/modal-live-probe.json")"
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
       - name: Install browser dependencies
         working-directory: web
         run: |
@@ -81,6 +88,16 @@ jobs:
         env:
           MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
         run: npx playwright test --config=playwright.modal.config.js
+      - name: Replace live Modal containers and verify persisted state
+        shell: bash
+        env:
+          MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
+          SAVED_TASK_ID: ${{ steps.live_probe.outputs.task_id }}
+        run: |
+          set -euo pipefail
+          uvx --from modal==1.6.3 modal app rollover "$ONESHOT_MODAL_APP_NAME" --strategy recreate
+          python3 scripts/modal_live_probe.py --base-url "$MODAL_BASE_URL" --verify-task-id "$SAVED_TASK_ID"
+          echo "Modal rollover and persisted task recovery verified" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
