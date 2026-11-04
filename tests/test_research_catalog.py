@@ -1,4 +1,4 @@
-"""Research catalog tests — CAT01-CAT12.
+"""Research catalog tests — synthetic templates and deterministic matching.
 
 Tests catalog loading, unique IDs, matching, no-match fallback,
 and that synthetic content never supplies factual authority.
@@ -31,9 +31,9 @@ class TestCatalogLoading:
         ids = catalog.sample_ids
         assert len(ids) == len(set(ids))
 
-    def test_ten_samples(self, catalog):
-        """CAT03: Exactly 10 samples in catalog."""
-        assert len(catalog.samples) == 10
+    def test_eleven_samples(self, catalog):
+        """CAT03: Existing ten templates and Modal example are indexed."""
+        assert len(catalog.samples) == 11
 
     def test_all_samples_synthetic(self, catalog):
         """CAT04: All samples marked synthetic."""
@@ -127,3 +127,26 @@ class TestCatalogAuthority:
         """CAT14: Match result is explicitly synthetic."""
         m = catalog.match(ResearchIntent.INVESTIGATE_QUESTION, ("code",))
         assert m.is_synthetic is True
+
+
+class TestModalCatalogExample:
+    def test_modal_example_is_synthetic_and_has_success_criteria(self, catalog):
+        """CAT15: Modal case is research guidance, not build authorization."""
+        sample = catalog.get_sample("SAMPLE-MODAL-GITHUB-001")
+        assert sample is not None
+        assert sample.is_synthetic is True
+        assert sample.category == "serverless_runtime_and_github_access"
+        assert sample.fixture_blueprint is not None
+        assert any("Live deployment" in item for item in sample.success_criteria)
+        assert any("agent/catalog/examples/modal_serverless_github_case.md" in item
+                   for item in sample.research_checklist)
+
+    def test_modal_keywords_resolve_to_modal_sample(self, catalog):
+        """CAT16: Modal/GitHub serverless query does not match generic integration."""
+        result = catalog.match(
+            ResearchIntent.VERIFY_PLANNING_INPUT,
+            ("Modal", "serverless", "GitHub"),
+        )
+        assert result.match_status == CatalogMatchStatus.EXACT
+        assert result.catalog_id == "SAMPLE-MODAL-GITHUB-001"
+        assert result.is_synthetic is True
