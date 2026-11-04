@@ -18,6 +18,9 @@ Inspect source and contracts, implementation completeness, imports and paths, AP
 - `contracts.py`: local Python module reference checks.
 - `completeness.py`: explicit incomplete-source comment markers.
 - `verification.py`: test-surface discovery; test presence does not demonstrate execution.
+- `frontend.py`: source-backed Research endpoint, artifact viewer, and status wiring gaps.
+- `state.py`: host stage receipt identity binding inspection.
+- `dependencies.py`: dependency lockfile reproducibility checks.
 
 `__main__.py` dispatches the read-only capability checks and emits JSON. `core.py` normalizes immutable source observations, evidence digests, and scope limitations. New checks belong in separate named capability files, not in the CLI.
 
@@ -32,7 +35,11 @@ Every observation must bind capability, code, severity, relative path/line, sour
 ## Example
 
 ```bash
-python -m agent.audit --root /absolute/authorized/repo --scope . --capability paths --capability contracts
+python -m agent.audit --root /absolute/authorized/repo --scope . --request "Inspect integration completeness"
 ```
 
 The CLI intentionally performs no shell commands, network calls, or source writes. Connected E2E requires separately authorized host execution and independent evidence.
+
+## Integration limitations
+
+This scanner does not yet connect to the Research UI mode, independently run browser tests, validate a remote deployment, or persist findings through host-owned TODO and artifact stores. The static CLI performs read-only observations only. Its `audit-report.json` output from the repository audit workflow is evidence for review, not an acceptance receipt.
