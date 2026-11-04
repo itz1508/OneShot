@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -118,7 +118,12 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
     roles = data.get("role_workflows")
     hosts = data.get("host_workflows")
     execution = data.get("execution")
-    if not all(isinstance(x, dict) for x in (bundle, roles, hosts, execution)):
+    if (
+        not isinstance(bundle, dict)
+        or not isinstance(roles, dict)
+        or not isinstance(hosts, dict)
+        or not isinstance(execution, dict)
+    ):
         raise LoaderError("single workflow contract requires bundle, role_workflows, host_workflows, execution")
 
     if bundle.get("bundle_id") != "oneshot_end_to_end":
@@ -220,7 +225,7 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
         or retry.get("scanner_blocked_until_valid") is not True
     ):
         raise LoaderError("invalid structural gap correction route")
-    return data
+    return cast(dict[str, Any], data)
 
 
 def load_stage_workflow(path: str | Path, stage_id: str) -> dict[str, Any]:
