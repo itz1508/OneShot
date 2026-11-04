@@ -41,7 +41,7 @@ def scan_wiring(root: Path, scope: Path) -> list[Finding]:
                 value = match.group()
                 if "'" not in line and '"' not in line:
                     continue
-                normalized = re.sub(r"\{[^}]+\}", "{}", value)
+                normalized = re.sub(r"\{[^}]+\}", "{}", value).rstrip("/")
                 if normalized not in routes and not any(route.startswith(normalized + "/") for route in routes):
                     findings.append(
                         evidence(
