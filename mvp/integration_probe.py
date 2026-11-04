@@ -10,9 +10,9 @@ import argparse
 import json
 from pathlib import Path
 
+from agent.contracts.research import ResearchRecord
 from agent.runtime.canonical_serialization import digest_model
 from agent.runtime.controller import Stage
-from agent.contracts.research import ResearchRecord
 from mvp.research_host import execute_research
 from mvp.service import MVPService
 
