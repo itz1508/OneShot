@@ -10,7 +10,7 @@ def test_create_read_and_restart(tmp_path):
     task = first.create("Inspect existing implementation")
     assert task["current_stage"] == "research"
     assert task["execution_status"] == "awaiting_mcp"
-    assert task["mcp_connected"] is False
+    assert task["research_completed"] is False
     task_id = task["task_id"]
     events = first.events(task_id)
     assert [event["type"] for event in events] == [
