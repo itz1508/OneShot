@@ -138,8 +138,9 @@ class TestModalCatalogExample:
         assert sample.category == "serverless_runtime_and_github_access"
         assert sample.fixture_blueprint is not None
         assert any("Live deployment" in item for item in sample.success_criteria)
-        assert any("agent/catalog/examples/modal_serverless_github_case.md" in item
-                   for item in sample.research_checklist)
+        assert any(
+            "agent/catalog/examples/modal_serverless_github_case.md" in item for item in sample.research_checklist
+        )
 
     def test_modal_keywords_resolve_to_modal_sample(self, catalog):
         """CAT16: Modal/GitHub serverless query does not match generic integration."""
