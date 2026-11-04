@@ -126,10 +126,12 @@ class MVPService:
 
     def artifacts_for_task(self, task_id: str) -> list[dict[str, object]]:
         record, revision, digest = self.read_input(task_id)
-        return [{
-            "name": "_input.json",
-            "kind": "input",
-            "revision": revision,
-            "digest": digest,
-            "content": record.model_dump_json(indent=2),
-        }]
+        return [
+            {
+                "name": "_input.json",
+                "kind": "input",
+                "revision": revision,
+                "digest": digest,
+                "content": record.model_dump_json(indent=2),
+            }
+        ]
