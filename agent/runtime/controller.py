@@ -488,7 +488,7 @@ class HostController:
             from agent.contracts.planning import PlanningRecord
             from agent.contracts.research import ResearchRecord
 
-            contracts = {
+            contracts: dict[Stage, tuple[str, type[BaseModel]]] = {
                 Stage.RESEARCH: ("research_record", ResearchRecord),
                 Stage.AUDIT_DISCOVERY: ("audit_discovery_package", AuditDiscoveryPackage),
                 Stage.PLANNING: ("planning_record", PlanningRecord),
