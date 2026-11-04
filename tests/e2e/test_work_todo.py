@@ -73,6 +73,7 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
         controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt)
     source_fact = source.read_text(encoding="utf-8").strip()
     r1 = run_action(controller, r0, "work-1", source_fact)
+    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
     controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=r1)
 
     audit_scope = binding(controller, "audit_discovery", "audit-1")
@@ -187,7 +188,15 @@ def test_unassigned_work_cannot_bypass_host_stage_binding(tmp_path) -> None:
     scope = binding(controller, "research", "research-1")
     _, unassigned = controller.work_todos.start(scope, action="Inspect", expected_result="Evidence")
     completed = run_action(controller, unassigned, "work-1", "source observed")
-    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
+    observed = controller.work_todos.read(completed).actions[0].evidence_refs[0]
+    receipt = controller.issue_stage_receipt(
+        Stage.RESEARCH,
+        task_id="real-work",
+        run_id="run-real",
+        artifact_id=observed.artifact_id,
+        revision=observed.artifact_revision,
+        artifact_digest=observed.artifact_digest,
+    )
     with pytest.raises(TransitionError, match="host-assigned"):
         controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=completed)
 
