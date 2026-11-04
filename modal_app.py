@@ -68,6 +68,7 @@ def web() -> object:
     os.environ["ONESHOT_STATE_ROOT"] = STATE_ROOT
     os.environ["MCP_WORKSPACE_ROOT"] = SOURCE_ROOT
     os.environ["MCP_TRUSTED_ANCESTRY"] = "true"
+    os.environ["ONESHOT_RESEARCH_DISABLED"] = "false" if PRIVATE_MODE else "true"
 
     from fastapi.responses import JSONResponse
 
