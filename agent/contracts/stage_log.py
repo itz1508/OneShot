@@ -1,4 +1,5 @@
 """Typed, host-owned stage journal events; JSONL is a projection, not task state."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -7,7 +8,6 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from agent.contracts.common import ContractModel
-
 
 StageName = Literal["search", "audit", "plan", "build", "mem"]
 
