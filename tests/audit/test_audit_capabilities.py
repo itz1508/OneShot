@@ -27,7 +27,7 @@ def test_empty_scope_is_not_verified(tmp_path: Path) -> None:
     (tmp_path / "tests" / "test_dummy.py").write_text("def test_ok(): assert True\n")
     result = scan(tmp_path)
     assert result.disposition == "not_e2e_verified"
-    assert len(result.executed_capabilities) == 6
+    assert len(result.executed_capabilities) == 9
 
 
 def test_escape_scope_rejected(tmp_path: Path) -> None:
@@ -46,3 +46,55 @@ def test_security_candidate_is_not_proven_exploit(tmp_path: Path) -> None:
     result = scan(tmp_path, capabilities=("security",))
     assert {x.code for x in result.findings} == {"COMMAND_EXECUTION_REVIEW", "SHELL_TRUE_REVIEW"}
     assert all(x.status == "candidate" for x in result.findings)
+
+
+def test_audit_request_and_finding_ids_are_deterministic(tmp_path: Path) -> None:
+    (tmp_path / "agent").mkdir()
+    (tmp_path / "agent" / "__init__.py").write_text("")
+    (tmp_path / "agent" / "broken.py").write_text("import agent.nonexistent\n")
+    first = scan(tmp_path, capabilities=("contracts",), request="Audit broken imports")
+    second = scan(tmp_path, capabilities=("contracts",), request="Audit broken imports")
+    assert first.to_dict() == second.to_dict()
+    assert first.request == "Audit broken imports"
+    assert first.to_dict()["findings"][0]["finding_id"].startswith("AUD-")
+
+
+def test_host_receipt_missing_artifact_identity_detected(tmp_path: Path) -> None:
+    controller = tmp_path / "agent" / "runtime"
+    controller.mkdir(parents=True)
+    (controller / "controller.py").write_text(
+        'def issue_stage_receipt(self, stage, task_id="", run_id="", revision=0, artifact_digest=""):\n'
+        '    subject = f"stage_complete:{task_id}:{run_id}:{stage}"\n'
+        "    return subject\n"
+    )
+    result = scan(tmp_path, capabilities=("state",))
+    assert [item.code for item in result.findings] == ["RECEIPT_SUBJECT_UNBOUND"]
+    assert "artifact_digest" in result.findings[0].message
+    assert result.findings[0].status == "verified_observation"
+
+
+def test_missing_frontend_lockfile_detected(tmp_path: Path) -> None:
+    web = tmp_path / "web"
+    web.mkdir()
+    (web / "package.json").write_text('{"dependencies":{"react":"19.0.0"}}')
+    result = scan(tmp_path, capabilities=("dependencies",))
+    assert [item.code for item in result.findings] == ["FRONTEND_LOCKFILE_MISSING"]
+    (web / "package-lock.json").write_text("{}")
+    assert not scan(tmp_path, capabilities=("dependencies",)).findings
+
+
+def test_frontend_missing_research_wiring_and_wrong_artifact_editor(tmp_path: Path) -> None:
+    api = tmp_path / "mvp"
+    ui = tmp_path / "web" / "src"
+    api.mkdir()
+    ui.mkdir(parents=True)
+    (api / "api.py").write_text('@app.post("/api/tasks/{task_id}/research")\ndef research(): pass\n')
+    (ui / "main.jsx").write_text(
+        "setActiveFile(file)\nsetEditText(task?.input_text || '')\nMCP integration pending\n"
+    )
+    result = scan(tmp_path, capabilities=("frontend",))
+    assert {item.code for item in result.findings} == {
+        "RESEARCH_ACTION_UNWIRED",
+        "ARTIFACT_EDITOR_INPUT_ALIAS",
+        "STATIC_MCP_WARNING",
+    }
