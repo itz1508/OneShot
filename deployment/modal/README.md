@@ -13,7 +13,9 @@ endpoint; it does not accept task input or execute arbitrary code.
    intended Modal environment.
 3. Set GitHub Actions secrets `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET`.
 4. Merge the reviewed changes into `main`.
-5. Run **Actions > Deploy Modal Serverless > Run workflow**.
+5. Run **Actions > Deploy Modal Serverless > Run workflow**, entering the
+   target Modal environment name. For the supplied dashboard URL this appears
+   to be `OneShot`; verify the name in Modal before executing.
 6. Use the URL reported by Modal to verify the endpoint returns
    `{ "status": "ok", "service": "oneshot-serverless" }`.
 
@@ -40,7 +42,7 @@ Create this Modal secret in the dashboard; do not upload `.env` or paste
 credentials into GitHub source. Then run:
 
 ```sh
-modal run deployment/modal/github_clone.py --repo-url https://github.com/<owner>/<repo> --branch main
+modal run --env <modal-environment> deployment/modal/github_clone.py --repo-url https://github.com/<owner>/<repo> --branch main
 ```
 
 The function validates GitHub repository URLs, avoids embedding credentials
@@ -50,3 +52,17 @@ returns top-level names and does not modify the remote repository.
 `MODAL_PROXY_TOKEN_ID` / `MODAL_PROXY_TOKEN_SECRET` authenticate requests
 to protected inference endpoints. They do **not** deploy Modal Apps.
 Deployment requires `MODAL_TOKEN_ID` (`ak-`) and `MODAL_TOKEN_SECRET` (`as-`).
+
+## Credentials and readiness
+
+The GitHub Actions deployment workflow requires a complete Modal API token
+pair (`MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET`). Webhook proxy tokens cannot
+be used for deployment. A token ID without its matching secret is insufficient.
+
+The optional `github_clone.py` example needs a **separate** Modal Secret
+named `github-secret` containing `GITHUB_TOKEN`. Neither the GitHub token
+nor the Modal token pair belongs in a committed `.env` file.
+
+CI and syntax validation do not prove the Modal workspace environment exists,
+that secrets have been provisioned, or that deployment and authenticated
+GitHub operations work. Those claims require live runtime evidence.
