@@ -59,7 +59,7 @@ def _completed_work_todo(controller, task_id, run_id, stage):
         request_revision=1,
         input_request_ref=input_ref,
     )
-    _work, todo_ref = controller.work_todos.start(
+    _work, todo_ref = controller.assign_work(
         scope,
         action=f"Observe {stage.value} stage fixture",
         expected_result=f"Verified {stage.value} fixture output",
