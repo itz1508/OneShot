@@ -26,6 +26,7 @@ from agent.runtime.providers.registry import ProviderRegistry
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.recovery import BoundedRecovery
 from agent.runtime.scanner_gateway import ScannerGateway
+from agent.runtime.work_todo import WorkTodoError, WorkTodoManager
 
 
 class Stage(StrEnum):
@@ -79,6 +80,7 @@ class HostController:
         self.artifact_store = ArtifactStore(self.state_root)
         self.receipt_store = ReceiptStore(self.state_root)
         self.event_store = EventStore(self.state_root)
+        self.work_todos = WorkTodoManager(self.artifact_store, self.event_store)
         self.checkpoint_store = CheckpointStore(self.state_root)
         self.scanner = ScannerGateway(self.artifact_store)
         self.gap_analyzer = HostGapAnalyzer(self.artifact_store, self.receipt_store)
@@ -99,6 +101,7 @@ class HostController:
         completion_receipt_ref: ReceiptRef | None = None,
         gap_result_ref: ArtifactRef | None = None,
         gap_receipt_ref: ReceiptRef | None = None,
+        todo_ref: ArtifactRef | None = None,
     ) -> TaskState:
         """Advance to the next stage if the current stage is completed.
 
@@ -135,6 +138,16 @@ class HostController:
 
         if state.current_stage is Stage.PLANNING:
             self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
+
+        # Task tracking is a mandatory observation gate, never permission to execute.
+        if todo_ref is None:
+            raise TransitionError("completed work list reference required before stage transition")
+        try:
+            self.work_todos.require_complete(
+                todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value
+            )
+        except WorkTodoError as exc:
+            raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
 
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
