@@ -121,3 +121,20 @@ def test_unrecognized_static_api_route_reports_candidate(tmp_path: Path) -> None
     result = scan(tmp_path, capabilities=("wiring",))
     assert [finding.code for finding in result.findings] == ["API_ROUTE_REVIEW"]
     assert result.findings[0].status == "candidate"
+
+
+def test_mvp_import_targets_are_checked(tmp_path: Path) -> None:
+    (tmp_path / "mvp").mkdir()
+    (tmp_path / "mvp" / "__init__.py").write_text("")
+    (tmp_path / "mvp" / "service.py").write_text("import mvp.missing\n")
+    result = scan(tmp_path, capabilities=("contracts",))
+    assert [item.code for item in result.findings] == ["INTERNAL_IMPORT_MISSING"]
+
+
+def test_unimplemented_function_is_reported_as_candidate(tmp_path: Path) -> None:
+    (tmp_path / "service.py").write_text(
+        "def unfinished():\n    raise NotImplementedError()\n"
+    )
+    result = scan(tmp_path, capabilities=("completeness",))
+    assert [item.code for item in result.findings] == ["NOT_IMPLEMENTED_STUB"]
+    assert result.findings[0].status == "candidate"
