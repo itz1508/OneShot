@@ -180,9 +180,8 @@ def test_sqlite_admission_blocks_other_service_instance(tmp_path: Path) -> None:
     task_id = "a" * 32
     first = MVPService(tmp_path)
     second = MVPService(tmp_path)
-    with first.research_slot(task_id), pytest.raises(MVPError, match="conflict"):
-        with second.research_slot(task_id):
-            raise AssertionError("must not acquire")
+    with first.research_slot(task_id), pytest.raises(MVPError, match="conflict"), second.research_slot(task_id):
+        raise AssertionError("must not acquire")
     with second.research_slot(task_id):
         pass
 
