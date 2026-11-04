@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path, PurePosixPath
 
 from agent.contracts.common import ArtifactRef
 from agent.contracts.research import ResearchRecord
@@ -12,6 +14,42 @@ from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
 from mvp.mcp_research import ResearchMCPOutput, research_artifact_id
 from mvp.service import MVPError, MVPService
+
+
+def configured_evidence_sources() -> dict[str, object] | None:
+    """Read host-owned, bounded repository evidence selection from environment.
+
+    The MCP server remains responsible for execution-time filesystem containment.
+    Never derive workspace paths from untrusted task text.
+    """
+    raw = os.environ.get("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", "").strip()
+    if not raw:
+        return None
+    if os.environ.get("MCP_TRUSTED_ANCESTRY") != "true":
+        raise MVPError("workspace evidence requires MCP_TRUSTED_ANCESTRY=true")
+    root = os.environ.get("MCP_WORKSPACE_ROOT", "")
+    if not root or not Path(root).is_absolute():
+        raise MVPError("workspace evidence requires an absolute MCP_WORKSPACE_ROOT")
+    try:
+        paths = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise MVPError("invalid ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON") from exc
+    if not isinstance(paths, list) or not (1 <= len(paths) <= 32):
+        raise MVPError("Research workspace evidence paths must contain 1-32 items")
+    for path in paths:
+        if (
+            not isinstance(path, str)
+            or not (1 <= len(path) <= 4096)
+            or "\\x00" in path
+            or "\\" in path
+            or path.startswith("/")
+            or ":" in path
+            or any(part in ("", ".", "..") for part in PurePosixPath(path).parts)
+        ):
+            raise MVPError("Research evidence paths must be safe relative POSIX paths")
+    if len(set(paths)) != len(paths):
+        raise MVPError("Research evidence paths must be unique")
+    return {"workspace_paths": paths, "snapshots": []}
 
 
 def research_ref(task_id: str, run_id: str, digest: str) -> ArtifactRef:
@@ -40,6 +78,7 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         raise MVPError("Research stage is not active")
     if state.active_work_artifact_id is not None:
         raise MVPError("Research already assigned; reconcile host state before retry")
+    evidence_sources = configured_evidence_sources()
     input_record, input_revision, input_digest = service.read_input(task_id)
     input_ref = ArtifactRef(
         artifact_id=f"mvp-input:{task_id}",
@@ -70,7 +109,11 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
             prompt=json.dumps(
                 {
                     "task_id": task_id,
-                    "stage_payload": {"input_text": input_record.text, "input_digest": input_digest},
+                    "stage_payload": {
+                        "input_text": input_record.text,
+                        "input_digest": input_digest,
+                        **({"evidence_sources": evidence_sources} if evidence_sources is not None else {}),
+                    },
                 },
                 separators=(",", ":"),
                 sort_keys=True,
