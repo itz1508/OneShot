@@ -362,7 +362,9 @@ class HostController:
         *,
         requested_role: str | None = None,
         requester_role: str = "workflow_entry",
-    ) -> tuple[HostDispatchEnvelope, ArtifactRef]:
+        action: str | None = None,
+        expected_result: str | None = None,
+    ) -> tuple[HostDispatchEnvelope, ArtifactRef, ArtifactRef]:
         """Allocate and persist the exact host route before any agent can run.
 
         Do not accept agent-supplied identity fields or a caller-defined return target.
@@ -422,8 +424,21 @@ class HostController:
             )
         except Exception as exc:
             raise TransitionError("conflicting or unpersisted host dispatch identity") from exc
+        binding = WorkBinding(
+            task_id=envelope.task_id,
+            run_id=envelope.run_id,
+            stage=stage.value,
+            request_id=envelope.request_id,
+            request_revision=envelope.request_revision,
+            input_request_ref=envelope.input_request_ref,
+        )
+        _work, todo_ref = self.assign_work(
+            binding,
+            action=action or information_needed.strip(),
+            expected_result=expected_result or f"Verified {role} output persisted by host",
+        )
         self.event_store.append(task_id, "agent_dispatch_prepared", f"{stage.value}:{role}:{request_id}")
-        return envelope, self._dispatch_ref(envelope, digest)
+        return envelope, self._dispatch_ref(envelope, digest), todo_ref
 
     def verify_agent_dispatch(self, envelope: HostDispatchEnvelope) -> None:
         """Fail closed on substituted, stale or wrongly staged dispatch requests."""
