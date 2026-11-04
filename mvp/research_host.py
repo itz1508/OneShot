@@ -10,6 +10,7 @@ from agent.contracts.common import ArtifactRef
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
+from agent.runtime.work_todo import WorkTodoManager
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
 from mvp.mcp_research import ResearchMCPOutput, research_artifact_id
@@ -67,7 +68,91 @@ def research_ref(task_id: str, run_id: str, digest: str) -> ArtifactRef:
 def execute_research(service: MVPService, task_id: str) -> dict[str, object]:
     """Run Research with a per-task in-process admission guard."""
     with service.research_slot(task_id):
+        state = service.host.get_state(service._check_id(task_id))
+        if state is not None and state.current_stage is Stage.RESEARCH and state.active_work_artifact_id:
+            return _reconcile_research(service, task_id)
         return _execute_research(service, task_id)
+
+
+def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
+    """Resume only if the exact Research output already persisted and can be verified.
+
+    No MCP re-invocation occurs while its side effects are uncertain.
+    """
+    state = service.host.get_state(task_id)
+    if state is None or state.current_stage is not Stage.RESEARCH or not state.active_work_artifact_id:
+        raise MVPError("Research reconciliation requires active host work")
+    artifact_id = research_artifact_id(task_id, state.run_id)
+    if service.artifacts.latest_revision(artifact_id) != 1:
+        raise MVPError("Research recovery blocked: upstream effect uncertain; reconcile manually")
+    try:
+        raw = service.artifacts.get_verified(artifact_id, 1)
+        artifact = ResearchRecord.model_validate_json(raw)
+        if artifact.task_id != task_id or artifact.run_id != state.run_id:
+            raise ValueError("persisted Research identity mismatch")
+        digest = digest_model(artifact)
+        if service.artifacts.get_digest(artifact_id, 1) != digest:
+            raise ValueError("persisted Research digest mismatch")
+        ref = research_ref(task_id, state.run_id, digest)
+        todo_id = state.active_work_artifact_id
+        todo_rev = service.artifacts.latest_revision(todo_id)
+        todo_digest = service.artifacts.get_digest(todo_id, todo_rev)
+        if todo_rev < 1 or todo_digest is None:
+            raise ValueError("work-list evidence unavailable")
+        todo_ref = WorkTodoManager._ref(todo_id, todo_rev, todo_digest, "work_todo")
+        todo = service.host.work_todos.read(todo_ref)
+        input_record, input_revision, input_digest = service.read_input(task_id)
+        if (
+            todo.task_id != task_id
+            or todo.run_id != state.run_id
+            or todo.stage != Stage.RESEARCH.value
+            or todo.input_request_ref.artifact_revision != input_revision
+            or todo.input_request_ref.artifact_digest != input_digest
+            or input_record.task_id != task_id
+            or len(todo.actions) != 1
+        ):
+            raise ValueError("work assignment or input revision changed")
+        action = todo.actions[0]
+        if action.status is WorkStatus.RUNNING:
+            _, todo_ref = service.host.work_todos.set_status(
+                todo_ref,
+                action.action_id,
+                WorkStatus.COMPLETED,
+                actual_result="Recovered persisted ResearchRecord with exact digest",
+                evidence_refs=(ref,),
+            )
+        elif action.status is WorkStatus.COMPLETED:
+            if ref not in action.evidence_refs:
+                raise ValueError("completed work does not cite persisted Research artifact")
+        else:
+            raise ValueError("uncertain or terminal work action requires manual reconciliation")
+        receipt = service.host.issue_stage_receipt(
+            Stage.RESEARCH,
+            task_id=task_id,
+            run_id=state.run_id,
+            artifact_id=artifact_id,
+            revision=1,
+            artifact_digest=digest,
+        )
+        advanced = service.host.advance_stage(
+            task_id=task_id,
+            run_id=state.run_id,
+            expected_stage=Stage.RESEARCH,
+            completion_receipt_ref=receipt,
+            todo_ref=todo_ref,
+        )
+    except Exception as exc:
+        service.host.event_store.append(task_id, "mcp_research_recovery_required", type(exc).__name__)
+        raise MVPError(f"Research recovery blocked: {type(exc).__name__}") from exc
+    service.host.event_store.append(task_id, "mcp_research_reconciled", artifact_id)
+    return {
+        "task_id": task_id,
+        "run_id": state.run_id,
+        "status": "completed",
+        "stage": "research",
+        "current_stage": advanced.current_stage.value,
+        "artifact_ref": ref.model_dump(mode="json"),
+    }
 
 
 def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
@@ -139,7 +224,14 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
             actual_result="ResearchRecord persisted and digest verified",
             evidence_refs=(ref,),
         )
-        receipt = service.host.issue_stage_receipt(Stage.RESEARCH, task_id=task_id, run_id=state.run_id)
+        receipt = service.host.issue_stage_receipt(
+            Stage.RESEARCH,
+            task_id=task_id,
+            run_id=state.run_id,
+            artifact_id=ref.artifact_id,
+            revision=ref.artifact_revision,
+            artifact_digest=ref.artifact_digest,
+        )
         advanced = service.host.advance_stage(
             task_id=task_id,
             run_id=state.run_id,
