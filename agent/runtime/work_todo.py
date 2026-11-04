@@ -127,6 +127,7 @@ class WorkTodoManager:
         evidence_refs: tuple[ArtifactRef, ...] = (),
     ) -> tuple[TodoList, ArtifactRef]:
         """CAS transition: pending -> running -> completed/failed/blocked."""
+        status = WorkStatus(status)
         record = self.read(ref)
         if self._artifacts.latest_revision(ref.artifact_id) != ref.artifact_revision:
             raise StaleRevisionError("stale work-list revision")
