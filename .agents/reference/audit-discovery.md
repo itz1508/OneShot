@@ -19,3 +19,5 @@ Follow `/research_requested.md` and all relevant Research outputs. Inspect the e
 - Do not invent findings; report missing information.
 
 **Completion:** `plan.md` is created, findings are evidence-backed, and `_audit_discovery.json` is submitted.
+
+**Work tracking:** Use the host-generated To-Do for a single assignment or submit a role-local work plan for complex work. Report each action's actual status and evidence. To-Do records do not authorize execution.
