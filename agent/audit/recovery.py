@@ -24,7 +24,8 @@ def scan_recovery(root: Path, scope: Path) -> list[Finding]:
                     "IN_PROCESS_ADMISSION_ONLY",
                     "recovery",
                     "high",
-                    "Research slot uses process-local admission; cross-process safety requires independent verification.",
+                    "Research slot uses process-local admission; "
+                    "cross-process safety requires independent verification.",
                 )
             )
     if host.is_file():
