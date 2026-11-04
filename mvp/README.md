@@ -60,7 +60,12 @@ POST /api/tasks creates an immutable task input. POST /api/tasks/{task_id}/resea
 negotiates an MCP session, discovers oneshot_research, and passes
 ProviderRequest.prompt as JSON with task_id and stage_payload.
 Successful responses must carry a real ResearchRecord in artifact, the exact
-task/run bindings, a host-expected artifact_id, and a matching RFC 8785 digest.
+task/run bindings, the Codex content-derived artifact_id, and a matching RFC 8785 digest.
+The host independently computes the identity and digest and checks that the
+MCP result's structuredContent equals its JSON text block.
+The stdio adapter forces MCP_SERVER_MODE=oneshot in the subprocess environment,
+while MODEL_API_BASE_URL, MODEL_API_MODEL and MODEL_API_KEY must be injected into
+the host process environment and inherited by the trusted child process.
 The host persists the artifact, marks its WorkTodo completed, and advances Research
 through the existing HostController gate. Any verification error blocks advancement.
 GET /api/tasks/{task_id}/artifacts returns _research.json only when persisted.
@@ -68,3 +73,25 @@ GET /api/tasks/{task_id}/artifacts returns _research.json only when persisted.
 This is not a live Codex MCP E2E claim: isolated CI tests inject a controlled
 MCP response. Real endpoint credentials, handshake, and tool invocation remain
 to be independently verified after Codex delivers its runnable server.
+
+## Direct connected integration probe
+
+After cloning and building itz1508/oneshot-mcp-server (main) in a trusted local
+directory, configure the OneShot MVP host process with:
+
+    ONESHOT_MCP_COMMAND=node
+    ONESHOT_MCP_ARGS_JSON='["/absolute/path/to/oneshot-mcp-server/dist/index.js"]'
+    MODEL_API_BASE_URL=<configured provider endpoint>
+    MODEL_API_MODEL=<configured model identifier>
+    MODEL_API_KEY=<server-side credential>
+
+Run from the OneShot repository root:
+
+    uv run --no-sync python -m mvp.integration_probe --state-root .oneshot-probe-state
+
+This invokes the real stdio MCP tool and checks the host's persisted Research
+artifact and stage checkpoint. It prints no credential. A reported VERIFIED
+result requires the command to exit successfully against the actual server.
+For this first slice, zero independently retrieved evidence items is possible;
+an artifact digest cannot establish factual grounding. Never expose the
+unauthenticated MVP API or untrusted model endpoint publicly.
