@@ -133,6 +133,27 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
     if bundle.get("pre_scanner_gate") != "structural_gap_analysis":
         raise LoaderError("structural gap analysis must gate the scanner")
 
+    tracking = bundle.get("work_tracking")
+    if not isinstance(tracking, dict):
+        raise LoaderError("host work tracking contract missing")
+    required_tracking = {
+        "owner": "host_controller",
+        "todo_contract_id": "work_todo",
+        "plan_contract_id": "work_plan",
+        "source_request_binding": "exact_artifact_ref",
+        "simple_generation": "automatic_single",
+        "complex_generation": "plan_derived",
+        "persistence": "artifact_store",
+        "progress_revisions": "compare_and_swap",
+        "events": "event_store",
+        "transition_gate": "completed_with_persisted_evidence",
+        "effect_authorization": "none",
+    }
+    if any(tracking.get(k) != v for k, v in required_tracking.items()):
+        raise LoaderError("host-owned work tracking contract invalid")
+    if tracking.get("tracked_roles") != list(_STAGE_ROLES):
+        raise LoaderError("work tracking must cover all six agent roles")
+
     expected_roles = list(_STAGE_ROLES)
     if bundle.get("role_order") != expected_roles or set(roles) != set(expected_roles):
         raise LoaderError("workflow stage order or membership does not match registered roles")
