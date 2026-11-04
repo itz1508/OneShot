@@ -1,4 +1,4 @@
-"""Stage workflow identity, role boundaries, and bidirectional schema tests."""
+"""Single end-to-end workflow contract closure and role boundary tests."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -6,68 +6,92 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agent.runtime.loaders import LoaderError, load_stage_workflow
+from agent.runtime.loaders import LoaderError, load_stage_workflow, load_workflow_bundle
 
-ROOT = Path("agent/workflows/stages")
-
-
-def test_six_role_workflows_have_distinct_closed_contracts():
-    files = sorted(ROOT.glob("*.yaml"))
-    assert len(files) == 6
-    roles = set()
-    for path in files:
-        data = load_stage_workflow(path)
-        workflow = data["workflow"]
-        assert data["stage"] == path.name.removesuffix(".workflow.yaml")
-        assert workflow["role_id"] not in roles
-        roles.add(workflow["role_id"])
-        assert workflow["input_schema"]["additionalProperties"] is False
-        assert workflow["output_schema"]["additionalProperties"] is False
-        assert workflow["output_schema"]["allOf"]
-        assert workflow["schema_validation"]["require_output_input_request_ref_match"] is True
+CONTRACT = Path(".agents/contracts/workflow.yaml")
+STAGES = (
+    "research",
+    "audit_discovery",
+    "planning",
+    "fixture_validation",
+    "build",
+    "build_validation",
+)
 
 
-def _write_bad_workflow(tmp_path, change):
-    data = deepcopy(load_stage_workflow(ROOT / "research.workflow.yaml"))
-    change(data)
-    path = tmp_path / "invalid.yaml"
-    path.write_text(yaml.safe_dump(data))
-    return path
+def test_single_workflow_contract_parses_and_has_all_six_roles() -> None:
+    assert CONTRACT.is_file()
+    assert not list(Path("agent/workflows/stages").glob("*.yaml"))
+    bundle = load_workflow_bundle(CONTRACT)
+    assert tuple(bundle["role_workflows"]) == STAGES
+    assert len(bundle["host_workflows"]) == 22
+    assert all(stage in bundle["role_workflows"] for stage in STAGES)
+    for stage in STAGES:
+        role = load_stage_workflow(CONTRACT, stage)["workflow"]
+        assert role["input_schema"]["additionalProperties"] is False
+        assert role["output_schema"]["additionalProperties"] is False
+        assert role["schema_validation"]["require_output_input_request_ref_match"] is True
+        assert role["output_schema"]["allOf"]
+        assert role["inputs"]["required"]
+
+
+def test_approved_role_guidance_is_under_reference_not_roles() -> None:
+    assert not list(Path(".agents/roles").glob("*.md"))
+    for name in ("researcher", "audit-discovery", "planner", "fixture-validator", "builder", "build-verifier"):
+        assert (Path(".agents/reference") / f"{name}.md").is_file()
+
+
+def _bad_contract(tmp_path: Path, edit) -> Path:
+    data = deepcopy(load_workflow_bundle(CONTRACT))
+    edit(data)
+    target = tmp_path / "broken.yaml"
+    target.write_text(yaml.safe_dump(data, sort_keys=False))
+    return target
 
 
 @pytest.mark.parametrize(
-    "mutate",
+    "edit",
     [
-        lambda d: d.update(stage="planning"),
-        lambda d: d["workflow"].update(role_id="builder"),
-        lambda d: d["workflow"]["input_schema"].update(required=["request_id"]),
-        lambda d: d["workflow"]["output_schema"].update(additionalProperties=True),
-        lambda d: d["workflow"]["schema_validation"].update(unresolved_external_ref="ignore"),
-        lambda d: d["workflow"]["request_result_exchange"].update(mode="one_way"),
-        lambda d: d["workflow"]["inputs"].update(required=[]),
-        lambda d: d["workflow"]["success_contract"].update(criteria_completeness_gate=True),
+        lambda d: d["bundle"].update(role_guidance_root=".agents/roles"),
+        lambda d: d["bundle"].update(pre_scanner_gate="scanner_execution"),
+        lambda d: d["role_workflows"]["research"]["workflow"]["input_schema"].update(required=["request_id"]),
+        lambda d: d["role_workflows"]["audit_discovery"]["workflow"]["output_schema"].update(additionalProperties=True),
+        lambda d: d["role_workflows"]["planning"]["workflow"]["request_result_exchange"].update(mode="one_way"),
+        lambda d: d["role_workflows"]["build"]["workflow"]["request_result_exchange"].update(
+            build_admission_precedes_execution=False
+        ),
+        lambda d: d["host_workflows"].pop("structural_gap_analysis"),
+        lambda d: d["host_workflows"]["structural_gap_analysis"]["required_work"].remove("run_walking_skeleton"),
+        lambda d: d["host_workflows"]["structural_gap_analysis"]["completion"].update(
+            known_critical_gap_detection_rate=0.5
+        ),
+        lambda d: d["host_workflows"]["structural_gap_analysis"]["correction"].update(
+            rerun_all_passes_before_scanner=False
+        ),
+        lambda d: d["execution"]["research_to_planning"].remove("structural_gap_analysis"),
+        lambda d: d["execution"]["on_structural_gap_failure"].update(scanner_blocked_until_valid=False),
     ],
 )
-def test_invalid_workflow_contract_rejected(tmp_path, mutate):
+def test_invalid_contract_is_rejected(tmp_path: Path, edit) -> None:
     with pytest.raises(LoaderError):
-        load_stage_workflow(_write_bad_workflow(tmp_path, mutate))
+        load_workflow_bundle(_bad_contract(tmp_path, edit))
 
 
-def test_duplicate_policy_key_rejected(tmp_path):
-    original = (ROOT / "research.workflow.yaml").read_text()
-    duplicate = original.replace("  stage_id: research", "  stage_id: research\n  stage_id: build", 1)
-    path = tmp_path / "duplicate.yaml"
-    path.write_text(duplicate)
+def test_duplicate_workflow_key_rejected(tmp_path: Path) -> None:
+    source = CONTRACT.read_text()
+    target = tmp_path / "duplicate.yaml"
+    target.write_text(source.replace("  role_order:", "  role_order: []\n  role_order:", 1))
     with pytest.raises(LoaderError, match="duplicate"):
-        load_stage_workflow(path)
+        load_workflow_bundle(target)
 
 
-def test_build_execution_only_and_research_gathers_information():
-    build = load_stage_workflow(ROOT / "build.workflow.yaml")["workflow"]
-    assert "new_design" in build["request_result_exchange"]["prohibits"]
-    assert build["request_result_exchange"]["preflight_and_effect_gate"] == "host_owned"
-    assert build["request_result_exchange"]["move_action"] == "single_admitted_action_declaring_source_and_destination"
-    research = load_stage_workflow(ROOT / "research.workflow.yaml")["workflow"]
+def test_research_is_information_gathering_and_builder_execution_only() -> None:
+    research = load_stage_workflow(CONTRACT, "research")["workflow"]
     assert "Gather" in research["success_contract"]["success_meaning"]
     assert research["completion"]["successful_result"]["diagnostic_status_is_not_a_completion_gate"]
     assert research["request_result_exchange"]["returns_result_to"] == "input_request.respond_to"
+
+    build = load_stage_workflow(CONTRACT, "build")["workflow"]
+    assert "new_design" in build["request_result_exchange"]["prohibits"]
+    assert build["request_result_exchange"]["preflight_and_effect_gate"] == "host_owned"
+    assert build["request_result_exchange"]["move_action"] == "single_admitted_action_declaring_source_and_destination"
