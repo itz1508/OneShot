@@ -214,3 +214,33 @@ def test_missing_approval_blocks_memory(tmp_path):
             diagnostic_receipt=diagnostic,
         )
     assert journals.load(workspace_id="w", task_id="t", run_id="r", stage="mem") == ()
+
+
+def test_conflicting_template_receipt_cannot_append_memory(tmp_path):
+    manager, journals, memory, completion, diagnostic = setup_case(tmp_path)
+    manager.promote(
+        workspace_id="w",
+        task_id="t",
+        run_id="r",
+        memory=memory,
+        build_completion_receipt=completion,
+        diagnostic_receipt=diagnostic,
+    )
+    subject = (
+        f"build-verification-passed:{memory.build_validation_ref.artifact_digest}:"
+        f"{memory.source_build_ref.artifact_digest}"
+    )
+    alternate = receipt(manager._receipts, "verification-alternate", subject)
+    conflicting = VerifiedBuildKnowledge.model_validate(
+        {**memory.model_dump(), "verification_receipt_ref": alternate.model_dump()}
+    )
+    with pytest.raises(MemoryPromotionError, match="conflicting verified template"):
+        manager.promote(
+            workspace_id="w",
+            task_id="t",
+            run_id="r",
+            memory=conflicting,
+            build_completion_receipt=completion,
+            diagnostic_receipt=diagnostic,
+        )
+    assert len(journals.load(workspace_id="w", task_id="t", run_id="r", stage="mem")) == 1
