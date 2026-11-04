@@ -21,6 +21,8 @@ Inspect source and contracts, implementation completeness, imports and paths, AP
 - `frontend.py`: source-backed Research endpoint, artifact viewer, and status wiring gaps.
 - `state.py`: host stage receipt identity binding inspection.
 - `dependencies.py`: dependency lockfile reproducibility checks.
+- `integration.py`: Audit-mode selection and Research-host invocation boundary.
+- `recovery.py`: process-local admission and explicit recovery requirements.
 
 `__main__.py` dispatches the read-only capability checks and emits JSON. `core.py` normalizes immutable source observations, evidence digests, and scope limitations. New checks belong in separate named capability files, not in the CLI.
 
@@ -42,4 +44,4 @@ The CLI intentionally performs no shell commands, network calls, or source write
 
 ## Integration limitations
 
-This scanner does not yet connect to the Research UI mode, independently run browser tests, validate a remote deployment, or persist findings through host-owned TODO and artifact stores. The static CLI performs read-only observations only. Its `audit-report.json` output from the repository audit workflow is evidence for review, not an acceptance receipt.
+This scanner does not yet connect to the Research UI mode, independently run browser tests, validate a remote deployment, or persist findings through host-owned TODO and artifact stores. The static CLI performs read-only observations only. Audit checks cover recognized source patterns, not all languages, dynamic call graphs, or complete vulnerability assessment. Its `audit-report.json` output from the repository audit workflow is evidence for review, not an acceptance receipt.
