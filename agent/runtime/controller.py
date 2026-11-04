@@ -163,9 +163,7 @@ class HostController:
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
 
-    def _verify_stage_receipt(
-        self, state: TaskState, completion_receipt_ref: ReceiptRef | None
-    ) -> ArtifactRef:
+    def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> ArtifactRef:
         """Verify host provenance and exact stage artifact; never accept legacy subjects."""
         if completion_receipt_ref is None:
             raise TransitionError("stage completion receipt required")
@@ -176,7 +174,7 @@ class HostController:
         if subject is None or not subject.startswith(prefix):
             raise TransitionError("invalid completion receipt: identity mismatch")
         try:
-            artifact_id, revision_text, digest = subject[len(prefix):].rsplit(":", 2)
+            artifact_id, revision_text, digest = subject[len(prefix) :].rsplit(":", 2)
             revision = int(revision_text)
         except (ValueError, AttributeError) as exc:
             raise TransitionError("invalid completion receipt: artifact identity") from exc
@@ -408,10 +406,7 @@ class HostController:
             self.artifact_store.get_verified(artifact_id, revision)
         except Exception as exc:
             raise TransitionError("stage receipt artifact is not verified") from exc
-        subject = (
-            f"stage_complete:{task_id}:{run_id}:{stage.value}:"
-            f"{artifact_id}:{revision}:{artifact_digest}"
-        )
+        subject = f"stage_complete:{task_id}:{run_id}:{stage.value}:{artifact_id}:{revision}:{artifact_digest}"
         receipt_id = f"receipt-{task_id}-{stage.value}-{artifact_digest[:16]}"
         _, receipt_digest = self.receipt_store.issue_verified(receipt_id, "host", subject)
         return ReceiptRef(
