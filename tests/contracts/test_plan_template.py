@@ -59,7 +59,6 @@ def test_candidate_publication_requires_exact_accepted_plan(tmp_path):
 def test_unverified_and_synthetic_claims_rejected(tmp_path):
     entry = template(ArtifactStore(tmp_path))
     with pytest.raises(ValidationError, match="Build verification receipt"):
-        entry.model_copy(update={"status": TemplateStatus.VERIFIED})
-        PlanTemplate.model_validate(entry.model_dump())
+        PlanTemplate.model_validate({**entry.model_dump(), "status": "verified", "verified_by_build": True})
     with pytest.raises(ValidationError):
         PlanTemplate.model_validate({**entry.model_dump(), "verified_by_build": True})
