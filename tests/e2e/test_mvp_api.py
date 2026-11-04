@@ -32,7 +32,7 @@ def test_real_http_create_restore_and_revision():
     body = created.json()
     task_id = body["task_id"]
     assert body["current_stage"] == "research"
-    assert body["mcp_connected"] is False
+    assert body["research_completed"] is False
 
     loaded = client.get(f"/api/tasks/{task_id}")
     assert loaded.status_code == 200
