@@ -233,7 +233,7 @@ def load_stage_workflow(path: str | Path, stage_id: str) -> dict[str, Any]:
     bundle = load_workflow_bundle(path)
     if stage_id not in _STAGE_ROLES:
         raise LoaderError(f"unknown stage: {stage_id}")
-    return bundle["role_workflows"][stage_id]
+    return cast(dict[str, Any], bundle["role_workflows"][stage_id])
 
 
 def load_role_policy(path: str | Path) -> dict[str, Any]:
