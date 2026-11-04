@@ -7,7 +7,7 @@ import stat
 import tarfile
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, cast
 
 from .policy import normalize_path
 
@@ -147,7 +147,7 @@ def archive_directory(root: Path, target: Path, *, max_bytes: int = 50 * 1024 * 
             info = tarfile.TarInfo(rel)
             info.size = len(content)
             info.mtime = info.uid = info.gid = 0
-            info.mode = int(meta["mode"])
+            info.mode = cast(int, meta["mode"])
             import io
             tar.addfile(info, io.BytesIO(content))
     if target.stat().st_size > max_bytes:
