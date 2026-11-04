@@ -85,6 +85,7 @@ def test_real_host_persistence_and_stage_advance(tmp_path, monkeypatch):
     assert service.artifacts.get_digest(ref["artifact_id"], 1) == ref["artifact_digest"]
     assert service.host.get_state(task_id).current_stage.value == "audit_discovery"
     assert service.get(task_id)["execution_status"] == "research_completed"
+    assert service.get(task_id)["research_completed"] is True
     assert any(file["name"] == "_research.json" for file in service.artifacts_for_task(task_id))
     assert len([evt for evt in service.events(task_id) if evt["type"] == "stage_transition"]) == 1
     with pytest.raises(MVPError, match="not active"):
@@ -216,3 +217,85 @@ def test_mcp_text_and_structured_content_must_agree():
         _tool_json(SimpleNamespace(is_error=False, content=[message], structured_content=corrupted))
     with pytest.raises(ProviderError, match="mismatch"):
         _tool_json(SimpleNamespace(is_error=False, content=[message], structured_content=None))
+
+
+def test_concurrent_research_invocation_rejected_without_duplicate_upstream_call(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Investigate the repository")["task_id"]
+    entered = Event()
+    release = Event()
+    calls = []
+
+    async def invoke(arguments):
+        calls.append(arguments["run_id"])
+        entered.set()
+        assert release.wait(timeout=10)
+        return response(task_id)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        result = pool.submit(execute_research, service, task_id)
+        try:
+            assert entered.wait(timeout=10)
+            with pytest.raises(MVPError, match="execution conflict"):
+                execute_research(service, task_id)
+        finally:
+            release.set()
+        assert result.result(timeout=10)["status"] == "completed"
+    assert calls == [f"run-{task_id}"]
+    assert [e["type"] for e in service.events(task_id)].count("stage_transition") == 1
+
+
+def test_edit_rejected_during_research_and_not_persisted(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect sources")["task_id"]
+    entered = Event()
+    release = Event()
+
+    async def invoke(_arguments):
+        entered.set()
+        assert release.wait(timeout=10)
+        return response(task_id)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        result = pool.submit(execute_research, service, task_id)
+        try:
+            assert entered.wait(timeout=10)
+            with pytest.raises(MVPError, match="execution conflict"):
+                service.revise_input(task_id, "Should not be allowed", expected_revision=1)
+        finally:
+            release.set()
+        result.result(timeout=10)
+    assert service.get(task_id)["input_revision"] == 1
+
+
+def test_recovery_event_reports_inner_failure_class(tmp_path, monkeypatch):
+    from agent.contracts.work_todo import WorkStatus
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect sources")["task_id"]
+    original = service.host.work_todos.set_status
+
+    def status_with_failed_recovery(ref, action_id, status, **kwargs):
+        if status is WorkStatus.FAILED:
+            raise RuntimeError("simulated recovery fault")
+        return original(ref, action_id, status, **kwargs)
+
+    async def invoke(_arguments):
+        return response(task_id, wrong_digest=True)
+
+    monkeypatch.setattr(service.host.work_todos, "set_status", status_with_failed_recovery)
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    with pytest.raises(MVPError, match="Research execution blocked"):
+        execute_research(service, task_id)
+    recovery = [e for e in service.events(task_id) if e["type"] == "mcp_research_recovery_required"]
+    assert len(recovery) == 1
+    assert "RuntimeError" in recovery[0]["message"]
+    assert service.host.get_state(task_id).current_stage.value == "research"
