@@ -299,3 +299,56 @@ def test_recovery_event_reports_inner_failure_class(tmp_path, monkeypatch):
     assert len(recovery) == 1
     assert "RuntimeError" in recovery[0]["message"]
     assert service.host.get_state(task_id).current_stage.value == "research"
+
+
+def test_host_evidence_paths_are_forwarded_to_real_mcp_request(tmp_path, monkeypatch):
+    import json as _json
+
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect repository source")["task_id"]
+    monkeypatch.setenv("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", _json.dumps(["README.md", "agent/contracts/research.py"]))
+    monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "true")
+    captured = []
+
+    async def invoke(arguments):
+        captured.append(_json.loads(arguments["prompt"])["stage_payload"]["evidence_sources"])
+        return response(task_id)
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    assert execute_research(service, task_id)["status"] == "completed"
+    assert captured == [{"workspace_paths": ["README.md", "agent/contracts/research.py"], "snapshots": []}]
+
+
+@pytest.mark.parametrize("bad", [
+    '["../secret"]',
+    '["/etc/passwd"]',
+    '["dir//ambiguous.txt"]',
+    '["dir/./ambiguous.txt"]',
+    '["dir\\\\escape.txt"]',
+    '["README.md", "README.md"]',
+    '{"workspace_paths": ["README.md"]}',
+    '["' + ("x" * 4097) + '"]',
+    '["README.md"'
+])
+def test_invalid_host_evidence_paths_fail_before_work_assignment(tmp_path, monkeypatch, bad):
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect repository source")["task_id"]
+    monkeypatch.setenv("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", bad)
+    monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(tmp_path))
+    monkeypatch.setenv("MCP_TRUSTED_ANCESTRY", "true")
+    with pytest.raises(MVPError):
+        execute_research(service, task_id)
+    assert service.host.get_state(task_id).current_stage.value == "research"
+    assert service.host.get_state(task_id).active_work_artifact_id is None
+
+
+def test_host_evidence_requires_trusted_workspace_root(tmp_path, monkeypatch):
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect evidence")["task_id"]
+    monkeypatch.setenv("ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON", '["README.md"]')
+    monkeypatch.delenv("MCP_TRUSTED_ANCESTRY", raising=False)
+    monkeypatch.setenv("MCP_WORKSPACE_ROOT", str(tmp_path))
+    with pytest.raises(MVPError, match="trusted"):
+        execute_research(service, task_id)
+    assert service.host.get_state(task_id).active_work_artifact_id is None
