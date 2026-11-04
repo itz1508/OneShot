@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -24,6 +26,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Last-Event-ID"],
 )
 service = MVPService(DEFAULT_ROOT)
+logger = logging.getLogger(__name__)
 
 
 class SubmitTask(BaseModel):
@@ -120,7 +123,15 @@ async def stream(task_id: str, request: Request, after: int = 0) -> StreamingRes
         cursor = after
         yield "retry: 2000\n\n"
         while not await request.is_disconnected():
-            for event in service.events(task_id, cursor):
+            try:
+                batch = service.events(task_id, cursor)
+            except sqlite3.Error as exc:
+                # Do not invent a persisted event or advance the replay cursor.
+                # EventSource may reconnect using its last acknowledged event ID.
+                logger.error("SSE event store read failed: %s", type(exc).__name__)
+                yield 'event: stream_error\ndata: {"code":"EVENT_READ_FAILED","retryable":true}\n\n'
+                return
+            for event in batch:
                 seq = int(event["sequence"])
                 yield f"id: {seq}\nevent: activity\ndata: {json.dumps(event)}\n\n"
                 cursor = seq
