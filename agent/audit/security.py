@@ -21,7 +21,12 @@ def scan_security(root: Path, scope: Path) -> list[Finding]:
             if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and (f.value.id, f.attr) in DANGEROUS:
                 findings.append(
                     evidence(
-                        root, path, node.lineno, "COMMAND_EXECUTION_REVIEW", "security", "medium",
+                        root,
+                        path,
+                        node.lineno,
+                        "COMMAND_EXECUTION_REVIEW",
+                        "security",
+                        "medium",
                         "Command execution call site requires trust-boundary review.",
                     )
                 )
@@ -31,7 +36,12 @@ def scan_security(root: Path, scope: Path) -> list[Finding]:
             ):
                 findings.append(
                     evidence(
-                        root, path, node.lineno, "SHELL_TRUE_REVIEW", "security", "high",
+                        root,
+                        path,
+                        node.lineno,
+                        "SHELL_TRUE_REVIEW",
+                        "security",
+                        "high",
                         "shell=True call site requires injection review.",
                     )
                 )
