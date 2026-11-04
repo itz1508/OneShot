@@ -1,8 +1,7 @@
 """Typed, host-owned stage journal events; JSONL is a projection, not task state."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from enum import StrEnum
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import Field, field_validator
@@ -29,7 +28,7 @@ class StageLogEvent(ContractModel):
     artifact_ref: str | None = None
     receipt_ref: str | None = None
     evidence_ref: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @field_validator("created_at")
     @classmethod
