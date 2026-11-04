@@ -1,0 +1,2931 @@
+# OneShot single end-to-end workflow contract
+# Six role stages and host-owned services share this one registered contract.
+bundle:
+  bundle_id: oneshot_end_to_end
+  contract_version: "1.0"
+  workflow_version: "1.0"
+  role_order:
+    - research
+    - audit_discovery
+    - planning
+    - fixture_validation
+    - build
+    - build_validation
+  stores:
+    artifacts: artifact_store
+    receipts: receipt_store
+    checkpoints: checkpoint_store
+    events: event_store
+    evidence: evidence_store
+  registries:
+    workflow: workflow_registry
+    catalog: catalog_registry
+    tools: tool_registry
+    scanner_checks: scanner_check_registry
+    sandbox_profiles: sandbox_profile_registry
+    runtime_roots: runtime_root_registry
+    providers: provider_registry
+  transition_owner: host_controller
+  role_guidance_root: .agents/reference
+  pre_scanner_gate: structural_gap_analysis
+  implementation_note: declared_host_services_require_runtime_validation
+
+execution:
+  research_to_planning:
+    - run_initialization
+    - registry_snapshot
+    - provider_session_initialization
+    - research
+    - stage_output_persistence
+    - audit_discovery
+    - stage_output_persistence
+    - planning
+    - stage_output_persistence
+    - structural_gap_analysis
+    - scanner_execution
+    - specification_freeze
+  on_structural_gap_failure:
+    return_to: planning
+    require_candidate_revision: true
+    rerun: structural_gap_analysis
+    scanner_blocked_until_valid: true
+  after_freeze:
+    - fixture_validation
+    - package_lock
+    - build_task_compilation
+    - build_admission
+    - build_wave_scheduling
+    - batch_preflight
+    - task_preflight
+    - sandbox_creation
+    - source_snapshot_transfer
+    - build
+    - effect_execution
+    - task_integration
+    - verification_barrier
+    - build_validation
+    - integrated_source_promotion
+    - run_cleanup
+  runtime_output_allocation: before_every_role_output
+  stage_transition: host_after_validated_receipt
+
+host_workflows:
+  run_initialization:
+    workflow_id: run_initialization
+    owner: host_controller
+  runtime_output_allocation:
+    workflow_id: runtime_output_allocation
+    owner: host
+  registry_snapshot:
+    workflow_id: registry_snapshot
+    owner: host
+  provider_session_initialization:
+    workflow_id: provider_session_initialization
+    owner: host
+  stage_output_persistence:
+    workflow_id: stage_output_persistence
+    owner: host
+  stage_transition:
+    workflow_id: stage_transition
+    owner: host_controller
+  scanner_execution:
+    workflow_id: scanner_execution
+    owner: scanner_gateway
+  specification_freeze:
+    workflow_id: specification_freeze
+    owner: host
+  package_lock:
+    workflow_id: package_lock
+    owner: host
+  build_admission:
+    workflow_id: build_admission
+    owner: host
+  build_task_compilation:
+    workflow_id: build_task_compilation
+    owner: host_task_compiler
+  build_wave_scheduling:
+    workflow_id: build_wave_scheduling
+    owner: host_wave_scheduler
+  batch_preflight:
+    workflow_id: batch_preflight
+    owner: host
+  task_preflight:
+    workflow_id: task_preflight
+    owner: host
+  sandbox_creation:
+    workflow_id: sandbox_creation
+    owner: host
+  source_snapshot_transfer:
+    workflow_id: source_snapshot_transfer
+    owner: host
+  effect_execution:
+    workflow_id: effect_execution
+    owner: host_effect_executor
+  task_integration:
+    workflow_id: task_integration
+    owner: host_task_integrator
+  verification_barrier:
+    workflow_id: verification_barrier
+    owner: host
+  integrated_source_promotion:
+    workflow_id: integrated_source_promotion
+    owner: host
+  run_cleanup:
+    workflow_id: run_cleanup
+    owner: host
+  structural_gap_analysis:
+    workflow_id: structural_gap_analysis
+    owner: host_gap_analyzer
+    input_contracts:
+      - workflow_contract_bundle
+      - registry_snapshot_set
+      - workflow_trace
+      - concern_matrix
+      - gap_backtest_corpus
+    required_work:
+      - validate_reference_closure
+      - validate_execution_trace
+      - validate_concern_coverage
+      - run_historical_backtest
+      - run_walking_skeleton
+      - perform_source_grounded_gap_analysis
+      - perform_comparable_system_analysis
+      - persist_analysis
+    completion:
+      unresolved_references: 0
+      effects_without_gates: 0
+      persisted_outputs_without_consumers: 0
+      required_registry_entries_without_resolvers: 0
+      known_critical_gap_detection_rate: 1.0
+      walking_skeleton_completed: true
+    correction:
+      target_stage: planning
+      requires_new_candidate_revision: true
+      rerun_all_passes_before_scanner: true
+
+role_workflows:
+  research:
+    id: research
+    stage: research
+    version: 1
+    # ============================================================
+    # Researcher workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: research
+      role_id: researcher
+      executor_id: researcher_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Gather, classify, and return information requested by the workflow, Audit Discovery, or Planning; preserve
+          provenance, contradictions, and uncertainty without selecting implementation decisions.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Gather information requested by the originator that is relevant to the accepted 
+          user intent, with provenance, classification, contradictions, and visible unknowns. Information 
+          collection is complete even if some information remains uncertain.
+        observable_conditions:
+          - requested_information_addressed
+          - sources_and_limitations_preserved
+          - response_bound_to_exact_request
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        accepts_requests_from:
+          - workflow_entry
+          - audit_discovery
+          - planning
+        returns_result_to: input_request.respond_to
+        follow_up_request_policy: new_request_revision
+        routing_authority: host_controller
+        initial_workflow_handoff: audit_discovery
+        prohibits:
+          - automatic_planning
+          - implementation_decisions
+          - criteria_completeness_gate
+          - catalog_match_gate
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: research input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - requester_role
+          - information_needed
+          - respond_to
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          requester_role:
+            type: string
+            enum:
+              - workflow_entry
+              - audit_discovery
+              - planning
+          information_needed:
+            type: string
+            minLength: 1
+          sources:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:evidence_ref:1.0
+          constraints:
+            type: array
+            items:
+              type: string
+          respond_to:
+            type: string
+            enum:
+              - workflow_entry
+              - audit_discovery
+              - planning
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: research output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          information:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required:
+                - statement
+                - information_class
+              properties:
+                statement:
+                  type: string
+                  minLength: 1
+                information_class:
+                  type: string
+                  enum:
+                    - accepted_requirement
+                    - verified_evidence
+                    - submitted_claim
+                    - proposed_or_synthetic
+                    - contradiction
+                    - unresolved
+                evidence_refs:
+                  type: array
+                  items:
+                    $ref: urn:oneshot:contract:evidence_ref:1.0
+                limitations:
+                  type: array
+                  items:
+                    type: string
+          source_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:evidence_ref:1.0
+          contradictions:
+            type: array
+            items:
+              type: string
+          limitations:
+            type: array
+            items:
+              type: string
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - information
+                - source_refs
+                - contradictions
+                - unresolved
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: research_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: workflow_input
+            contract_id: workflow_input
+            resolution: exact_artifact_ref
+            source: workflow_entry
+            receipt_required: true
+    
+        optional:
+          - input_id: supporting_artifacts
+            contract_id: artifact_ref
+            resolution: exact_artifact_ref
+            multiple: true
+    
+          - input_id: registered_source_references
+            contract_id: evidence_ref
+            resolution: exact_evidence_ref
+            multiple: true
+    
+      catalog:
+        enabled: configured_optional
+        registry_ref_source: registered_catalog
+    
+        match_input:
+          intent_source: workflow_input
+          keywords_source: workflow_input
+          catalog_version_source: catalog_registry
+    
+        match_output:
+          output_slot: catalog_match
+          contract_id: catalog_match
+          contract_version: "1.0"
+          persistence: artifact_store
+    
+        preparation_output:
+          output_slot: research_preparation
+          contract_id: research_preparation
+          contract_version: "1.0"
+          persistence: artifact_store
+    
+        matching:
+          supported_results:
+            - exact
+            - matched
+            - partial
+            - ambiguous
+            - none
+    
+          tied_highest_matches:
+            status: ambiguous
+            preserve_all_tied_samples: true
+    
+          consolidation:
+            combine_relevant_checklists: true
+            remove_duplicate_checks: true
+            preserve_sample_ids: true
+            preserve_catalog_version: true
+    
+          required_for_completion: false
+        information_class: proposed_or_synthetic
+    
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 120
+          maximum_output_attempts: 3
+          completion_condition: primary_output_submitted
+    
+        required_work:
+          - step_id: load_workflow_input
+            produces:
+              - accepted_requirements
+              - acceptance_criteria
+              - search_scope
+    
+          - step_id: match_catalog
+            produces:
+              - catalog_match
+    
+            condition: registered_catalog_available
+          - step_id: prepare_research
+            produces:
+              - research_checklist
+              - evidence_targets
+              - fixture_targets
+    
+            condition: always_plan_collection_without_requiring_persisted_preparation
+          - step_id: collect_evidence
+            produces:
+              - evidence_refs
+              - source_observations
+    
+          - step_id: synthesize_findings
+            produces:
+              - findings
+              - contradictions
+              - unresolved_questions
+              - requirement_traces
+    
+          - step_id: submit_research_record
+            produces:
+              - research_record_candidate
+    
+      tool_projection:
+        registry_ref_source: active_tool_registry_snapshot
+    
+        capabilities:
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: repository.search
+    
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+          - capability_id: sources.search
+            wire_name: search_sources
+            permission_token: sources.search
+            availability: configured_optional
+    
+          - capability_id: sources.open
+            wire_name: open_source
+            permission_token: sources.read
+            availability: configured_optional
+    
+        root_binding:
+          source: registered_workspace
+          model_selectable: false
+    
+        result_policy:
+          retain_tool_outcome_refs: true
+          retain_evidence_artifacts: true
+          maximum_model_text_characters: 20000
+          persist_truncated_results: true
+    
+      outputs:
+        - output_slot: catalog_match
+          contract_id: catalog_match
+          contract_version: "1.0"
+          media_type: application/json
+    
+          when: registered_catalog_available
+        - output_slot: research_preparation
+          contract_id: research_preparation
+          contract_version: "1.0"
+          media_type: application/json
+    
+          when: preparation_persisted_as_authoritative_artifact
+        - output_slot: primary
+          contract_id: research_record
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - workflow_input_ref
+            - findings
+            - contradictions
+            - unresolved
+            - requirement_traces
+            - evidence_refs
+            - tool_outcome_refs
+            - limitations
+      persistence:
+        temporary_output:
+          allocation_owner: host
+          runtime_root_source: runtime_root_registry
+          workflow_stage_source: workflow_registry
+          filename_generation: host_generated
+          authoritative: false
+    
+        authoritative_output:
+          owner: host
+          backend: artifact_store
+          canonical_serializer_profile: rfc8785-jcs-sha256-v1
+          digest_algorithm: sha256
+          immutable: true
+          reopen_after_persist: true
+          verify_digest_after_reopen: true
+    
+      completion:
+        receipt:
+          issuer: host
+          subject_contract_id: research_completion_subject
+          subject_contract_version: "1.0"
+    
+          binds:
+            - workspace_id
+            - task_id
+            - run_id
+            - stage_id
+            - stage_revision
+            - workflow_input_ref
+            - research_record_ref
+            - request_id
+            - request_revision
+            - requester_role
+            - input_request_ref
+        successful_result:
+          execution_status: completed
+          diagnostic_status_is_not_a_completion_gate: true
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        contract_id: research_audit_handoff
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - workflow_input_ref
+          - research_record_ref
+          - research_completion_receipt_ref
+        transition_owner: host_controller
+    
+        target_stage_from: input_request.respond_to_when_followup_else_audit_discovery
+        routing_authority: host_controller
+        request_id_binding_required: true
+        request_revision_binding_required: true
+      checkpoints:
+        - checkpoint_id: research_input_loaded
+          resume_point: match_catalog
+    
+        - checkpoint_id: research_preparation_persisted
+          resume_point: collect_evidence
+    
+        - checkpoint_id: research_output_persisted
+          resume_point: issue_completion_receipt
+    
+        - checkpoint_id: research_handoff_ready
+          resume_point: host_transition_to_audit_discovery
+    
+      recovery:
+        inspect:
+          - catalog_match_artifact
+          - research_preparation_artifact
+          - research_record_artifact
+          - evidence_artifacts
+          - completion_receipt
+          - handoff_artifact
+          - lifecycle_events
+    
+        classifications:
+          - not_started
+          - preparation_persisted
+          - evidence_partially_collected
+          - output_submitted
+          - output_persisted
+          - receipt_issued
+          - handoff_ready
+          - completed
+          - uncertainty
+    
+      cleanup:
+        after_successful_handoff:
+          delete:
+            - temporary_model_drafts
+            - duplicate_source_excerpts
+            - temporary_rendered_reports
+            - unaccepted_output_projections
+    
+          retain:
+            - workflow_input
+            - catalog_match
+            - research_preparation
+            - research_record
+            - evidence_artifacts
+            - tool_outcome_artifacts
+            - completion_receipt
+            - handoff_artifact
+            - material_checkpoints
+  audit_discovery:
+    id: audit_discovery
+    stage: audit_discovery
+    version: 1
+    # ============================================================
+    # Audit Discovery workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: audit_discovery
+      role_id: audit_discovery
+      executor_id: audit_discovery_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Inspect the registered repository read-only, connect accepted Research
+          findings to physical source evidence, assess current behavior, and
+          produce candidate CodeIntent for Planning.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Establish observable repository reality against the accepted user outcome; 
+          distinguish existing behavior, gaps, and new features with source evidence; propose CodeIntent 
+          without implementation decisions.
+        observable_conditions:
+          - actual_source_inspected
+          - requirements_assessed_with_evidence
+          - source_stability_checked
+          - no_source_changes
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        receives_information_from: research
+        may_request_information_from:
+          - research
+        returns_result_to: planning
+        routing_authority: host_controller
+        prohibits:
+          - source_modification
+          - implementation_strategy
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: audit input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - research_output_ref
+          - research_receipt_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          research_output_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          research_receipt_ref:
+            $ref: urn:oneshot:contract:receipt_ref:1.0
+          inspection_question:
+            type: string
+            minLength: 1
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: audit output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          audit_record_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          source_checkpoint_before_ref:
+            $ref: urn:oneshot:contract:source_checkpoint:1.0
+          source_checkpoint_after_ref:
+            $ref: urn:oneshot:contract:source_checkpoint:1.0
+          requirement_assessments:
+            type: array
+            items:
+              type: object
+          findings:
+            type: array
+            items:
+              type: object
+          code_intents:
+            type: array
+            items:
+              type: object
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - audit_record_ref
+                - source_checkpoint_before_ref
+                - source_checkpoint_after_ref
+                - requirement_assessments
+                - findings
+                - code_intents
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: audit_discovery_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: workflow_input
+            contract_id: workflow_input
+            resolution: exact_artifact_ref
+            source_stage: workflow_entry
+            receipt_required: true
+    
+          - input_id: research_record
+            contract_id: research_record
+            resolution: exact_artifact_ref
+            source_stage: research
+            receipt_required: true
+    
+          - input_id: research_completion_receipt
+            contract_id: receipt_ref
+            resolution: exact_receipt_ref
+            source_stage: research
+    
+        optional:
+          - input_id: repository_instructions
+            contract_id: evidence_ref
+            resolution: registered_repository_instructions
+            multiple: true
+    
+          - input_id: catalog_match
+            contract_id: catalog_match
+            resolution: exact_artifact_ref
+            source_stage: research
+    
+          - input_id: research_preparation
+            contract_id: research_preparation
+            resolution: exact_artifact_ref
+            source_stage: research
+    
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 120
+          maximum_output_attempts: 3
+          completion_condition: primary_output_submitted
+    
+        source_checkpoints:
+          entry:
+            checkpoint_id: audit_source_entry
+            capture:
+              - commit_oid
+              - inspected_path_digests
+              - inspected_path_inventory
+              - tracked_dirty_state
+              - relevant_untracked_files
+            persistence: checkpoint_store
+    
+          exit:
+            checkpoint_id: audit_source_exit
+            capture:
+              - commit_oid
+              - inspected_path_digests
+              - inspected_path_inventory
+              - tracked_dirty_state
+              - relevant_untracked_files
+            persistence: checkpoint_store
+    
+          comparison:
+            compare_commit_oid: true
+            compare_inspected_path_digests: true
+    
+            changed_during_stage:
+              execution_status: blocked
+              diagnostic_status: uncertainty
+              resume_point: audit_source_reconciliation
+    
+            compare_inspected_path_inventory: true
+            compare_relevant_dirty_state: true
+        required_work:
+          - step_id: load_upstream_artifacts
+            produces:
+              - accepted_research_context
+              - catalog_lineage
+              - research_checklist
+    
+          - step_id: load_repository_instructions
+            produces:
+              - applicable_repository_rules
+    
+          - step_id: capture_source_entry
+            produces:
+              - source_checkpoint_before
+    
+          - step_id: inspect_repository
+            produces:
+              - repository_observations
+              - file_line_evidence
+    
+          - step_id: assess_requirements
+            produces:
+              - requirement_assessments
+    
+          - step_id: record_findings
+            produces:
+              - audit_findings
+    
+          - step_id: produce_code_intents
+            produces:
+              - existing_gap_intents
+              - new_feature_intents
+    
+          - step_id: capture_source_exit
+            produces:
+              - source_checkpoint_after
+              - source_stability_result
+    
+          - step_id: submit_audit_record
+            produces:
+              - audit_discovery_record_candidate
+    
+      tool_projection:
+        registry_ref_source: active_tool_registry_snapshot
+    
+        capabilities:
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: repository.search
+    
+          - capability_id: repository.git_diff
+            wire_name: git_diff
+            permission_token: repository.git_read
+    
+          - capability_id: repository.git_log
+            wire_name: git_log
+            permission_token: repository.git_read
+    
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+        root_binding:
+          source: registered_workspace
+          model_selectable: false
+    
+        result_policy:
+          retain_tool_outcome_refs: true
+          maximum_model_text_characters: 20000
+          persist_truncated_results: true
+    
+      outputs:
+        - output_slot: primary
+          contract_id: audit_discovery_record
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - workflow_input_ref
+            - research_record_ref
+            - source_checkpoint_before_ref
+            - source_checkpoint_after_ref
+            - requirement_assessments
+            - findings
+            - code_intents
+            - tool_outcome_refs
+            - unresolved
+            - limitations
+          intent_requirements:
+            existing_gap:
+              finding_refs_required: true
+              evidence_refs_required: true
+    
+            new_feature:
+              accepted_requirement_refs_required: true
+              finding_refs_required: false
+    
+      persistence:
+        temporary_output:
+          allocation_owner: host
+          runtime_root_source: runtime_root_registry
+          workflow_stage_source: workflow_registry
+          filename_generation: host_generated
+          authoritative: false
+    
+        authoritative_output:
+          owner: host
+          backend: artifact_store
+          canonical_serializer_profile: rfc8785-jcs-sha256-v1
+          digest_algorithm: sha256
+          immutable: true
+          reopen_after_persist: true
+          verify_digest_after_reopen: true
+    
+      completion:
+        receipt:
+          issuer: host
+          subject_contract_id: audit_discovery_completion_subject
+          subject_contract_version: "1.0"
+    
+          binds:
+            - workspace_id
+            - task_id
+            - run_id
+            - stage_id
+            - stage_revision
+            - workflow_input_ref
+            - research_record_ref
+            - audit_discovery_record_ref
+            - source_checkpoint_before_ref
+            - source_checkpoint_after_ref
+    
+            - request_id
+            - request_revision
+            - input_request_ref
+        successful_result:
+          execution_status: completed
+          diagnostic_status_is_not_a_completion_gate: true
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        target_stage: planning
+        contract_id: audit_planning_handoff
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - workflow_input_ref
+          - research_record_ref
+          - audit_discovery_record_ref
+          - research_completion_receipt_ref
+          - audit_completion_receipt_ref
+          - source_checkpoint_after_ref
+        transition_owner: host_controller
+    
+        feedback_request_path: audit_discovery_can_request_more_research_information_via_host
+      checkpoints:
+        - checkpoint_id: audit_entry
+          resume_point: load_upstream_artifacts
+    
+        - checkpoint_id: audit_source_captured
+          resume_point: inspect_repository
+    
+        - checkpoint_id: audit_output_persisted
+          resume_point: issue_completion_receipt
+    
+        - checkpoint_id: audit_handoff_ready
+          resume_point: host_transition_to_planning
+    
+      recovery:
+        inspect:
+          - source_checkpoints
+          - temporary_output
+          - authoritative_output
+          - tool_outcome_artifacts
+          - completion_receipt
+          - handoff_artifact
+          - lifecycle_events
+    
+        classifications:
+          - not_started
+          - source_captured
+          - inspection_in_progress
+          - output_submitted
+          - output_persisted
+          - receipt_issued
+          - handoff_ready
+          - completed
+          - uncertainty
+    
+      cleanup:
+        after_successful_handoff:
+          delete:
+            - temporary_model_drafts
+            - duplicate_source_excerpts
+            - temporary_rendered_reports
+            - unaccepted_output_projections
+    
+          retain:
+            - audit_discovery_record
+            - source_checkpoints
+            - evidence_artifacts
+            - tool_outcome_artifacts
+            - completion_receipt
+            - handoff_artifact
+            - material_checkpoints
+  planning:
+    id: planning
+    stage: planning
+    version: 1
+    # ============================================================
+    # Planner workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: planning
+      role_id: planner
+      executor_id: planner_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Convert accepted Research and Audit Discovery artifacts into a complete,
+          traceable, executable candidate BuildSpecification.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Resolve implementation decisions needed to satisfy accepted user intent; produce an
+          executable candidate specification that requires no architecture decisions during Build, or 
+          explicitly record that no Build is required.
+        observable_conditions:
+          - every_code_intent_dispositioned
+          - actions_paths_dependencies_and_verification_defined_if_build_needed
+          - candidate_reopened_and_checked
+          - no_production_effects
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        receives_from:
+          - audit_discovery
+          - research
+        may_request_information_from:
+          - research
+          - audit_discovery
+        produces_candidate_for: host_scanner
+        build_parent: planning
+        routing_authority: host_controller
+        prohibits:
+          - production_effects
+          - self_freeze
+          - self_admission
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: planning input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - research_output_ref
+          - research_receipt_ref
+          - audit_output_ref
+          - audit_receipt_ref
+          - source_checkpoint_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          research_output_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          research_receipt_ref:
+            $ref: urn:oneshot:contract:receipt_ref:1.0
+          audit_output_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          audit_receipt_ref:
+            $ref: urn:oneshot:contract:receipt_ref:1.0
+          source_checkpoint_ref:
+            $ref: urn:oneshot:contract:source_checkpoint:1.0
+          planning_objective:
+            type: string
+            minLength: 1
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: planning output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          planning_record_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          candidate_specification_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          intent_reviews:
+            type: array
+            items:
+              type: object
+          no_build_required:
+            type: boolean
+          limitations:
+            type: array
+            items:
+              type: string
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - planning_record_ref
+                - intent_reviews
+                - no_build_required
+          - if:
+              required:
+                - status
+                - no_build_required
+              properties:
+                status:
+                  const: completed
+                no_build_required:
+                  const: true
+            then:
+              not:
+                required:
+                  - candidate_specification_ref
+          - if:
+              required:
+                - status
+                - no_build_required
+              properties:
+                status:
+                  const: completed
+                no_build_required:
+                  const: false
+            then:
+              required:
+                - candidate_specification_ref
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: planning_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: workflow_input
+            contract_id: workflow_input
+            resolution: exact_artifact_ref
+    
+          - input_id: research_record
+            contract_id: research_record
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: audit_discovery_record
+            contract_id: audit_discovery_record
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: research_completion_receipt
+            contract_id: receipt_ref
+            resolution: exact_receipt_ref
+    
+          - input_id: audit_completion_receipt
+            contract_id: receipt_ref
+            resolution: exact_receipt_ref
+    
+          - input_id: source_checkpoint
+            contract_id: source_checkpoint
+            resolution: exact_artifact_ref
+    
+        optional:
+          - input_id: catalog_match
+            contract_id: catalog_match
+            resolution: exact_artifact_ref
+    
+          - input_id: research_preparation
+            contract_id: research_preparation
+            resolution: exact_artifact_ref
+    
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 160
+          maximum_candidate_revisions: 5
+          completion_condition: planning_outputs_submitted
+    
+        required_work:
+          - step_id: load_upstream
+            produces:
+              - accepted_requirements
+              - evidence_findings
+              - audit_findings
+              - code_intents
+    
+          - step_id: review_code_intents
+            produces:
+              - code_intent_reviews
+    
+          - step_id: record_planning_issues
+            produces:
+              - planning_issues
+    
+          - step_id: make_design_decisions
+            produces:
+              - design_decisions
+    
+          - step_id: define_corrective_refactors
+            produces:
+              - corrective_refactors
+    
+          - step_id: define_build_actions
+            produces:
+              - build_actions
+              - action_dependencies
+              - path_preconditions
+              - expected_results
+    
+          - step_id: define_verification
+            produces:
+              - tool_invocations
+              - requirement_coverage
+              - criterion_coverage
+              - recovery_requirements
+    
+          - step_id: persist_candidate
+            produces:
+              - candidate_build_specification
+    
+          - step_id: persist_planning_record
+            produces:
+              - planning_record
+    
+          - step_id: resolve_candidate_against_registries
+            produces:
+              - registry_resolution_result
+    
+          - step_id: request_scanner
+            produces:
+              - scanner_request
+    
+      tool_projection:
+        registry_ref_source: active_tool_registry_snapshot
+    
+        capabilities:
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: repository.search
+    
+          - capability_id: repository.git_diff
+            wire_name: git_diff
+            permission_token: repository.git_read
+    
+          - capability_id: repository.git_log
+            wire_name: git_log
+            permission_token: repository.git_read
+    
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+          - capability_id: artifacts.submit_candidate
+            wire_name: submit_artifact
+            permission_token: artifacts.submit_candidate
+    
+          - capability_id: artifacts.validate_candidate
+            wire_name: validate_artifact
+            permission_token: artifacts.validate
+    
+          - capability_id: scanner.request_scan
+            wire_name: request_scan
+            permission_token: scanner.request
+    
+          - capability_id: scanner.get_result
+            wire_name: get_scan_result
+            permission_token: scanner.read
+    
+          - capability_id: scanner.cancel_request
+            wire_name: cancel_scan
+            permission_token: scanner.cancel
+    
+          - capability_id: task_management.get_status
+            wire_name: get_task_status
+            permission_token: task_management.read
+    
+        root_binding:
+          source: registered_workspace
+          model_selectable: false
+    
+        result_policy:
+          retain_tool_outcome_refs: true
+          maximum_model_text_characters: 20000
+          persist_truncated_results: true
+    
+      tool_invocation_contract:
+        registry_ref_source: active_tool_registry_snapshot
+        raw_argv_allowed: false
+    
+        invocation_fields:
+          - registry_ref
+          - tool_id
+          - tool_version
+          - args
+    
+        scanner_resolution_required: true
+    
+      outputs:
+        - output_slot: planning_record
+          contract_id: planning_record
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - workflow_input_ref
+            - research_record_ref
+            - audit_discovery_record_ref
+            - candidate_specification_ref
+            - intent_review_ids
+            - planning_issue_ids
+            - design_decision_ids
+            - corrective_refactor_ids
+            - unresolved
+        - output_slot: candidate_specification
+          contract_id: build_specification
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - specification_id
+            - revision
+            - workflow_input_ref
+            - research_record_ref
+            - audit_discovery_record_ref
+            - source_checkpoint_ref
+            - tool_registry_ref
+            - sandbox_profile_registry_ref
+            - scanner_check_registry_ref
+            - intent_reviews
+            - planning_issues
+            - design_decisions
+            - corrective_refactors
+            - actions
+            - requirement_coverage
+            - criterion_coverage
+            - unresolved
+            - limitations
+          when: build_required
+      persistence:
+        temporary_output:
+          allocation_owner: host
+          runtime_root_source: runtime_root_registry
+          workflow_stage_source: workflow_registry
+          filename_generation: host_generated
+          authoritative: false
+    
+        authoritative_outputs:
+          - output_slot: planning_record
+            backend: artifact_store
+            immutable: true
+            reopen_after_persist: true
+            verify_digest_after_reopen: true
+    
+          - output_slot: candidate_specification
+            backend: artifact_store
+            immutable: true
+            reopen_after_persist: true
+            verify_digest_after_reopen: true
+    
+        canonical_serializer_profile: rfc8785-jcs-sha256-v1
+        digest_algorithm: sha256
+    
+      completion:
+        validation:
+          every_code_intent_has_disposition: true
+          every_action_has_source_intent: true
+          every_action_uses_registered_tool_invocations: true
+          dependency_graph_acyclic: true
+          paths_repository_relative: true
+          expected_results_present: true
+          verification_present: true
+          recovery_requirements_present: true
+          persisted_candidate_reopens: true
+          persisted_planning_record_reopens: true
+    
+          no_build_required_disposition_supported: true
+        receipt:
+          issuer: host
+          subject_contract_id: planning_completion_subject
+          subject_contract_version: "1.0"
+    
+          binds:
+            - workspace_id
+            - task_id
+            - run_id
+            - stage_id
+            - stage_revision
+            - workflow_input_ref
+            - research_record_ref
+            - audit_discovery_record_ref
+            - planning_record_ref
+            - candidate_specification_ref
+            - source_checkpoint_ref
+            - tool_registry_ref
+    
+            - request_id
+            - request_revision
+            - input_request_ref
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        target_stage: scanner
+        contract_id: scanner_request
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - candidate_specification_ref
+          - planning_completion_receipt_ref
+          - source_checkpoint_ref
+          - tool_registry_ref
+          - scanner_check_registry_ref
+        transition_owner: host_controller
+    
+        when: build_required
+        no_build_required_route: host_no_build_completion_review
+        feedback_request_path: 
+          planning_can_request_more_information_from_research_or_audit_discovery_via_host
+      checkpoints:
+        - checkpoint_id: planning_entry
+          resume_point: load_upstream
+    
+        - checkpoint_id: planning_decisions_persisted
+          resume_point: define_build_actions
+    
+        - checkpoint_id: planning_candidate_persisted
+          resume_point: validate_candidate
+    
+        - checkpoint_id: planning_record_persisted
+          resume_point: issue_completion_receipt
+    
+        - checkpoint_id: planning_handoff_ready
+          resume_point: host_dispatch_scanner
+    
+      recovery:
+        inspect:
+          - planning_record
+          - candidate_specification
+          - registry_resolution_result
+          - scanner_request
+          - completion_receipt
+          - lifecycle_events
+    
+        classifications:
+          - not_started
+          - decisions_recorded
+          - candidate_submitted
+          - candidate_persisted
+          - planning_record_persisted
+          - receipt_issued
+          - scanner_request_ready
+          - completed
+          - uncertainty
+    
+      cleanup:
+        after_successful_handoff:
+          delete:
+            - temporary_planning_drafts
+            - duplicate_markdown_projections
+            - temporary_candidate_files
+            - superseded_unaccepted_candidates
+    
+          retain:
+            - planning_record
+            - accepted_candidate_specification
+            - tool_outcome_artifacts
+            - completion_receipt
+            - scanner_request
+            - material_checkpoints
+  fixture_validation:
+    id: fixture_validation
+    stage: fixture_validation
+    version: 1
+    # ============================================================
+    # Fixture Validator workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: fixture_validation
+      role_id: fixture_validator
+      executor_id: fixture_validator_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Execute the fixture definitions associated with the exact frozen
+          BuildSpecification and record independent observed results.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Establish the readiness of the exact frozen specification through observed isolated
+          fixture outcomes, including failures and interruption cases, without altering the plan.
+        observable_conditions:
+          - fixture_checks_executed_or_explicitly_unavailable
+          - observed_evidence_retained
+          - no_plan_mutation
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        receives_from: host_frozen_specification
+        returns_result_to: host_build_admission
+        routing_authority: host_controller
+        prohibits:
+          - plan_revision
+          - self_admission
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: fixture input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - frozen_specification_ref
+          - freeze_receipt_ref
+          - fixture_definition_refs
+          - sandbox_profile_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          frozen_specification_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          freeze_receipt_ref:
+            $ref: urn:oneshot:contract:receipt_ref:1.0
+          fixture_definition_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:artifact_ref:1.0
+            minItems: 1
+          sandbox_profile_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: fixture output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          fixture_validation_record_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          fixture_observations:
+            type: array
+            items:
+              type: object
+          command_result_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:artifact_ref:1.0
+          limitations:
+            type: array
+            items:
+              type: string
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - fixture_validation_record_ref
+                - fixture_observations
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: fixture_validation_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: frozen_specification
+            contract_id: build_specification
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: freeze_receipt
+            contract_id: receipt_ref
+            resolution: exact_receipt_ref
+    
+          - input_id: fixture_definitions
+            contract_id: fixture_definition
+            resolution: exact_artifact_ref
+            multiple: true
+    
+          - input_id: tool_registry_snapshot
+            contract_id: tool_registry_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: sandbox_profile_registry_snapshot
+            contract_id: sandbox_profile_registry_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: sandbox_profile
+            contract_id: sandbox_profile
+            resolution: host_selected_registered_profile
+            source: host
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 100
+          maximum_fixture_attempts: 3
+          completion_condition: fixture_validation_output_submitted
+    
+        sandbox:
+          creation_owner: host
+          profile_resolution_owner: host
+          source_snapshot_owner: host
+          network_policy_source: sandbox_profile_registry
+    
+        required_work:
+          - step_id: load_frozen_inputs
+            produces:
+              - frozen_fixture_scope
+    
+          - step_id: resolve_fixture_tools
+            produces:
+              - resolved_fixture_invocations
+    
+          - step_id: create_fixture_environment
+            produces:
+              - fixture_sandbox_handle
+    
+          - step_id: execute_fixtures
+            produces:
+              - fixture_observations
+              - command_results
+    
+          - step_id: assess_validity
+            produces:
+              - fixture_validity_results
+    
+          - step_id: submit_fixture_record
+            produces:
+              - fixture_validation_record_candidate
+    
+      tool_projection:
+        registry_ref_source: package_lock
+    
+        capabilities:
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: repository.search
+    
+          - capability_id: sandbox.run_registered
+            wire_name: run_in_sandbox
+            permission_token: sandbox.execute_registered
+            availability: admitted_profile_only
+    
+        command_policy:
+          raw_argv_allowed: false
+          registered_tool_invocations_only: true
+          effect_time_resolution_required: true
+    
+      outputs:
+        - output_slot: primary
+          contract_id: fixture_validation_record
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - frozen_specification_ref
+            - fixture_definition_refs
+            - sandbox_profile_ref
+            - observations
+            - validity_results
+            - command_result_refs
+            - evidence_refs
+            - unresolved
+            - limitations
+    
+      persistence:
+        temporary_output:
+          allocation_owner: host
+          runtime_root_source: runtime_root_registry
+          filename_generation: host_generated
+    
+        authoritative_output:
+          owner: host
+          backend: artifact_store
+          immutable: true
+          reopen_after_persist: true
+          verify_digest_after_reopen: true
+    
+      completion:
+        receipt:
+          issuer: host
+          subject_contract_id: fixture_validation_completion_subject
+          subject_contract_version: "1.0"
+    
+          binds:
+            - workspace_id
+            - task_id
+            - run_id
+            - stage_revision
+            - frozen_specification_ref
+            - fixture_definition_refs
+            - fixture_validation_record_ref
+            - sandbox_profile_ref
+            - tool_registry_ref
+    
+            - input_request_ref
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        target_stage: package_lock
+        contract_id: fixture_package_lock_handoff
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - frozen_specification_ref
+          - freeze_receipt_ref
+          - fixture_validation_record_ref
+          - fixture_validation_receipt_ref
+          - tool_registry_ref
+          - sandbox_profile_registry_ref
+    
+        transition_owner: host_controller
+    
+      checkpoints:
+        - checkpoint_id: fixture_entry
+          resume_point: load_frozen_inputs
+    
+        - checkpoint_id: fixture_sandbox_created
+          resume_point: execute_fixtures
+    
+        - checkpoint_id: fixture_results_persisted
+          resume_point: issue_completion_receipt
+    
+        - checkpoint_id: fixture_handoff_ready
+          resume_point: host_create_package_lock
+    
+      recovery:
+        inspect:
+          - sandbox_state
+          - command_results
+          - fixture_observations
+          - fixture_validation_record
+          - completion_receipt
+          - lifecycle_events
+    
+        classifications:
+          - not_started
+          - sandbox_created
+          - execution_in_progress
+          - observations_persisted
+          - output_persisted
+          - receipt_issued
+          - handoff_ready
+          - completed
+          - uncertainty
+    
+      cleanup:
+        after_successful_handoff:
+          delete:
+            - temporary_fixture_workspace
+            - temporary_command_output
+            - temporary_rendered_reports
+    
+          retain:
+            - fixture_validation_record
+            - command_result_artifacts
+            - evidence_artifacts
+            - completion_receipt
+            - material_checkpoints
+  build:
+    id: build
+    stage: build
+    version: 1
+    # ============================================================
+    # Builder workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: build
+      role_id: builder
+      executor_id: builder_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Execute only the frozen and admitted BuildTask in the host sandbox. Produce effects and evidence; never
+          choose architecture, expand file scope, or redefine the approved work.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Perform only admitted actions against the approved source snapshot, record actual 
+          effects and failed or uncertain operations, and stop at the admitted task boundary. The Builder 
+          does not decide whether user acceptance criteria passed.
+        observable_conditions:
+          - every_admitted_action_accounted_for
+          - effect_reconciliation_complete_or_explicitly_blocked
+          - no_scope_expansion
+          - no_design_decisions
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        receives_from: planning_via_host_admission
+        returns_result_to: planning_parent_via_host_task_integration
+        feedback_when_blocked: host_routes_contradiction_to_planning
+        routing_authority: host_controller
+        prohibits:
+          - research_request
+          - new_design
+          - scope_expansion
+          - new_dependencies
+          - self_authorization
+        build_admission_precedes_execution: true
+        parallel_batch_rule: disjoint_paths_and_no_unresolved_dependencies_within_each_parallel_wave
+        dependency_waves: ordered_barrier_verified_by_host
+        move_action: single_admitted_action_declaring_source_and_destination
+        preflight_and_effect_gate: host_owned
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: build input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - frozen_specification_ref
+          - build_task_ref
+          - build_admission_ref
+          - preflight_result_ref
+          - source_snapshot_ref
+          - sandbox_handle
+          - authorized_action_ids
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          frozen_specification_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          build_task_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          build_admission_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          preflight_result_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          source_snapshot_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          sandbox_handle:
+            type: string
+            minLength: 1
+          authorized_action_ids:
+            type: array
+            items:
+              type: string
+              pattern: ^[A-Za-z0-9_-]{1,128}$
+            minItems: 1
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: build output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          build_attempt_result_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          changed_paths:
+            type: array
+            items:
+              type: string
+          effect_receipt_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:receipt_ref:1.0
+          unresolved_effects:
+            type: array
+            items:
+              type: string
+          operation_id:
+            type: string
+            minLength: 1
+          effect_reconciled:
+            type: boolean
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - build_attempt_result_ref
+                - operation_id
+                - effect_reconciled
+                - unresolved_effects
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              properties:
+                effect_reconciled:
+                  const: true
+                unresolved_effects:
+                  maxItems: 0
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: build_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: frozen_specification
+            contract_id: build_specification
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: build_task_set
+            contract_id: build_task_set
+            resolution: exact_artifact_ref
+    
+          - input_id: build_task
+            contract_id: build_task
+            resolution: exact_artifact_ref
+    
+          - input_id: build_admission
+            contract_id: build_admission
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: build_preflight_result
+            contract_id: build_preflight_result
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: source_snapshot
+            contract_id: source_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: tool_registry_snapshot
+            contract_id: tool_registry_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: sandbox_profile
+            contract_id: sandbox_profile
+            resolution: exact_artifact_ref
+    
+          - input_id: sandbox_handle
+            contract_id: sandbox_handle
+            resolution: opaque_host_handle
+    
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 120
+          maximum_candidate_attempts: 5
+          completion_condition: build_attempt_result_submitted
+    
+        attempt_identity:
+          task_revision_source: build_task
+          attempt_id_source: host_attempt_manager
+          operation_id_source: host_operation_manager
+    
+        required_work:
+          - step_id: load_task
+            produces:
+              - task_objective
+              - authorized_paths
+              - expected_preimages
+              - required_verification
+              - expected_result
+    
+          - step_id: inspect_task_source
+            produces:
+              - implementation_context
+    
+          - step_id: produce_candidate
+            produces:
+              - builder_candidate
+    
+          - step_id: submit_candidate_for_execution
+            produces:
+              - candidate_execution_request
+    
+          - step_id: observe_execution
+            produces:
+              - changed_paths
+              - change_manifest
+              - operation_evidence
+    
+          - step_id: request_focused_verification
+            produces:
+              - focused_command_results
+    
+          - step_id: refine_candidate
+            condition: focused_verification_invalid_and_changes_remain_within_admitted_task
+            produces:
+              - next_candidate_attempt
+    
+            scope_rule: implementation_correction_only_no_new_paths_dependencies_or_acceptance_criteria
+            on_scope_contradiction: stop_and_report_to_host_for_planning
+          - step_id: request_broader_verification
+            condition: focused_verification_valid
+            produces:
+              - broader_command_results
+    
+          - step_id: submit_attempt_result
+            produces:
+              - build_attempt_result_candidate
+    
+      tool_projection:
+        registry_ref_source: package_lock
+    
+        capabilities:
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: task_repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: task_repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: task_repository.search
+    
+          - capability_id: builder.submit_candidate
+            wire_name: submit_candidate
+            permission_token: builder.candidate_submit
+    
+          - capability_id: sandbox.run_registered
+            wire_name: run_registered_tool
+            permission_token: task_tool.execute
+    
+          - capability_id: task_management.get_status
+            wire_name: get_task_status
+            permission_token: task_management.read
+    
+        scope_binding:
+          task_ref_source: active_build_task
+          authorized_paths_source: active_build_task
+          authorized_tool_ids_source: build_admission
+          sandbox_handle_source: host
+          physical_root_model_selectable: false
+    
+        command_policy:
+          raw_argv_allowed: false
+          command_profile_source: frozen_build_task
+          effect_time_resolution_required: true
+          output_evidence_required: true
+    
+      candidate_contract:
+        contract_id: builder_candidate
+        contract_version: "1.0"
+    
+        implementation_kinds:
+          - patch
+          - file_operations
+    
+        required_fields:
+          - task_id
+          - task_revision
+          - attempt_id
+          - declared_paths
+          - implementation_kind
+          - implementation_summary
+    
+          - input_request_ref
+      outputs:
+        - output_slot: primary
+          contract_id: build_attempt_result
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - task_id
+            - task_revision
+            - attempt_id
+            - operation_id
+            - source_snapshot_digest
+            - resulting_snapshot_digest
+            - changed_paths
+            - change_manifest_ref
+            - focused_result_refs
+            - broader_result_refs
+            - patch_ref
+            - evidence_bundle_ref
+            - effect_reconciled
+            - unresolved_effects
+            - execution_status
+            - diagnostic_status
+    
+            - input_request_ref
+      persistence:
+        candidate_artifacts:
+          backend: artifact_store
+          authority: candidate_only
+    
+        command_results:
+          backend: evidence_store
+          bounded_output: true
+    
+        attempt_result:
+          owner: host
+          backend: artifact_store
+          immutable: true
+          reopen_after_persist: true
+          verify_digest_after_reopen: true
+    
+      completion:
+        candidate_result:
+          submitted_to: host_task_integrator
+    
+        acceptance_owner: host
+        verification_owner: host_task_verifier
+    
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        target_stage: task_integration
+        contract_id: builder_task_integration_handoff
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - build_task_ref
+          - build_preflight_result_ref
+          - accepted_candidate_ref
+          - build_attempt_result_ref
+          - change_manifest_ref
+          - patch_ref
+          - evidence_bundle_ref
+    
+        transition_owner: host_controller
+    
+        feedback_request_path: return_blocked_attempt_to_host_for_planning_revision
+      checkpoints:
+        - checkpoint_id: builder_task_loaded
+          resume_point: produce_candidate
+    
+        - checkpoint_id: builder_candidate_submitted
+          resume_point: host_pre_effect
+    
+        - checkpoint_id: builder_post_effect_observed
+          resume_point: request_focused_verification
+    
+        - checkpoint_id: builder_verification_complete
+          resume_point: submit_attempt_result
+    
+        - checkpoint_id: builder_handoff_ready
+          resume_point: host_task_integration
+    
+      recovery:
+        inspect:
+          - prior_attempt_record
+          - sandbox_state
+          - source_snapshot
+          - candidate_artifact
+          - changed_path_manifest
+          - command_results
+          - effect_checkpoint
+          - evidence_bundle
+    
+        classifications:
+          - not_started
+          - candidate_created
+          - candidate_submitted
+          - effect_started
+          - effect_uncertain
+          - effect_reconciled
+          - verification_in_progress
+          - result_submitted
+          - completed
+    
+      cleanup:
+        after_host_acceptance:
+          delete:
+            - temporary_candidate_files
+            - temporary_command_workspaces
+            - transient_model_drafts
+            - duplicate_patch_projections
+    
+          retain:
+            - accepted_candidate
+            - build_attempt_result
+            - change_manifest
+            - patch_artifact
+            - command_result_artifacts
+            - evidence_bundle
+            - material_checkpoints
+  build_validation:
+    id: build_validation
+    stage: build_validation
+    version: 1
+    # ============================================================
+    # Build Verifier workflow
+    # ============================================================
+    
+    workflow:
+      stage_id: build_validation
+      role_id: build_verifier
+      executor_id: build_verifier_executor
+      stage_revision_source: host_controller
+    
+      purpose:
+        summary: >-
+          Independently verify the complete integrated source against the frozen
+          specification, accepted criteria, required command profiles, and
+          observable product behavior.
+    
+      success_contract:
+        derived_from: accepted_user_intent_and_supplied_criteria
+        success_meaning: Independently demonstrate whether the actual integrated product satisfies the 
+          accepted user success criteria using real entrypoints and observable evidence, without assuming 
+          Builder success.
+        observable_conditions:
+          - accepted_criteria_observed
+          - required_checks_executed_or_explicitly_blocked
+          - independent_evidence_and_source_identity_verified
+        criteria_completeness_gate: false
+      request_result_exchange:
+        mode: bidirectional_request_result
+        receives_from: host_integrated_build
+        returns_result_to: host_completion_gate
+        routing_authority: host_controller
+        prohibits:
+          - builder_self_certification
+          - source_modification
+        input_request_ref_source: host_request_router
+      input_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: build verification input request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - frozen_specification_ref
+          - integrated_source_ref
+          - completed_task_result_refs
+          - accepted_criterion_refs
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          frozen_specification_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          integrated_source_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          completed_task_result_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:artifact_ref:1.0
+          accepted_criterion_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:artifact_ref:1.0
+      output_schema:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        title: build verification output request/result contract
+        type: object
+        additionalProperties: false
+        required:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - status
+          - input_request_ref
+        properties:
+          request_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          request_revision:
+            type: integer
+            minimum: 1
+          task_id:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{1,128}$
+          user_intent_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          status:
+            type: string
+            enum:
+              - completed
+              - failed
+              - blocked
+              - not_run
+              - skipped
+          unresolved:
+            type: array
+            items:
+              type: string
+          build_validation_record_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+          criterion_observations:
+            type: array
+            items:
+              type: object
+          command_result_refs:
+            type: array
+            items:
+              $ref: urn:oneshot:contract:artifact_ref:1.0
+          integrated_source_digest:
+            type: string
+            pattern: ^[a-f0-9]{64}$
+          limitations:
+            type: array
+            items:
+              type: string
+          input_request_ref:
+            $ref: urn:oneshot:contract:artifact_ref:1.0
+        allOf:
+          - if:
+              required:
+                - status
+              properties:
+                status:
+                  const: completed
+            then:
+              required:
+                - build_validation_record_ref
+                - criterion_observations
+                - integrated_source_digest
+      schema_validation:
+        validator_owner: host
+        dialect: json_schema_2020_12
+        external_contract_refs: resolve_from_registered_contracts
+        unresolved_external_ref: reject
+        exact_request_revision_binding: true
+        user_intent_binding_required: true
+        receipt_authority: trusted_host_only
+        validate_before_persistence: true
+        validate_after_reopen: true
+        failure_output_policy: return_bound_blocked_result_without_fabricated_stage_artifacts
+        cross_reference_validation:
+          - request_id
+          - request_revision
+          - task_id
+          - user_intent_ref
+          - parent_artifact_revision
+          - receipt_subject_and_issuer
+        require_output_input_request_ref_match: true
+      inputs:
+        required:
+          - input_id: input_request
+            contract_id: build_validation_input_request
+            schema_source: workflow.input_schema
+            resolution: host_bound_request_artifact
+            source: host_request_router
+            receipt_required: true
+          - input_id: workflow_input
+            contract_id: workflow_input
+            resolution: exact_artifact_ref
+    
+          - input_id: research_record
+            contract_id: research_record
+            resolution: exact_artifact_ref
+    
+          - input_id: audit_discovery_record
+            contract_id: audit_discovery_record
+            resolution: exact_artifact_ref
+    
+          - input_id: frozen_specification
+            contract_id: build_specification
+            resolution: exact_artifact_ref
+            receipt_required: true
+    
+          - input_id: build_task_set
+            contract_id: build_task_set
+            resolution: exact_artifact_ref
+    
+          - input_id: completed_task_results
+            contract_id: task_integration_result
+            resolution: exact_artifact_ref
+            multiple: true
+    
+          - input_id: integrated_source
+            contract_id: integrated_source_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: tool_registry_snapshot
+            contract_id: tool_registry_snapshot
+            resolution: exact_artifact_ref
+    
+          - input_id: sandbox_profile
+            contract_id: sandbox_profile
+            resolution: exact_artifact_ref
+    
+      execution:
+        provider_session_required: true
+    
+        model_loop:
+          enabled: true
+          maximum_tool_calls: 160
+          maximum_validation_attempts: 3
+          completion_condition: build_validation_record_submitted
+    
+        required_work:
+          - step_id: load_validation_scope
+            produces:
+              - accepted_requirements
+              - acceptance_criteria
+              - frozen_actions
+              - completed_task_results
+    
+          - step_id: verify_task_completion
+            produces:
+              - task_completion_observations
+    
+          - step_id: resolve_validation_tools
+            produces:
+              - resolved_test_invocations
+    
+          - step_id: execute_required_checks
+            produces:
+              - command_results
+    
+          - step_id: observe_product_behavior
+            produces:
+              - criterion_observations
+    
+          - step_id: compare_against_criteria
+            produces:
+              - criterion_results
+    
+          - step_id: submit_validation_record
+            produces:
+              - build_validation_record_candidate
+    
+      tool_projection:
+        registry_ref_source: package_lock
+    
+        capabilities:
+          - capability_id: artifacts.get_artifact
+            wire_name: get_artifact
+            permission_token: artifacts.read
+    
+          - capability_id: repository.list_files
+            wire_name: list_files
+            permission_token: validation_repository.read
+    
+          - capability_id: repository.read_file
+            wire_name: read_file
+            permission_token: validation_repository.read
+    
+          - capability_id: repository.search_files
+            wire_name: search_files
+            permission_token: validation_repository.search
+    
+          - capability_id: sandbox.run_registered
+            wire_name: run_verification
+            permission_token: validation_tool.execute
+    
+          - capability_id: task_management.get_status
+            wire_name: get_task_status
+            permission_token: task_management.read
+    
+        command_policy:
+          raw_argv_allowed: false
+          command_profile_source: frozen_specification
+          registry_resolution_required: true
+          effect_time_resolution_required: true
+    
+      outputs:
+        - output_slot: primary
+          contract_id: build_validation_record
+          contract_version: "1.0"
+          media_type: application/json
+    
+          required_sections:
+            - workflow_input_ref
+            - frozen_specification_ref
+            - task_set_ref
+            - completed_task_refs
+            - integrated_source_ref
+            - integrated_source_digest
+            - verification_result_refs
+            - criterion_observations
+            - unresolved
+            - limitations
+            - execution_status
+            - diagnostic_status
+    
+      persistence:
+        temporary_output:
+          allocation_owner: host
+          runtime_root_source: runtime_root_registry
+          filename_generation: host_generated
+    
+        authoritative_output:
+          owner: host
+          backend: artifact_store
+          immutable: true
+          reopen_after_persist: true
+          verify_digest_after_reopen: true
+    
+      completion:
+        success_requirements:
+          all_required_tasks_completed: true
+          all_effects_reconciled: true
+          all_required_commands_executed: true
+          all_required_commands_valid: true
+          acceptance_criteria_observed: true
+          integrated_source_digest_verified: true
+    
+        receipt:
+          issuer: host
+          subject_contract_id: build_validation_completion_subject
+          subject_contract_version: "1.0"
+    
+          binds:
+            - workspace_id
+            - task_id
+            - run_id
+            - workflow_input_ref
+            - frozen_specification_ref
+            - task_set_ref
+            - completed_task_refs
+            - integrated_source_ref
+            - build_validation_record_ref
+    
+            - input_request_ref
+        successful_result:
+          execution_status: completed
+          diagnostic_status: valid
+    
+        host_completion_rule: persist_reopen_validate_exact_output_then_issue_trusted_receipt
+      handoff:
+        target_stage: cleanup
+        contract_id: validation_cleanup_handoff
+        contract_version: "1.0"
+    
+        required_refs:
+          - input_request_ref
+          - build_validation_record_ref
+          - final_verification_receipt_ref
+          - integrated_source_ref
+          - completed_task_refs
+    
+        transition_owner: host_controller
+    
+      checkpoints:
+        - checkpoint_id: validation_entry
+          resume_point: load_validation_scope
+    
+        - checkpoint_id: validation_commands_resolved
+          resume_point: execute_required_checks
+    
+        - checkpoint_id: validation_checks_completed
+          resume_point: compare_against_criteria
+    
+        - checkpoint_id: validation_output_persisted
+          resume_point: issue_final_verification_receipt
+    
+        - checkpoint_id: validation_handoff_ready
+          resume_point: host_cleanup
+    
+      recovery:
+        inspect:
+          - integrated_source
+          - completed_task_results
+          - command_results
+          - criterion_observations
+          - validation_record
+          - final_verification_receipt
+          - lifecycle_events
+    
+        classifications:
+          - not_started
+          - scope_loaded
+          - execution_in_progress
+          - observations_persisted
+          - output_persisted
+          - receipt_issued
+          - handoff_ready
+          - completed
+          - uncertainty
+    
+      cleanup:
+        after_successful_handoff:
+          delete:
+            - temporary_validation_workspace
+            - temporary_command_output
+            - temporary_rendered_reports
+            - duplicate_evidence_projections
+    
+          retain:
+            - build_validation_record
+            - final_verification_receipt
+            - criterion_observation_artifacts
+            - command_result_artifacts
+            - integrated_source_ref
+            - completed_task_results
+            - material_checkpoints
