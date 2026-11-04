@@ -13,7 +13,6 @@ from pathlib import Path
 from agent.contracts.stage_log import StageLogEvent, StageName
 
 
-
 STAGES: tuple[StageName, ...] = ("search", "audit", "plan", "build", "mem")
 
 
