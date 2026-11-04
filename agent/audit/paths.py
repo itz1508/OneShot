@@ -18,16 +18,27 @@ def scan_paths(root: Path, scope: Path) -> list[Finding]:
         if not target.is_relative_to(root):
             findings.append(
                 Finding(
-                    "paths", "PATH_OUTSIDE_REPOSITORY", "verified_observation", "medium",
-                    path.relative_to(root).as_posix(), 0,
-                    "Symlink target escapes audited repository; review its authorized use.", "",
+                    "paths",
+                    "PATH_OUTSIDE_REPOSITORY",
+                    "verified_observation",
+                    "medium",
+                    path.relative_to(root).as_posix(),
+                    0,
+                    "Symlink target escapes audited repository; review its authorized use.",
+                    "",
                 )
             )
         elif not target.exists():
             findings.append(
                 Finding(
-                    "paths", "BROKEN_SYMLINK", "verified_observation", "low",
-                    path.relative_to(root).as_posix(), 0, "Symlink target does not exist.", "",
+                    "paths",
+                    "BROKEN_SYMLINK",
+                    "verified_observation",
+                    "low",
+                    path.relative_to(root).as_posix(),
+                    0,
+                    "Symlink target does not exist.",
+                    "",
                 )
             )
     return findings
