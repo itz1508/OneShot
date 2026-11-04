@@ -116,8 +116,8 @@ async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
                 cursor = page.next_cursor
                 if cursor is None:
                     break
-            if "oneshot_research" not in names:
-                raise ProviderError("oneshot_research is not advertised by MCP server")
+            if names != {"oneshot_research"}:
+                raise ProviderError("MCP server must advertise only oneshot_research in OneShot mode")
             response = await session.call_tool("oneshot_research", arguments)
             return _tool_json(response)
     except ProviderError:
