@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +26,8 @@ _STAGE_ROLES = {
 class _UniqueKeyLoader(yaml.SafeLoader):
     """Reject duplicate keys rather than silently overriding workflow policy."""
 
-    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[str, Any]:
-        mapping: dict[str, Any] = {}
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
+        mapping: dict[Hashable, Any] = {}
         for key_node, value_node in node.value:
             key = self.construct_object(key_node, deep=deep)
             if not isinstance(key, str):
