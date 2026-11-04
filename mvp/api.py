@@ -104,7 +104,7 @@ def auth_login(body: LoginRequest, request: Request, response: Response) -> dict
     except AuthError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     auth.set_cookie(response, request, session_id)
-    return auth.status(request)
+    return {"auth_required": auth.enabled, "authenticated": True, "user": body.username}
 
 
 @app.post("/api/auth/logout")
