@@ -82,9 +82,7 @@ def test_missing_frontend_lockfile_detected(tmp_path: Path) -> None:
     (web / "package-lock.json").write_text("{}")
     invalid = scan(tmp_path, capabilities=("dependencies",))
     assert [item.code for item in invalid.findings] == ["INVALID_NPM_LOCKFILE"]
-    (web / "package-lock.json").write_text(
-        '{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.0.0"}}}}'
-    )
+    (web / "package-lock.json").write_text('{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.0.0"}}}}')
     assert not scan(tmp_path, capabilities=("dependencies",)).findings
 
 
@@ -172,9 +170,7 @@ def test_npm_lockfile_manifest_mismatch_is_a_finding(tmp_path: Path) -> None:
     web = tmp_path / "web"
     web.mkdir()
     (web / "package.json").write_text('{"dependencies":{"react":"19.1.0"}}')
-    (web / "package-lock.json").write_text(
-        '{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.0.0"}}}}'
-    )
+    (web / "package-lock.json").write_text('{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.0.0"}}}}')
     result = scan(tmp_path, capabilities=("dependencies",))
     assert [item.code for item in result.findings] == ["FRONTEND_LOCKFILE_MANIFEST_MISMATCH"]
     assert result.findings[0].status == "verified_observation"
@@ -184,9 +180,7 @@ def test_multiple_frontend_lockfiles_are_review_candidates(tmp_path: Path) -> No
     web = tmp_path / "web"
     web.mkdir()
     (web / "package.json").write_text('{"dependencies":{"react":"19.1.0"}}')
-    (web / "package-lock.json").write_text(
-        '{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.1.0"}}}}'
-    )
+    (web / "package-lock.json").write_text('{"lockfileVersion":3,"packages":{"":{"dependencies":{"react":"19.1.0"}}}}')
     (web / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
     result = scan(tmp_path, capabilities=("dependencies",))
     assert [item.code for item in result.findings] == ["MULTIPLE_FRONTEND_LOCKFILES"]
