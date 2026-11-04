@@ -27,7 +27,7 @@ def test_empty_scope_is_not_verified(tmp_path: Path) -> None:
     (tmp_path / "tests" / "test_dummy.py").write_text("def test_ok(): assert True\n")
     result = scan(tmp_path)
     assert result.disposition == "not_e2e_verified"
-    assert len(result.executed_capabilities) == 9
+    assert len(result.executed_capabilities) == 11
 
 
 def test_escape_scope_rejected(tmp_path: Path) -> None:
@@ -134,3 +134,30 @@ def test_unimplemented_function_is_reported_as_candidate(tmp_path: Path) -> None
     result = scan(tmp_path, capabilities=("completeness",))
     assert [item.code for item in result.findings] == ["NOT_IMPLEMENTED_STUB"]
     assert result.findings[0].status == "candidate"
+
+
+def test_audit_mode_unwired_reported_without_new_workflow(tmp_path: Path) -> None:
+    ui = tmp_path / "web" / "src"
+    ui.mkdir(parents=True)
+    (ui / "main.jsx").write_text("const name = 'Research'\n")
+    host = tmp_path / "mvp"
+    host.mkdir()
+    (host / "research_host.py").write_text("def research(): pass\n")
+    result = scan(tmp_path, capabilities=("integration",))
+    assert {finding.code for finding in result.findings} == {
+        "AUDIT_SELECTOR_NOT_EXPOSED",
+        "AUDIT_HOST_INVOCATION_UNWIRED",
+    }
+
+
+def test_in_process_lock_and_reconciliation_are_not_assumed_e2e(tmp_path: Path) -> None:
+    host = tmp_path / "mvp"
+    host.mkdir()
+    (host / "service.py").write_text("self._active_guard = Lock()\n_active_requests: set[str]\n")
+    (host / "research_host.py").write_text("'reconcile host state before retry'\n")
+    result = scan(tmp_path, capabilities=("recovery",))
+    assert {finding.code for finding in result.findings} == {
+        "IN_PROCESS_ADMISSION_ONLY",
+        "RECOVERY_RECONCILIATION_REQUIRED",
+    }
+    assert result.disposition == "findings_open"
