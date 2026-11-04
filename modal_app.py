@@ -16,6 +16,12 @@ STATE_VOLUME_NAME = os.environ.get("ONESHOT_MODAL_VOLUME_NAME", "oneshot-state")
 STATE_ROOT = "/data"
 SOURCE_ROOT = "/root/oneshot-source"
 MODEL_SECRET_NAME = os.environ.get("ONESHOT_MODAL_MODEL_SECRET", "").strip()
+PRIVATE_MODE_VALUE = os.environ.get("ONESHOT_MODAL_PRIVATE_MODE", "false").strip().lower()
+if PRIVATE_MODE_VALUE not in {"true", "false"}:
+    raise ValueError("ONESHOT_MODAL_PRIVATE_MODE must be true or false")
+PRIVATE_MODE = PRIVATE_MODE_VALUE == "true"
+if MODEL_SECRET_NAME and not PRIVATE_MODE:
+    raise ValueError("model credentials require ONESHOT_MODAL_PRIVATE_MODE=true (Modal proxy authentication)")
 
 # uv_sync installs locked dependencies but NOT the local project. Mount just
 # the runtime source into a dedicated, virtualenv-free scan directory and put
@@ -51,7 +57,7 @@ model_secrets = [modal.Secret.from_name(MODEL_SECRET_NAME)] if MODEL_SECRET_NAME
     secrets=model_secrets,
 )
 @modal.concurrent(max_inputs=20)  # SSE must not monopolize the only ASGI input slot.
-@modal.asgi_app()
+@modal.asgi_app(requires_proxy_auth=PRIVATE_MODE)
 def web() -> object:
     import asyncio
 
@@ -74,7 +80,7 @@ def web() -> object:
     async def persist_mutations(request: Request, call_next):
         # The public Audit demo never exposes model-backed Research, even if
         # a parent environment accidentally configures an MCP transport.
-        if request.method == "POST" and request.url.path.endswith("/research"):
+        if not PRIVATE_MODE and request.method == "POST" and request.url.path.endswith("/research"):
             return JSONResponse(status_code=403, content={"detail": "Research disabled on public Audit deployment"})
         if request.method not in {"POST", "PATCH"}:
             return await call_next(request)
