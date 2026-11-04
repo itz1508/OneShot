@@ -44,15 +44,24 @@ def _completed_work_todo(controller, task_id, run_id, stage):
         _WorkFixture(label=request_id), request_name, 1, "fixture", "1.0"
     )
     input_ref = ArtifactRef(
-        artifact_id=request_name, artifact_revision=1, artifact_digest=input_digest,
-        contract_id="fixture", contract_version="1.0", serializer_profile=SERIALIZER_PROFILE,
+        artifact_id=request_name,
+        artifact_revision=1,
+        artifact_digest=input_digest,
+        contract_id="fixture",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
     )
     scope = WorkBinding(
-        task_id=task_id, run_id=run_id, stage=stage.value,
-        request_id=request_id, request_revision=1, input_request_ref=input_ref,
+        task_id=task_id,
+        run_id=run_id,
+        stage=stage.value,
+        request_id=request_id,
+        request_revision=1,
+        input_request_ref=input_ref,
     )
     _work, todo_ref = controller.work_todos.start(
-        scope, action=f"Observe {stage.value} stage fixture",
+        scope,
+        action=f"Observe {stage.value} stage fixture",
         expected_result=f"Verified {stage.value} fixture output",
     )
     _work, running = controller.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
@@ -60,12 +69,19 @@ def _completed_work_todo(controller, task_id, run_id, stage):
         _WorkFixture(label=f"observed {stage.value}"), evidence_name, 1, "fixture", "1.0"
     )
     output_ref = ArtifactRef(
-        artifact_id=evidence_name, artifact_revision=1, artifact_digest=output_digest,
-        contract_id="fixture", contract_version="1.0", serializer_profile=SERIALIZER_PROFILE,
+        artifact_id=evidence_name,
+        artifact_revision=1,
+        artifact_digest=output_digest,
+        contract_id="fixture",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
     )
     _work, completed = controller.work_todos.set_status(
-        running, "work-1", WorkStatus.COMPLETED,
-        actual_result=f"observed {stage.value}", evidence_refs=(output_ref,),
+        running,
+        "work-1",
+        WorkStatus.COMPLETED,
+        actual_result=f"observed {stage.value}",
+        evidence_refs=(output_ref,),
     )
     return completed
 
@@ -78,12 +94,16 @@ def _advance_with_receipt(controller, task_id, run_id, stage):
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
         return controller.advance_stage(
-            task_id, run_id, stage, receipt,
+            task_id,
+            run_id,
+            stage,
+            receipt,
             gap_result_ref=gap.result_ref,
             gap_receipt_ref=gap.completion_receipt_ref,
             todo_ref=todo_ref,
         )
     return controller.advance_stage(task_id, run_id, stage, receipt, todo_ref=todo_ref)
+
 
 def _make_admission(receipts, action_ids=("act-001",), lock_subject=LOCK_SUBJECT):
     """Helper: issue lock receipt and admission."""
