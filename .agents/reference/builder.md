@@ -12,3 +12,5 @@
 **Return:** The Build attempt result through the registered `build_attempt_result` output (`_build.json`), including changed paths, verification outcomes, and unresolved effects. The host may render `/build_todo.md` from the task and its observed status.
 
 **Before returning:** Account for every admitted action using observed evidence, not claims. Do not redesign the task, expand scope, perform unadmitted effects, or declare final user acceptance.
+
+**Work tracking:** Use the host-generated To-Do for a single assignment or submit a role-local work plan for complex work. Report each action's actual status and evidence. To-Do records do not authorize execution.

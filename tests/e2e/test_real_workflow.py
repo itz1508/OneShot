@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from pydantic import BaseModel
 
 from agent.contracts.build import BuildActionStatus
 from agent.contracts.common import ArtifactRef
@@ -15,9 +16,11 @@ from agent.contracts.research import (
     ResearchRecord,
 )
 from agent.contracts.scanner import ScannerFinding
+from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.build_admission import BuildAdmission, BuildAdmissionError
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.checkpoint_store import CheckpointStore
 from agent.runtime.controller import STAGE_ORDER, HostController, Stage, TransitionError
 from agent.runtime.effect_executor import EffectExecutor
@@ -28,8 +31,64 @@ from tests.fixtures.structural_gap import passing_gap
 LOCK_SUBJECT = "package_lock"
 
 
+class _WorkFixture(BaseModel):
+    label: str
+
+
+def _completed_work_todo(controller, task_id, run_id, stage):
+    """Record actual persisted test evidence before accepting a simulated stage."""
+    request_id = f"request-{stage.value}"
+    request_name = f"fixture-input-{task_id}-{run_id}-{stage.value}"
+    evidence_name = f"fixture-output-{task_id}-{run_id}-{stage.value}"
+    input_digest = controller.artifact_store.put_immutable(
+        _WorkFixture(label=request_id), request_name, 1, "fixture", "1.0"
+    )
+    input_ref = ArtifactRef(
+        artifact_id=request_name,
+        artifact_revision=1,
+        artifact_digest=input_digest,
+        contract_id="fixture",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
+    )
+    scope = WorkBinding(
+        task_id=task_id,
+        run_id=run_id,
+        stage=stage.value,
+        request_id=request_id,
+        request_revision=1,
+        input_request_ref=input_ref,
+    )
+    _work, todo_ref = controller.assign_work(
+        scope,
+        action=f"Observe {stage.value} stage fixture",
+        expected_result=f"Verified {stage.value} fixture output",
+    )
+    _work, running = controller.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
+    output_digest = controller.artifact_store.put_immutable(
+        _WorkFixture(label=f"observed {stage.value}"), evidence_name, 1, "fixture", "1.0"
+    )
+    output_ref = ArtifactRef(
+        artifact_id=evidence_name,
+        artifact_revision=1,
+        artifact_digest=output_digest,
+        contract_id="fixture",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
+    )
+    _work, completed = controller.work_todos.set_status(
+        running,
+        "work-1",
+        WorkStatus.COMPLETED,
+        actual_result=f"observed {stage.value}",
+        evidence_refs=(output_ref,),
+    )
+    return completed
+
+
 def _advance_with_receipt(controller, task_id, run_id, stage):
-    """Helper: issue a stage receipt then advance."""
+    """Helper: record work, issue a stage receipt, then advance."""
+    todo_ref = _completed_work_todo(controller, task_id, run_id, stage)
     receipt = controller.issue_stage_receipt(stage, task_id=task_id, run_id=run_id, revision=1)
     if stage is Stage.PLANNING:
         gap = passing_gap(controller)
@@ -41,8 +100,9 @@ def _advance_with_receipt(controller, task_id, run_id, stage):
             receipt,
             gap_result_ref=gap.result_ref,
             gap_receipt_ref=gap.completion_receipt_ref,
+            todo_ref=todo_ref,
         )
-    return controller.advance_stage(task_id, run_id, stage, receipt)
+    return controller.advance_stage(task_id, run_id, stage, receipt, todo_ref=todo_ref)
 
 
 def _make_admission(receipts, action_ids=("act-001",), lock_subject=LOCK_SUBJECT):
@@ -142,6 +202,7 @@ class TestE2EWorkflow:
 
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
+        todo_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.PLANNING)
         state = controller.advance_stage(
             "task-001",
             "run-001",
@@ -149,6 +210,7 @@ class TestE2EWorkflow:
             receipt,
             gap_result_ref=gap.result_ref,
             gap_receipt_ref=gap.completion_receipt_ref,
+            todo_ref=todo_ref,
         )
         assert state.current_stage == Stage.FIXTURE_VALIDATION
 
@@ -209,6 +271,15 @@ class TestScenarios:
             _advance_with_receipt(controller, "task-001", "run-001", stage)
         state = controller.get_state("task-001")
         assert state.current_stage == Stage.BUILD_VALIDATION
+        final_ref = _completed_work_todo(controller, "task-001", "run-001", Stage.BUILD_VALIDATION)
+        final_receipt = controller.issue_stage_receipt(Stage.BUILD_VALIDATION, task_id="task-001", run_id="run-001")
+        with pytest.raises(TransitionError, match="final-stage work list"):
+            controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=None)
+        state = controller.complete_final_stage("task-001", "run-001", final_receipt, todo_ref=final_ref)
+        assert Stage.BUILD_VALIDATION in state.completed_stages
+        from agent.cli import cmd_verify
+
+        assert cmd_verify("task-001", state_root=str(tmp_path)) == 0
 
     def test_s2_unsupported_claim_do_not_use(self, tmp_path):
         """S2: Unsupported capability returns BLOCKED, not pass."""

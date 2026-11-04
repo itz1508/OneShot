@@ -12,3 +12,5 @@
 **Return:** The Planning result (`_planning.json`) and the candidate `build_specification` when Build is required. The host may render `/execplan.md` from the accepted plan content.
 
 **Before returning:** Check that every CodeIntent has a clear disposition and that Build would not need to invent architecture, paths, or acceptance criteria. Do not change production code, freeze the specification, or authorize Build.
+
+**Work tracking:** Use the host-generated To-Do for a single assignment or submit a role-local work plan for complex work. Report each action's actual status and evidence. To-Do records do not authorize execution.

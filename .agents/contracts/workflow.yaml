@@ -27,6 +27,26 @@ bundle:
     providers: provider_registry
   transition_owner: host_controller
   role_guidance_root: .agents/reference
+  work_tracking:
+    owner: host_controller
+    todo_contract_id: work_todo
+    plan_contract_id: work_plan
+    source_request_binding: exact_artifact_ref
+    simple_generation: automatic_single
+    complex_generation: plan_derived
+    tracked_roles:
+      - research
+      - audit_discovery
+      - planning
+      - fixture_validation
+      - build
+      - build_validation
+    persistence: artifact_store
+    progress_revisions: compare_and_swap
+    events: event_store
+    transition_gate: completed_with_persisted_evidence
+    final_stage_gate: verified_completion_receipt_and_todo
+    effect_authorization: none
   pre_scanner_gate: structural_gap_analysis
   implementation_note: declared_host_services_require_runtime_validation
 

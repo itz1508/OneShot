@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from agent.contracts.common import ArtifactRef
 from agent.contracts.host import ReceiptRef
 from agent.contracts.scanner import ScannerResult
+from agent.contracts.work_todo import TodoList, WorkBinding
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
@@ -26,6 +27,7 @@ from agent.runtime.providers.registry import ProviderRegistry
 from agent.runtime.receipt_store import ReceiptStore
 from agent.runtime.recovery import BoundedRecovery
 from agent.runtime.scanner_gateway import ScannerGateway
+from agent.runtime.work_todo import WorkTodoError, WorkTodoManager
 
 
 class Stage(StrEnum):
@@ -56,6 +58,7 @@ class TaskState(BaseModel):
     run_id: str = Field(min_length=1)
     current_stage: Stage = Stage.RESEARCH
     completed_stages: tuple[Stage, ...] = ()
+    active_work_artifact_id: str | None = None
 
     model_config = {"frozen": True}
 
@@ -79,6 +82,7 @@ class HostController:
         self.artifact_store = ArtifactStore(self.state_root)
         self.receipt_store = ReceiptStore(self.state_root)
         self.event_store = EventStore(self.state_root)
+        self.work_todos = WorkTodoManager(self.artifact_store, self.event_store)
         self.checkpoint_store = CheckpointStore(self.state_root)
         self.scanner = ScannerGateway(self.artifact_store)
         self.gap_analyzer = HostGapAnalyzer(self.artifact_store, self.receipt_store)
@@ -99,6 +103,7 @@ class HostController:
         completion_receipt_ref: ReceiptRef | None = None,
         gap_result_ref: ArtifactRef | None = None,
         gap_receipt_ref: ReceiptRef | None = None,
+        todo_ref: ArtifactRef | None = None,
     ) -> TaskState:
         """Advance to the next stage if the current stage is completed.
 
@@ -114,27 +119,22 @@ class HostController:
 
         if state.current_stage != expected_stage:
             raise TransitionError(f"expected stage {expected_stage}, but current is {state.current_stage}")
+        if state.run_id != run_id or state.task_id != task_id:
+            raise TransitionError("stage transition task/run binding mismatch")
 
-        # Verify stage-completion receipt
-        if completion_receipt_ref is None:
-            raise TransitionError("stage completion receipt required")
-        # Verify task-bound receipt: subject must match task_id, run_id, and stage
-        # Accept old format (stage_complete:{stage}) for backward compat
-        expected_old = f"stage_complete:{state.current_stage.value}"
-        expected_new = f"stage_complete:{state.task_id}:{state.run_id}:{state.current_stage.value}"
-        if not self.receipt_store.verify(
-            completion_receipt_ref.receipt_id,
-            completion_receipt_ref.receipt_digest,
-            expected_old,
-        ) and not self.receipt_store.verify(
-            completion_receipt_ref.receipt_id,
-            completion_receipt_ref.receipt_digest,
-            expected_new,
-        ):
-            raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
-
+        self._verify_stage_receipt(state, completion_receipt_ref)
         if state.current_stage is Stage.PLANNING:
             self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
+
+        # Task tracking is a mandatory observation gate, never permission to execute.
+        if todo_ref is None:
+            raise TransitionError("completed work list reference required before stage transition")
+        if state.active_work_artifact_id != todo_ref.artifact_id:
+            raise TransitionError("work list does not match the host-assigned request")
+        try:
+            self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
+        except WorkTodoError as exc:
+            raise TransitionError(f"invalid or unfinished work list: {exc}") from exc
 
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
@@ -161,6 +161,26 @@ class HostController:
 
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
+
+    def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> None:
+        """Verify an existing host completion receipt for the actual stage."""
+        # Verify stage-completion receipt
+        if completion_receipt_ref is None:
+            raise TransitionError("stage completion receipt required")
+        # Verify task-bound receipt: subject must match task_id, run_id, and stage
+        # Accept old format (stage_complete:{stage}) for backward compat
+        expected_old = f"stage_complete:{state.current_stage.value}"
+        expected_new = f"stage_complete:{state.task_id}:{state.run_id}:{state.current_stage.value}"
+        if not self.receipt_store.verify(
+            completion_receipt_ref.receipt_id,
+            completion_receipt_ref.receipt_digest,
+            expected_old,
+        ) and not self.receipt_store.verify(
+            completion_receipt_ref.receipt_id,
+            completion_receipt_ref.receipt_digest,
+            expected_new,
+        ):
+            raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
 
     def _verify_structural_gap(
         self,
@@ -226,6 +246,78 @@ class HostController:
     ) -> StructuralGapOutcome:
         """Run the host structural workflow before accepting Planning."""
         return self.gap_analyzer.evaluate(request, walking_skeleton_runner=walking_skeleton_runner)
+
+    def complete_final_stage(
+        self,
+        task_id: str,
+        run_id: str,
+        completion_receipt_ref: ReceiptRef | None,
+        todo_ref: ArtifactRef | None,
+    ) -> TaskState:
+        """Mark Build Verification completed only after its assigned work is verified."""
+        checkpoint = self.checkpoint_store.load_checkpoint(task_id)
+        if checkpoint is None:
+            raise TransitionError("task has no checkpoint")
+        revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if state.run_id != run_id or state.task_id != task_id:
+            raise TransitionError("final stage task/run mismatch")
+        if state.current_stage is not Stage.BUILD_VALIDATION or Stage.BUILD_VALIDATION in state.completed_stages:
+            raise TransitionError("task is not at an unfinished final verification stage")
+        self._verify_stage_receipt(state, completion_receipt_ref)
+        if todo_ref is None:
+            raise TransitionError("completed final-stage work list required")
+        if state.active_work_artifact_id != todo_ref.artifact_id:
+            raise TransitionError("final work list does not match host assignment")
+        try:
+            self.work_todos.require_complete(todo_ref, task_id=task_id, run_id=run_id, stage=state.current_stage.value)
+        except WorkTodoError as exc:
+            raise TransitionError(f"invalid or unfinished final work list: {exc}") from exc
+        completed = state.model_copy(
+            update={
+                "completed_stages": (*state.completed_stages, Stage.BUILD_VALIDATION),
+                "active_work_artifact_id": None,
+            }
+        )
+        try:
+            self.checkpoint_store.checkpoint_cas(task_id, revision, completed.model_dump(mode="json"))
+        except CompetingWriterError as exc:
+            raise TransitionError(f"final stage checkpoint CAS failed: {exc}") from exc
+        self.event_store.append(task_id, "stage_completed", Stage.BUILD_VALIDATION.value)
+        return completed
+
+    def assign_work(
+        self,
+        binding: WorkBinding,
+        *,
+        action: str | None = None,
+        expected_result: str | None = None,
+        work_plan_ref: ArtifactRef | None = None,
+    ) -> tuple[TodoList, ArtifactRef]:
+        """Host registers a stage assignment and auto-generates its work tracker."""
+        checkpoint = self.checkpoint_store.load_checkpoint(binding.task_id)
+        if checkpoint is None:
+            raise TransitionError("cannot assign work before task initialization")
+        revision, state_dict, _ = checkpoint
+        state = TaskState(**state_dict)
+        if state.run_id != binding.run_id or state.current_stage.value != binding.stage:
+            raise TransitionError("work assignment belongs to a different task stage or run")
+        if state.current_stage in state.completed_stages:
+            raise TransitionError("cannot assign work after stage completion")
+        work_id = WorkTodoManager._identity(binding, "work-todo")
+        if state.active_work_artifact_id is not None and state.active_work_artifact_id != work_id:
+            raise TransitionError("different work request already assigned to this stage")
+        record, ref = self.work_todos.start(
+            binding, action=action, expected_result=expected_result, work_plan_ref=work_plan_ref
+        )
+        if state.active_work_artifact_id is None:
+            updated = state.model_copy(update={"active_work_artifact_id": ref.artifact_id})
+            try:
+                self.checkpoint_store.checkpoint_cas(binding.task_id, revision, updated.model_dump(mode="json"))
+            except CompetingWriterError as exc:
+                raise TransitionError(f"concurrent work assignment: {exc}") from exc
+            self.event_store.append(binding.task_id, "work_assigned", ref.artifact_id)
+        return record, ref
 
     def get_state(self, task_id: str) -> TaskState | None:
         """Get current task state from checkpoint."""

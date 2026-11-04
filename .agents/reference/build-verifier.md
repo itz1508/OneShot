@@ -12,3 +12,5 @@
 **Return:** The independent Build Verification result through the registered `build_validation_record` output (`_build_validation.json`).
 
 **Before returning:** Check that every success claim has actual test or observation evidence. A successful Builder attempt alone does not prove the user outcome. Do not modify source, alter Build records, or authorize source promotion.
+
+**Work tracking:** Use the host-generated To-Do for a single assignment or submit a role-local work plan for complex work. Report each action's actual status and evidence. To-Do records do not authorize execution.

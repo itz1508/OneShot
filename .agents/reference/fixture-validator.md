@@ -12,3 +12,5 @@
 **Return:** The fixture validation result through the registered `fixture_validation_record` output (`_fixture_validation.json`).
 
 **Before returning:** Check that the reported results match actual observations. A missing or unexecuted check is not a pass. Do not edit the specification, authorize execution, or issue your own completion receipt.
+
+**Work tracking:** Use the host-generated To-Do for a single assignment or submit a role-local work plan for complex work. Report each action's actual status and evidence. To-Do records do not authorize execution.
