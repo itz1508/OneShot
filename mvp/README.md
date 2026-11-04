@@ -120,3 +120,32 @@ An MCP invocation failure leaves the host stage unadvanced. If a work item is
 already assigned or an interruption leaves partial effects, an explicit
 host-owned reconciliation is required before retry. This is not crash-safe
 automatic resume. Recovery events record failure classifications, not secrets.
+
+## Evidence-grounded Research from Codex branch
+
+The evidence-acquisition enhancement is on
+`itz1508/oneshot-mcp-server@05b48c5f70535d983bfd53768542067927aa900d`
+(branch `feat/evidence-grounded-research`), **not** on the server's `main`.
+Build this revision for the connected evidence E2E.
+
+The OneShot host can request explicitly authorized repository files by setting:
+
+    MCP_WORKSPACE_ROOT=/absolute/path/to/authorized/repository
+    MCP_TRUSTED_ANCESTRY=true
+    ONESHOT_RESEARCH_WORKSPACE_PATHS_JSON='["README.md","agent/contracts/research.py"]'
+
+The paths shown are illustrative. Set them to existing, approved relative paths
+in the configured repository; do not hardcode an arbitrary project structure.
+The host validates the list before assigning Research work. Codex enforces
+execution-time secure file access. The configuration value must be controlled
+by the host/operator, not by task text or untrusted client requests. It is
+passed inside `stage_payload.evidence_sources.workspace_paths`; this does
+not add tools to `tools/list`. Host-supplied snapshots are supported by the
+MCP contract but are not yet wired by this MVP adapter, because the host must
+first own and authenticate their provenance.
+
+If the variable is absent, Research may return a valid artifact with zero
+independent evidence and an unresolved limitation; do not interpret that
+as evidence-grounded completion. A green connected E2E requires a workspace
+file actually read, its digest independently recomputed by the verifier, and
+the host stage transition committed with a valid receipt.
