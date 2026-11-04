@@ -1,4 +1,4 @@
-# Synthetic Research Catalog — 10 versioned quality templates.
+# Synthetic Research Catalog — 11 versioned quality templates.
 #
 # All items are SYNTHETIC. They supply investigation structure, not
 # verified facts, accepted requirements, or implementation authority.
@@ -190,6 +190,39 @@ samples:
       - "Transport and authentication requirements documented"
       - "Real tool execution observed (not static inspection)"
       - "Fresh-checkout reproducibility confirmed"
+    fixture_blueprint:
+      preconditions_required: true
+      triggering_action_required: true
+      expected_behavior_required: true
+      failure_observations_required: true
+      required_evidence_min: 1
+
+  - catalog_id: SAMPLE-MODAL-GITHUB-001
+    category: serverless_runtime_and_github_access
+    version: "1.0.0"
+    matching_conditions:
+      intents: [investigate_question, verify_planning_input, inspect_codebase]
+      keywords: [Modal, serverless, GitHub, clone, deployment, secret, sandbox, credential]
+    research_checklist:
+      - "Inspect existing source, deployment workflows, runtime owner, and current Modal SDK conventions"
+      - "Identify the proposed access mode: public endpoint, protected endpoint, or read-only internal function"
+      - "Classify authentication separately for deployment API, inference proxy, and GitHub repository access"
+      - "Validate exact Git host, repository URL structure, branch references, and checkout lifetime"
+      - "Check that credentials are absent from Git URL, command arguments, logs, repository files, and error output"
+      - "Inspect execution isolation, Git hook/configuration behavior, timeouts, and authorization boundaries"
+      - "Require explicit environment targeting and identify secret-provisioning dependencies"
+      - "Distinguish passing mocked tests and static CI from live Modal and authenticated GitHub E2E evidence"
+      - "Review the historical code-normalization example in agent/catalog/examples/modal_serverless_github_case.md"
+    success_criteria:
+      - "Existing host ownership, scope, and authorization boundaries are preserved"
+      - "SDK/CLI and target environment are verified against current runtime"
+      - "Credentials are separately scoped and injected from secrets, never committed or placed in clone URL"
+      - "Repository input and branch validation prevents unauthorized destinations and unsafe input"
+      - "Temporary checkout, resource bounds, and failure handling are independently testable"
+      - "All required lint, formatting, type checking, and regression tests pass with evidence"
+      - "Live deployment and endpoint behavior are actually observed before claiming deploy READY"
+      - "Real authenticated GitHub operations, negative cases, and no-leak checks pass before claiming integration READY"
+      - "No Builder/product READY claim without authorized task receipts and independent E2E evidence"
     fixture_blueprint:
       preconditions_required: true
       triggering_action_required: true
