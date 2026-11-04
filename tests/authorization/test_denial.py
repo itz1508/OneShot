@@ -44,11 +44,11 @@ class TestDefaultDeny:
         with pytest.raises(AuthorizationError):
             engine.check_path_safety("/etc/passwd")
 
-    def test_path_within_roots_allowed(self):
+    def test_path_within_roots_allowed(self, tmp_path):
         """AUTH06: Path within allowed roots allowed."""
-        engine = AuthorizationEngine(allowed_roots=("/tmp",))
-        path = engine.check_path_safety("/tmp/test")
-        assert str(path).startswith("/tmp")
+        engine = AuthorizationEngine(allowed_roots=(str(tmp_path),))
+        path = engine.check_path_safety(tmp_path / "test")
+        assert path == (tmp_path / "test").resolve()
 
     def test_no_allowed_roots_denies_all(self):
         """AUTH07: No allowed roots denies all paths."""

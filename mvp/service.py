@@ -60,6 +60,11 @@ class _ResearchAdmissionStore:
             return False
         except PermissionError:
             return True
+        except OSError:
+            # Windows raises OSError (e.g. WinError 11/87) for invalid or
+            # out-of-range PIDs instead of ProcessLookupError. An invalid
+            # PID cannot own the slot, so it is reclaimable.
+            return False
         return True
 
     def acquire(self, task_id: str) -> str:
