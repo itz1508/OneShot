@@ -164,10 +164,7 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
             isinstance(item, dict) and item.get("input_id") == "input_request" for item in required_inputs
         ):
             raise LoaderError(f"{stage}: required input_request missing")
-        if (
-            not isinstance(success, dict)
-            or success.get("derived_from") != "accepted_user_intent_and_supplied_criteria"
-        ):
+        if not isinstance(success, dict) or success.get("derived_from") != "accepted_user_intent_and_supplied_criteria":
             raise LoaderError(f"{stage}: success must derive from user intent")
         if stage == "research" and success.get("criteria_completeness_gate") is not False:
             raise LoaderError("research cannot use criteria completeness as a gate")

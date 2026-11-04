@@ -290,12 +290,9 @@ class HostGapAnalyzer:
             comparable_system_analysis_completed=comparable_valid,
         )
         result_id = (
-            f"structural-gap-{request.task_id}-{request.run_id}-"
-            f"{request.candidate_specification_ref.artifact_digest}"
+            f"structural-gap-{request.task_id}-{request.run_id}-{request.candidate_specification_ref.artifact_digest}"
         )
-        digest = self._artifacts.put_immutable(
-            result, result_id, 1, "structural_analysis_result", "1.0"
-        )
+        digest = self._artifacts.put_immutable(result, result_id, 1, "structural_analysis_result", "1.0")
         ref = ArtifactRef(
             artifact_id=result_id,
             artifact_revision=1,
@@ -311,7 +308,5 @@ class HostGapAnalyzer:
         _, receipt_digest = self._receipts.issue_verified(
             receipt_id, "host", structural_gap_receipt_subject(result, digest)
         )
-        receipt = ReceiptRef(
-            receipt_id=receipt_id, receipt_digest=receipt_digest, issuer_id="host"
-        )
+        receipt = ReceiptRef(receipt_id=receipt_id, receipt_digest=receipt_digest, issuer_id="host")
         return StructuralGapOutcome(result=result, result_ref=ref, completion_receipt_ref=receipt)

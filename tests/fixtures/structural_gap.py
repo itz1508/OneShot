@@ -104,10 +104,13 @@ def build_gap_inputs(
         )
     )
     grounded = SourceGroundedAnalysis(
-        source_snapshot_ref=source_snapshot, evidence_refs=(evidence,), completed=True,
+        source_snapshot_ref=source_snapshot,
+        evidence_refs=(evidence,),
+        completed=True,
     )
     comparable = ComparableSystemAnalysis(
-        evidence_refs=(comparable_evidence,), completed=True,
+        evidence_refs=(comparable_evidence,),
+        completed=True,
     )
     request = StructuralGapRequest(
         task_id=task_id,

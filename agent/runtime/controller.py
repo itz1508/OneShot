@@ -140,16 +140,12 @@ class HostController:
             if gap_receipt_ref.issuer_id != "host":
                 raise TransitionError("untrusted structural gap completion issuer")
             try:
-                digest = self.artifact_store.get_digest(
-                    gap_result_ref.artifact_id, gap_result_ref.artifact_revision
-                )
+                digest = self.artifact_store.get_digest(gap_result_ref.artifact_id, gap_result_ref.artifact_revision)
                 if digest != gap_result_ref.artifact_digest:
                     raise ValueError("structural gap artifact digest mismatch")
                 if gap_result_ref.contract_id != "structural_analysis_result":
                     raise ValueError("incorrect structural gap result contract")
-                raw = self.artifact_store.get_verified(
-                    gap_result_ref.artifact_id, gap_result_ref.artifact_revision
-                )
+                raw = self.artifact_store.get_verified(gap_result_ref.artifact_id, gap_result_ref.artifact_revision)
                 result = StructuralGapResult.model_validate_json(raw)
                 if result.task_id != task_id or result.run_id != run_id:
                     raise ValueError("structural gap result belongs to another task or run")
@@ -164,9 +160,7 @@ class HostController:
                 ):
                     raise ValueError("Planning candidate changed since structural analysis")
                 subject = structural_gap_receipt_subject(result, digest)
-                if not self.receipt_store.verify(
-                    gap_receipt_ref.receipt_id, gap_receipt_ref.receipt_digest, subject
-                ):
+                if not self.receipt_store.verify(gap_receipt_ref.receipt_id, gap_receipt_ref.receipt_digest, subject):
                     raise ValueError("structural gap completion receipt is not verified")
             except Exception as exc:
                 raise TransitionError(f"invalid structural gap evidence: {exc}") from exc

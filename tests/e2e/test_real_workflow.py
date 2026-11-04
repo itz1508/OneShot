@@ -143,7 +143,10 @@ class TestE2EWorkflow:
         gap = passing_gap(controller)
         assert gap.completion_receipt_ref is not None
         state = controller.advance_stage(
-            "task-001", "run-001", Stage.PLANNING, receipt,
+            "task-001",
+            "run-001",
+            Stage.PLANNING,
+            receipt,
             gap_result_ref=gap.result_ref,
             gap_receipt_ref=gap.completion_receipt_ref,
         )
