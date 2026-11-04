@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from agent.audit.core import Finding, evidence
@@ -15,7 +16,8 @@ def scan_integration(root: Path, scope: Path) -> list[Finding]:
     findings: list[Finding] = []
     if ui.is_file():
         text = ui.read_text(encoding="utf-8")
-        if "Audit" not in text and "audit" not in text:
+        selector = re.search(r"""(?i)(?:['"]audit['"]|>\s*audit\s*<|audit_mode|auditMode)""", text)
+        if selector is None:
             findings.append(
                 evidence(
                     root,
