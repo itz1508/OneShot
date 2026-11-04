@@ -37,8 +37,6 @@ def execute_research(service: MVPService, task_id: str) -> dict[str, object]:
     if state.current_stage is not Stage.RESEARCH:
         raise MVPError("Research stage is not active")
     input_record, input_revision, input_digest = service.read_input(task_id)
-    if input_revision != 1:
-        raise MVPError("Research requires a frozen initial input revision for this MVP")
     input_ref = ArtifactRef(
         artifact_id=f"mvp-input:{task_id}",
         artifact_revision=input_revision,
@@ -52,7 +50,7 @@ def execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         run_id=state.run_id,
         stage="research",
         request_id=f"research-{task_id}",
-        request_revision=1,
+        request_revision=input_revision,
         input_request_ref=input_ref,
     )
     _, todo_ref = service.host.assign_work(
