@@ -1,5 +1,6 @@
 """Actual SQLite append, replay, identity, and JSONL projection tests."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
@@ -65,3 +66,14 @@ def test_memory_requires_promotion(tmp_path):
     with pytest.raises(StageJournalError, match="verified host memory"):
         service.append(event("memo", "mem"))
     assert service.load(workspace_id="w", task_id="t", run_id="r", stage="mem") == ()
+
+
+def test_parallel_appends_reconstruct_same_order_as_sqlite(tmp_path):
+    service = StageJournalService(tmp_path / "runtime", tmp_path / "events.db")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(lambda index: service.append(event(f"event-{index}")), range(12)))
+    records = service.load(workspace_id="w", task_id="t", run_id="r", stage="search")
+    assert [record.sequence for record in records] == list(range(1, 13))
+    projected = (tmp_path / "runtime/w/t/r/search.log").read_text().splitlines()
+    assert len(projected) == 12
+    assert [StageLogEvent.model_validate_json(raw).sequence for raw in projected] == list(range(1, 13))
