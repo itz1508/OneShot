@@ -103,9 +103,7 @@ def test_dynamic_frontend_api_prefix_is_not_mistaken_for_missing_route(tmp_path:
     ui = tmp_path / "web" / "src"
     api.mkdir()
     ui.mkdir(parents=True)
-    (api / "api.py").write_text(
-        '@app.get("/api/tasks/{task_id}/events")\ndef events(): pass\n'
-    )
+    (api / "api.py").write_text('@app.get("/api/tasks/{task_id}/events")\ndef events(): pass\n')
     (ui / "main.jsx").write_text("fetch('/api/tasks/' + taskId + '/events')\n")
     result = scan(tmp_path, capabilities=("wiring",))
     assert not result.findings
