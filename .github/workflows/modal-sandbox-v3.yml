@@ -42,14 +42,18 @@ jobs:
       - name: Ruff lint
         run: uv run --no-sync ruff check src tests scripts
       - name: Ruff format
+        if: success() || failure()
         run: uv run --no-sync ruff format --check src tests scripts
       - name: Mypy
+        if: success() || failure()
         run: uv run --no-sync mypy src
       - name: Standalone local tests
+        if: success() || failure()
         env:
           RUN_MODAL_E2E: '0'
         run: uv run --no-sync pytest -q tests --ignore=tests/integration
       - name: Report standalone lockfile requirement
+        if: success() || failure()
         run: |
           if ! git ls-files --error-unmatch deployment/modal/sandbox_v3/uv.lock >/dev/null 2>&1; then
             echo "::warning::The standalone uv.lock is not committed. CI generated a temporary lock only."
