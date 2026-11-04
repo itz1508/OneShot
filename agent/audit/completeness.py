@@ -19,6 +19,7 @@ def scan_completeness(root: Path, scope: Path) -> list[Finding]:
             if len(node.body) != 1:
                 continue
             statement = node.body[0]
+            exception: ast.expr | None
             if isinstance(statement, ast.Raise) and isinstance(statement.exc, ast.Call):
                 exception = statement.exc.func
             elif isinstance(statement, ast.Raise):
