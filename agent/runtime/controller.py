@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
 from agent.contracts.host import ReceiptRef
+from agent.contracts.scanner import ScannerResult
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.checkpoint_store import CheckpointStore, CompetingWriterError
@@ -133,9 +134,7 @@ class HostController:
             raise TransitionError(f"invalid completion receipt for stage {state.current_stage}")
 
         if state.current_stage is Stage.PLANNING:
-            self._verify_structural_gap(
-                task_id, run_id, gap_result_ref, gap_receipt_ref
-            )
+            self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
 
         idx = STAGE_ORDER.index(state.current_stage)
         if idx + 1 >= len(STAGE_ORDER):
@@ -214,11 +213,9 @@ class HostController:
         capabilities: tuple[str, ...],
         gap_result_ref: ArtifactRef | None,
         gap_receipt_ref: ReceiptRef | None,
-    ):
+    ) -> ScannerResult:
         """Host Scanner dispatch; always reject an unvalidated Planning candidate."""
-        self._verify_structural_gap(
-            task_id, run_id, gap_result_ref, gap_receipt_ref, candidate_ref
-        )
+        self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref, candidate_ref)
         return self.scanner.scan_exact(candidate_ref, repository_identity, capabilities)
 
     def run_structural_gap_analysis(
