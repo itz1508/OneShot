@@ -85,12 +85,12 @@ def scan(
     root: Path, scope: str = ".", capabilities: tuple[str, ...] = (), request: str = ""
 ) -> AuditResult:
     from agent.audit.completeness import scan_completeness
+    from agent.audit.contracts import scan_contracts
     from agent.audit.dependencies import scan_dependencies
     from agent.audit.frontend import scan_frontend
-    from agent.audit.state import scan_state
-    from agent.audit.contracts import scan_contracts
     from agent.audit.paths import scan_paths
     from agent.audit.security import scan_security
+    from agent.audit.state import scan_state
     from agent.audit.verification import scan_verification
     from agent.audit.wiring import scan_wiring
 
