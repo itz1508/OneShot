@@ -13,7 +13,7 @@ import pytest
 from fastapi import Request
 
 
-def _load_modal(monkeypatch: Any, *, secret: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+def _load_modal(monkeypatch: Any, *, secret: str = "", private: bool = False) -> tuple[dict[str, Any], dict[str, Any]]:
     calls: dict[str, Any] = {"dirs": [], "secrets": [], "events": [], "commits": 0}
 
     class FakeImage:
@@ -77,7 +77,9 @@ def _load_modal(monkeypatch: Any, *, secret: str = "") -> tuple[dict[str, Any], 
 
         return wrap
 
-    def asgi_app() -> Any:
+    def asgi_app(*, requires_proxy_auth: bool = False) -> Any:
+        calls["proxy_auth"] = requires_proxy_auth
+
         def wrap(func: Any) -> Any:
             calls["events"].append("asgi")
             return func
@@ -94,6 +96,7 @@ def _load_modal(monkeypatch: Any, *, secret: str = "") -> tuple[dict[str, Any], 
     monkeypatch.setitem(sys.modules, "modal", fake_modal)
     monkeypatch.setenv("ONESHOT_MODAL_APP_NAME", "existing-oneshot-app")
     monkeypatch.setenv("ONESHOT_MODAL_VOLUME_NAME", "existing-oneshot-volume")
+    monkeypatch.setenv("ONESHOT_MODAL_PRIVATE_MODE", "true" if private else "false")
     if secret:
         monkeypatch.setenv("ONESHOT_MODAL_MODEL_SECRET", secret)
     else:
@@ -124,6 +127,7 @@ def test_public_modal_image_and_concurrency_contract(monkeypatch: Any) -> None:
     assert calls["events"] == ["asgi", "concurrent", "function"]
     assert calls["max_inputs"] == 20
     assert calls["secrets"] == []
+    assert calls["proxy_auth"] is False
     assert calls["function"]["max_containers"] == 1
     assert list(calls["function"]["volumes"]) == ["/data"]
     assert callable(calls["function"]["volumes"]["/data"].commit)
@@ -131,10 +135,14 @@ def test_public_modal_image_and_concurrency_contract(monkeypatch: Any) -> None:
     assert callable(module["web"])
 
 
-def test_explicit_model_secret_opt_in(monkeypatch: Any) -> None:
-    calls, _ = _load_modal(monkeypatch, secret="existing-model-secret")
+def test_model_secret_requires_private_modal_proxy_auth(monkeypatch: Any) -> None:
+    with pytest.raises(ValueError, match="model credentials require"):
+        _load_modal(monkeypatch, secret="existing-model-secret")
+
+    calls, _ = _load_modal(monkeypatch, secret="existing-model-secret", private=True)
     assert calls["secrets"] == ["existing-model-secret"]
     assert calls["function"]["secrets"] == ["existing-model-secret"]
+    assert calls["proxy_auth"] is True
 
 
 def test_audit_root_set_before_api_import_and_mutations_committed(monkeypatch: Any) -> None:
