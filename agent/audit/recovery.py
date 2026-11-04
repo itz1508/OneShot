@@ -15,7 +15,11 @@ def scan_recovery(root: Path, scope: Path) -> list[Finding]:
     findings: list[Finding] = []
     if service.is_file():
         content = service.read_text(encoding="utf-8")
-        if "_active_requests: set[str]" in content and "self._active_guard = Lock()" in content:
+        if (
+            "_active_requests: set[str]" in content
+            and "self._active_guard = Lock()" in content
+            and "_ResearchAdmissionStore" not in content
+        ):
             findings.append(
                 evidence(
                     root,
@@ -30,7 +34,7 @@ def scan_recovery(root: Path, scope: Path) -> list[Finding]:
             )
     if host.is_file():
         content = host.read_text(encoding="utf-8")
-        if "reconcile host state before retry" in content:
+        if "reconcile host state before retry" in content and "def _reconcile_research(" not in content:
             findings.append(
                 evidence(
                     root,

@@ -1,6 +1,7 @@
 """E2E workflow tests — E2E01-E2E06, S1-S6, and adversarial security tests."""
 
 import os
+from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
@@ -20,7 +21,7 @@ from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.artifact_store import ArtifactStore
 from agent.runtime.authorization import AuthorizationEngine
 from agent.runtime.build_admission import BuildAdmission, BuildAdmissionError
-from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
+from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_raw
 from agent.runtime.checkpoint_store import CheckpointStore
 from agent.runtime.controller import STAGE_ORDER, HostController, Stage, TransitionError
 from agent.runtime.effect_executor import EffectExecutor
@@ -460,15 +461,18 @@ class TestScenarios:
         receipts = ReceiptStore(state)
         executor = EffectExecutor(auth, checkpoints, receipts, workspace)
         admission_receipt = _make_admission(receipts)
-        result = executor.execute_admitted(
-            action_id="act-001",
-            action_kind="create",
-            admission_receipt=admission_receipt,
-            target_path=str(tmp_path / "escape.py"),
-            content="escaped",
-        )
-        assert result.status.value == "blocked"
-        assert "escapes workspace" in (result.error or "")
+        for path in (tmp_path / "outside" / "escape.py", Path("../relative-outside/escape.py")):
+            result = executor.execute_admitted(
+                action_id="act-001",
+                action_kind="create",
+                admission_receipt=admission_receipt,
+                target_path=str(path),
+                content="escaped",
+            )
+            assert result.status.value == "blocked"
+            assert "escapes workspace" in (result.error or "")
+        assert not (tmp_path / "outside").exists()
+        assert not (tmp_path / "relative-outside").exists()
 
     def test_s4d_admission_with_invalid_lock_rejected(self, tmp_path):
         """S4d: BuildAdmission rejects invalid lock receipt."""
@@ -606,7 +610,7 @@ class TestScenarios:
         assert corrupted.status is BuildActionStatus.FAILED
         assert "digest mismatch" in (corrupted.error or "")
 
-    def test_s6b_effect_uncertain_after_crash(self, tmp_path):
+    def test_s6b_effect_uncertain_after_crash(self, tmp_path, monkeypatch):
         """S6b: Pre-effect checkpoint survives crash and produces EFFECT_UNCERTAIN."""
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -617,7 +621,11 @@ class TestScenarios:
         executor = EffectExecutor(auth, checkpoints, receipts, workspace)
         admission_receipt = _make_admission(receipts, action_ids=("act-002",))
 
-        # Execute successfully
+        # Interrupt after the filesystem effect, before the completion checkpoint.
+        def interrupt_completion(_action_id):
+            raise RuntimeError("simulated crash before completion checkpoint")
+
+        monkeypatch.setattr(executor, "_clear_pre_effect_checkpoint", interrupt_completion)
         result = executor.execute_admitted(
             action_id="act-002",
             action_kind="create",
@@ -625,8 +633,8 @@ class TestScenarios:
             target_path="output2.py",
             content="print('hello')",
         )
-        assert result.status is BuildActionStatus.COMPLETED
-        expected_digest = result.post_image_digest
+        assert result.status is BuildActionStatus.EFFECT_UNCERTAIN
+        expected_digest = digest_raw(b"print('hello')")
 
         # Simulate a crash on a NEW executor with same state
         executor2 = EffectExecutor(auth, checkpoints, receipts, workspace)
@@ -635,7 +643,7 @@ class TestScenarios:
         reconciled = executor2.reconcile_effect("act-002", "output2.py", expected_digest)
         assert reconciled.status is BuildActionStatus.COMPLETED
 
-    def test_s6c_post_effect_reconciled_receipt(self, tmp_path):
+    def test_s6c_post_effect_reconciled_receipt(self, tmp_path, monkeypatch):
         """S6c: POST_EFFECT_RECONCILED receipt is issued after successful crash reconciliation."""
         workspace = tmp_path / "workspace"
         workspace.mkdir()
@@ -646,7 +654,11 @@ class TestScenarios:
         executor = EffectExecutor(auth, checkpoints, receipts, workspace)
         admission_receipt = _make_admission(receipts, action_ids=("act-003",))
 
-        # Execute
+        # Leave the pre-effect checkpoint pending after the file is written.
+        def interrupt_completion(_action_id):
+            raise RuntimeError("simulated crash before completion checkpoint")
+
+        monkeypatch.setattr(executor, "_clear_pre_effect_checkpoint", interrupt_completion)
         result = executor.execute_admitted(
             action_id="act-003",
             action_kind="create",
@@ -654,15 +666,17 @@ class TestScenarios:
             target_path="output3.py",
             content="test",
         )
-        assert result.status is BuildActionStatus.COMPLETED
+        assert result.status is BuildActionStatus.EFFECT_UNCERTAIN
 
         # New executor simulates restart
         executor2 = EffectExecutor(auth, checkpoints, receipts, workspace)
-        reconciled = executor2.reconcile_effect("act-003", "output3.py", result.post_image_digest)
+        reconciled = executor2.reconcile_effect("act-003", "output3.py", digest_raw(b"test"))
         assert reconciled.status is BuildActionStatus.COMPLETED
 
-        # Verify POST_EFFECT_RECONCILED receipt was issued
-        assert receipts.verify_receipt("reconciled-act-003", "") or True  # receipt exists in store
+        # Verify the receipt is bound to the reconciled action and its post-image.
+        subject = f"post_effect_reconciled:act-003:{reconciled.post_image_digest}"
+        receipt_digest = digest_raw(f"reconciled-act-003:host:{subject}".encode())
+        assert receipts.verify("reconciled-act-003", receipt_digest, subject)
 
     def test_s7_full_host_controlled_execution(self, tmp_path):
         """S7: Full host-controlled execution path: lock → admit → execute → verify."""

@@ -32,7 +32,7 @@ Research → Audit Discovery → Planning → [host freeze] → Fixture Validati
 
 ### Key design decisions
 
-- **Provider-neutral adapter registry**: Echo (test double), Meta Muse Spark (default), Claude/Codex (optional)
+- **Provider configuration**: Meta Muse Spark is the default profile; its model can be overridden with `META_MODEL_ID`. Other OpenAI-compatible profiles are supported by the capability probe adapter. Echo is a test double. SDK-specific Claude/Codex adapters are not implemented.
 - **RFC 8785/JCS canonical serialization** with SHA-256 for all digest-bearing artifacts
 - **Content-addressed artifact store** with immutable revision tracking
 - **CAS-based checkpoint store** for interruption recovery
@@ -80,9 +80,5 @@ settings/config.yaml  # Runtime configuration
 scripts/doctor.py     # Environment diagnostics
 ```
 
-## Verification results
-
-- **Tests**: 136 passed, 0 failed
-- **Ruff**: All checks passed
-- **Format**: All files formatted
-- **Mypy**: Type-checked
+Run the checks in `AGENTS.md` against the current checkout for verification results.
+The historical connected MCP claim is scoped in `audit/e2e-verification-correction-2026-11-04.md`.

@@ -11,6 +11,7 @@ import json
 import os
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -26,16 +27,67 @@ from agent.runtime.providers.registry import ProviderRegistry
 
 _TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_MCP_CHILD_ENV = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USERPROFILE",
+        "SYSTEMROOT",
+        "WINDIR",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "TMP",
+        "TEMP",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "PYTHONPATH",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "MODEL_API_BASE_URL",
+        "MODEL_API_MODEL",
+        "MODEL_API_KEY",
+        "MCP_WORKSPACE_ROOT",
+        "MCP_TRUSTED_ANCESTRY",
+    }
+)
+
+
+def mcp_child_environment() -> dict[str, str]:
+    """Pass only process essentials and the configured MCP model/workspace inputs."""
+    child_env = {name: value for name, value in os.environ.items() if name.upper() in _MCP_CHILD_ENV}
+    child_env["MCP_SERVER_MODE"] = "oneshot"
+    return child_env
 
 
 def research_artifact_id(task_id: str, run_id: str) -> str:
-    """Match the canonical content-derived identity in the pushed TypeScript MCP server."""
+    """Derive the artifact identity required by the Research MCP contract."""
     identity = digest_dict({"run_id": run_id, "stage": "research", "task_id": task_id})
     return f"research-{identity[:32]}"
 
 
+def mcp_transport_config() -> tuple[str, str, list[str]]:
+    """Validate the local transport before assigning host work."""
+    url = os.environ.get("ONESHOT_MCP_URL", "").strip()
+    command = os.environ.get("ONESHOT_MCP_COMMAND", "").strip()
+    if bool(url) == bool(command):
+        raise ProviderError("configure exactly one of ONESHOT_MCP_URL or ONESHOT_MCP_COMMAND")
+    if url:
+        address = urlsplit(url)
+        if address.scheme != "http" or address.hostname not in ("localhost", "127.0.0.1", "::1"):
+            raise ProviderError("MVP MCP HTTP endpoint must use local loopback")
+        return url, "", []
+    try:
+        args = json.loads(os.environ.get("ONESHOT_MCP_ARGS_JSON", "[]"))
+    except ValueError as exc:
+        raise ProviderError("invalid ONESHOT_MCP_ARGS_JSON") from exc
+    if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
+        raise ProviderError("MCP stdio arguments must be a JSON array of strings")
+    return "", command, args
+
+
 class ResearchMCPOutput(BaseModel):
-    """First-slice Codex envelope; artifact bytes are authoritative only after validation."""
+    """Research MCP envelope; artifact bytes are authoritative only after validation."""
 
     stage: str
     run_id: str
@@ -95,30 +147,13 @@ async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         from mcp import Client, StdioServerParameters  # type: ignore[import-not-found]  # optional MVP SDK
     except ImportError as exc:
-        raise ProviderError("MCP Python SDK missing; install mvp/requirements.txt") from exc
+        raise ProviderError("MCP Python SDK missing; sync the mvp extra") from exc
 
-    url = os.environ.get("ONESHOT_MCP_URL", "").strip()
-    command = os.environ.get("ONESHOT_MCP_COMMAND", "").strip()
-    if bool(url) == bool(command):
-        raise ProviderError("configure exactly one of ONESHOT_MCP_URL or ONESHOT_MCP_COMMAND")
+    url, command, args = mcp_transport_config()
     if url:
-        from urllib.parse import urlsplit
-
-        address = urlsplit(url)
-        if address.scheme != "http" or address.hostname not in ("localhost", "127.0.0.1", "::1"):
-            raise ProviderError("MVP MCP HTTP endpoint must use local loopback")
         transport: Any = url
     else:
-        args_raw = os.environ.get("ONESHOT_MCP_ARGS_JSON", "[]")
-        try:
-            args = json.loads(args_raw)
-        except ValueError as exc:
-            raise ProviderError("invalid ONESHOT_MCP_ARGS_JSON") from exc
-        if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
-            raise ProviderError("MCP stdio arguments must be a JSON array of strings")
-        child_env = os.environ.copy()
-        child_env["MCP_SERVER_MODE"] = "oneshot"
-        transport = StdioServerParameters(command=command, args=args, env=child_env)
+        transport = StdioServerParameters(command=command, args=args, env=mcp_child_environment())
     try:
         async with Client(transport, read_timeout_seconds=60) as session:
             names: list[str] = []

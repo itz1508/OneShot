@@ -73,6 +73,7 @@ function App() {
  const [loading, setLoading] = useState(false)
  const [error, setError] = useState('')
  const [hostHealthy, setHostHealthy] = useState(false)
+ const [mcpConfigured, setMcpConfigured] = useState(false)
  const [streamState, setStreamState] = useState('idle')
  const [pinnedToBottom, setPinnedToBottom] = useState(true)
  const [focusMode, setFocusMode] = useState(false)
@@ -103,7 +104,10 @@ function App() {
  useEffect(() => {
  fetch('/api/health')
  .then(json)
- .then((health) => setHostHealthy(health.status === 'ok'))
+ .then((health) => {
+ setHostHealthy(health.status === 'ok')
+ setMcpConfigured(health.mcp_transport_configured === true)
+ })
  .catch(() => setHostHealthy(false))
  }, [])
 
@@ -197,7 +201,7 @@ function App() {
  }
  }, [taskId, events.length, files.length, streamState])
 
- const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status)
+ const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) && (task.purpose === 'audit' || mcpConfigured)
  const currentStage = task?.current_stage || 'Idle'
  const streamStatusLabel =
  streamState === 'connected'
@@ -212,6 +216,8 @@ function App() {
  const nextActionLabel = task
  ? canRun
  ? `Run ${task.purpose === 'audit' ? 'Audit' : 'Research'} on the host`
+ : task.purpose !== 'audit' && !mcpConfigured && task.execution_status === 'awaiting_mcp'
+ ? 'Configure an MCP Research server in the host environment, then restart the API.'
  : task.execution_status === 'audit_completed'
  ? 'Review the audit artifact or wait for the host to advance.'
  : 'The host controls completion, approvals, and receipts.'

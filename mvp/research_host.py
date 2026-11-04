@@ -17,7 +17,7 @@ from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_dic
 from agent.runtime.controller import Stage
 from agent.runtime.providers.base import ProviderError, ProviderRequest
 from agent.runtime.work_todo import WorkTodoManager
-from mvp.mcp_research import ResearchMCPOutput, research_artifact_id
+from mvp.mcp_research import ResearchMCPOutput, mcp_transport_config, research_artifact_id
 from mvp.service import MVPError, MVPService
 
 
@@ -438,6 +438,10 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         raise MVPError("Research stage is not active")
     if state.active_work_artifact_id is not None:
         raise MVPError("Research already assigned; reconcile host state before retry")
+    try:
+        mcp_transport_config()
+    except ProviderError as exc:
+        raise MVPError(f"Research transport unavailable: {exc}") from exc
     evidence_sources = configured_evidence_sources()
     input_record, input_revision, input_digest = service.read_input(task_id)
     if input_record.purpose != "research":

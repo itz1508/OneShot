@@ -1,8 +1,4 @@
-"""Provider contracts -- typed configuration and capability probe records.
-
-Provider-specific identifiers use <provider> and <provider_model> placeholders
-that are resolved at deployment time from .agents/providers/<name>.yaml.
-"""
+"""Provider contracts for typed configuration and capability probe records."""
 
 from __future__ import annotations
 
@@ -40,8 +36,7 @@ class ProbeStatus(StrEnum):
 class ProviderConfig(ContractModel):
     """Typed provider configuration loaded from YAML.
 
-    The ``provider_id`` is a placeholder like <provider> until deployment.
-    The ``model`` is a placeholder like <provider_model> until deployment.
+    The model is supplied directly or through the configured environment variable.
     """
 
     provider_id: str = Field(min_length=1)

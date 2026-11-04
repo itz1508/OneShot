@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -58,6 +59,26 @@ class _ResearchAdmissionStore:
     def _pid_alive(pid: int) -> bool:
         if pid < 1:
             return True
+        if sys.platform == "win32":
+            # On Windows, os.kill(pid, 0) sends CTRL_C_EVENT rather than
+            # probing for existence. Query a process handle instead.
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.WaitForSingleObject.argtypes = (ctypes.c_void_p, ctypes.c_uint32)
+            kernel32.WaitForSingleObject.restype = ctypes.c_uint32
+            kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+            kernel32.CloseHandle.restype = ctypes.c_int
+            handle = kernel32.OpenProcess(0x100000, 0, pid)  # SYNCHRONIZE
+            if not handle:
+                return ctypes.get_last_error() != 87  # ERROR_INVALID_PARAMETER: no such PID
+            try:
+                result = kernel32.WaitForSingleObject(handle, 0)
+                return result != 0  # WAIT_OBJECT_0 means the process has exited.
+            finally:
+                kernel32.CloseHandle(handle)
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
@@ -65,10 +86,7 @@ class _ResearchAdmissionStore:
         except PermissionError:
             return True
         except OSError:
-            # Windows raises OSError (e.g. WinError 11/87) for invalid or
-            # out-of-range PIDs instead of ProcessLookupError. An invalid
-            # PID cannot own the slot, so it is reclaimable.
-            return False
+            return True
         return True
 
     def acquire(self, task_id: str) -> str:
@@ -121,8 +139,8 @@ class MVPService:
     def research_slot(self, task_id: str) -> Iterator[None]:
         """Guard in-process Research starts and input edits for the same task.
 
-        Cross-process admission is still governed by host CAS; do not use the
-        in-memory guard as a durable authorization or recovery receipt.
+        SQLite governs cross-process admission for a shared state root. The
+        in-memory guard is not a durable authorization or recovery receipt.
         """
         self._check_id(task_id)
         token = self._admission.acquire(task_id)
@@ -164,9 +182,7 @@ class MVPService:
         if purpose == "audit":
             self.host.event_store.append(task_id, "audit_queued", "Read-only audit capability awaiting execution")
         else:
-            self.host.event_store.append(
-                task_id, "mvp_mcp_unavailable", "MCP client not connected; no workflow executed"
-            )
+            self.host.event_store.append(task_id, "mvp_research_ready", "Research awaits an explicit MCP request")
         return self.get(task_id)
 
     def get(self, task_id: str) -> dict[str, object]:

@@ -417,6 +417,7 @@ class GitSnapshotLoader:
         return path.read_text(encoding="utf-8")
 
     def _read_revision(self, commit: str, relative_path: str) -> str | None:
+        self._safe_path(relative_path)
         result = subprocess.run(
             ["git", "-C", str(self.root), "show", f"{commit}:{relative_path}"],
             capture_output=True,

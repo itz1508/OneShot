@@ -50,6 +50,20 @@ class TestDefaultDeny:
         path = engine.check_path_safety(tmp_path / "test")
         assert path == (tmp_path / "test").resolve()
 
+    def test_symlink_escape_is_denied_by_resolved_containment(self, tmp_path):
+        root = tmp_path / "root"
+        outside = tmp_path / "outside"
+        root.mkdir()
+        outside.mkdir()
+        link = root / "link"
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            pytest.skip("directory symlinks are unavailable")
+        engine = AuthorizationEngine(allowed_roots=(str(root),))
+        with pytest.raises(AuthorizationError, match="outside allowed roots"):
+            engine.check_path_safety(link / "file.txt")
+
     def test_no_allowed_roots_denies_all(self):
         """AUTH07: No allowed roots denies all paths."""
         engine = AuthorizationEngine(allowed_roots=())

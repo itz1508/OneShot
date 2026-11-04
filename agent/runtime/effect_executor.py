@@ -65,9 +65,8 @@ class EffectExecutor:
         """
         candidate = Path(path) if Path(path).is_absolute() else self._workspace / path
 
-        # Resolve symlinks at the parent level to prevent symlink races
-        # Ensure parent exists then resolve
-        candidate.parent.mkdir(parents=True, exist_ok=True)
+        # realpath resolves existing ancestors and lexical remainder without
+        # creating directories before the containment and authorization gates.
         real_candidate = Path(os.path.realpath(str(candidate)))
 
         if not _is_within(real_candidate, self._workspace):

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,9 +12,22 @@ import pytest
 from agent.contracts.research import Requirement, ResearchRecord
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
 from agent.runtime.providers.base import ProviderError, ProviderRequest
-from mvp.mcp_research import MCPResearchAdapter, _tool_json, register_mcp_research, research_artifact_id
+from mvp.mcp_research import (
+    MCPResearchAdapter,
+    _tool_json,
+    mcp_child_environment,
+    register_mcp_research,
+    research_artifact_id,
+)
 from mvp.research_host import execute_research
 from mvp.service import MVPError, MVPService
+
+
+@pytest.fixture(autouse=True)
+def configured_stub_transport(monkeypatch):
+    monkeypatch.setenv("ONESHOT_MCP_COMMAND", "test-mcp-server")
+    monkeypatch.setenv("ONESHOT_MCP_ARGS_JSON", "[]")
+    monkeypatch.delenv("ONESHOT_MCP_URL", raising=False)
 
 
 def response(task_id: str, *, wrong_digest: bool = False) -> dict:
@@ -62,9 +77,33 @@ def test_adapter_registers_class_without_shadowing_echo():
     registry = ProviderRegistry()
     register_mcp_research(registry)
     assert registry.create("mcp_research").declared_capabilities().strict_tool_schemas
-    assert registry.default_provider == "echo"
+    assert registry.default_provider == "meta"
     with pytest.raises(ProviderError, match="already registered"):
         register_mcp_research(registry)
+
+
+def test_adapter_preserves_configured_server_model(monkeypatch):
+    task_id = "a" * 32
+
+    async def invoke(_arguments):
+        result = response(task_id)
+        result["provider"] = "another-provider"
+        result["model"] = "another-model"
+        return result
+
+    monkeypatch.setattr("mvp.mcp_research._invoke_tool", invoke)
+    result = MCPResearchAdapter().generate(request(task_id))
+    assert result.provider == "another-provider"
+    assert result.model == "another-model"
+
+
+def test_mcp_child_environment_excludes_unrelated_host_secrets(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", "server-credential")
+    monkeypatch.setenv("UNRELATED_HOST_SECRET", "must-not-pass")
+    child_env = mcp_child_environment()
+    assert child_env["MODEL_API_KEY"] == "server-credential"
+    assert child_env["MCP_SERVER_MODE"] == "oneshot"
+    assert "UNRELATED_HOST_SECRET" not in child_env
 
 
 def test_real_host_persistence_and_stage_advance(tmp_path, monkeypatch):
@@ -90,6 +129,23 @@ def test_real_host_persistence_and_stage_advance(tmp_path, monkeypatch):
     assert len([evt for evt in service.events(task_id) if evt["type"] == "stage_transition"]) == 1
     with pytest.raises(MVPError, match="not active"):
         execute_research(service, task_id)
+
+
+def test_connected_stdio_mcp_research_and_host_transition(tmp_path, monkeypatch):
+    """Exercise real MCP negotiation and tool call, followed by host persistence."""
+    server = Path(__file__).parents[1] / "fixtures" / "mcp_research_server.py"
+    monkeypatch.setenv("ONESHOT_MCP_COMMAND", sys.executable)
+    monkeypatch.setenv("ONESHOT_MCP_ARGS_JSON", json.dumps([str(server)]))
+    service = MVPService(tmp_path)
+    task = service.create("Investigate the repository")
+
+    result = execute_research(service, task["task_id"])
+
+    assert result["status"] == "completed"
+    assert result["current_stage"] == "audit_discovery"
+    reference = result["artifact_ref"]
+    assert service.artifacts.get_digest(reference["artifact_id"], 1) == reference["artifact_digest"]
+    assert sum(event["type"] == "stage_transition" for event in service.events(task["task_id"])) == 1
 
 
 def test_digest_forgery_never_advances(tmp_path, monkeypatch):
@@ -204,9 +260,18 @@ def test_research_binds_latest_input_and_locks_later_changes(tmp_path, monkeypat
     assert service.get(task_id)["input_text"] == "Revised request"
 
 
-def test_codex_canonical_artifact_identity():
+def test_canonical_research_artifact_identity():
     task_id = "a" * 32
     assert research_artifact_id(task_id, f"run-{task_id}") == "research-199ca5cc042c693d37482322e81e54e9"
+
+
+def test_missing_transport_does_not_assign_work(tmp_path, monkeypatch):
+    monkeypatch.delenv("ONESHOT_MCP_COMMAND")
+    service = MVPService(tmp_path)
+    task_id = service.create("Inspect sources")["task_id"]
+    with pytest.raises(MVPError, match="Research transport unavailable"):
+        execute_research(service, task_id)
+    assert service.host.get_state(task_id).active_work_artifact_id is None
 
 
 def test_mcp_text_and_structured_content_must_agree():

@@ -1,0 +1,20 @@
+import { test, expect } from '@playwright/test'
+
+test('Research runs through MCP and persists its artifact across browser reload', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('textbox', { name: 'Task request' }).fill('Investigate the repository')
+  await page.getByRole('button', { name: 'Submit task' }).click()
+  const execution = page.locator('.summary-stat').filter({ hasText: 'Execution' }).locator('strong')
+  await expect(execution).toHaveText('awaiting_mcp')
+  await page.getByRole('button', { name: 'Run Research' }).click()
+  await expect(execution).toHaveText('research_completed')
+  const artifact = page.locator('.artifact-row').filter({ hasText: '_research.json' })
+  await expect(artifact).toBeVisible()
+  const taskUrl = page.url()
+  await page.reload()
+  await expect(page).toHaveURL(taskUrl)
+  await expect(execution).toHaveText('research_completed')
+  await artifact.click()
+  await expect(page.getByRole('dialog', { name: 'Review artifact' })).toBeVisible()
+  await expect(page.locator('#file-editor')).toHaveAttribute('readonly', '')
+})

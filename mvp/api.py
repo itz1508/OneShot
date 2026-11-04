@@ -12,13 +12,17 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from agent.runtime.providers.base import ProviderError
+from mvp.mcp_research import mcp_transport_config
 from mvp.service import MVPError, MVPService
 
 DEFAULT_ROOT = Path(os.environ.get("ONESHOT_STATE_ROOT", "./.oneshot-state"))
 app = FastAPI(title="OneShot MVP API", version="0.1.0")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.environ.get("ONESHOT_WEB_ORIGIN", "http://localhost:5173")],
@@ -49,7 +53,13 @@ def failure(exc: MVPError) -> HTTPException:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
-    return {"status": "ok", "mcp_connected": False, "workflow_execution": "not_started"}
+    try:
+        mcp_transport_config()
+    except ProviderError:
+        configured = False
+    else:
+        configured = True
+    return {"status": "ok", "mcp_transport_configured": configured}
 
 
 @app.post("/api/tasks", status_code=201)

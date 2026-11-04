@@ -64,10 +64,10 @@ class TestProviderRegistry:
         result = registry.generate("echo", request)
         assert result.content.startswith("echo:")
 
-    def test_default_provider_is_echo(self):
-        """PROV08: Default provider is echo."""
+    def test_default_provider_is_meta(self):
+        """PROV08: Echo is a test double; Meta is the runtime default."""
         registry = ProviderRegistry()
-        assert registry.default_provider == "echo"
+        assert registry.default_provider == "meta"
 
 
 class TestMetaProvider:
@@ -76,6 +76,13 @@ class TestMetaProvider:
         provider = MetaProvider()
         assert provider.DEFAULT_BASE_URL == "https://api.meta.ai/v1"
         assert provider.DEFAULT_MODEL == "muse-spark-1.3"
+
+    def test_meta_model_can_be_selected_from_profile_environment(self, monkeypatch):
+        monkeypatch.setenv("META_MODEL_ID", "another-model")
+        monkeypatch.setenv("META_MODEL_BASE_URL", "http://127.0.0.1:9000/v1")
+        provider = MetaProvider()
+        assert provider._model == "another-model"
+        assert provider._base_url == "http://127.0.0.1:9000/v1"
 
     def test_meta_credential_ref(self):
         """PROV10: Meta provider uses credential_ref, not embedded key."""

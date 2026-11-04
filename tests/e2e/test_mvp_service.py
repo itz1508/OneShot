@@ -16,7 +16,7 @@ def test_create_read_and_restart(tmp_path):
     assert [event["type"] for event in events] == [
         "task_init",
         "mvp_input_persisted",
-        "mvp_mcp_unavailable",
+        "mvp_research_ready",
     ]
 
     restarted = MVPService(tmp_path)

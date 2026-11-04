@@ -12,19 +12,24 @@ from fastapi.testclient import TestClient
 from mvp.api import app
 
 
-def test_health_reports_no_fake_execution():
+def test_health_reports_api_and_transport_configuration(monkeypatch):
+    monkeypatch.delenv("ONESHOT_MCP_COMMAND", raising=False)
+    monkeypatch.delenv("ONESHOT_MCP_URL", raising=False)
     response = TestClient(app).get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "mcp_connected": False,
-        "workflow_execution": "not_started",
-    }
+    assert response.json() == {"status": "ok", "mcp_transport_configured": False}
+    monkeypatch.setenv("ONESHOT_MCP_COMMAND", "test-mcp-server")
+    assert TestClient(app).get("/api/health").json()["mcp_transport_configured"] is True
 
 
 def test_invalid_task_does_not_leak_information():
     response = TestClient(app).get("/api/tasks/../../secret")
     assert response.status_code in {400, 404}
+
+
+def test_untrusted_host_header_is_rejected():
+    response = TestClient(app, base_url="http://attacker.example").get("/api/health")
+    assert response.status_code == 400
 
 
 def test_real_http_create_restore_and_revision():
@@ -46,7 +51,7 @@ def test_real_http_create_restore_and_revision():
     assert "Inspect the repository" in artifacts[0]["content"]
 
     history = client.get(f"/api/tasks/{task_id}/events").json()
-    assert history[-1]["type"] == "mvp_mcp_unavailable"
+    assert history[-1]["type"] == "mvp_research_ready"
     assert client.get(f"/api/tasks/{task_id}/events?after={history[-1]['sequence']}").json() == []
 
     edit = client.patch(

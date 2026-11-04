@@ -106,13 +106,6 @@ class AuthorizationEngine:
         for root in self._allowed_roots:
             try:
                 resolved.relative_to(root)
-                # Check for symlink escape
-                if resolved.is_symlink():
-                    real = resolved.readlink().resolve()
-                    try:
-                        real.relative_to(root)
-                    except ValueError:
-                        raise AuthorizationError(f"symlink escape: {path} -> {real}") from None
                 return resolved
             except ValueError:
                 continue

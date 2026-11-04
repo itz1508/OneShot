@@ -10,10 +10,11 @@ from agent.runtime.providers.base import (
     UnsupportedProviderError,
 )
 from agent.runtime.providers.echo import EchoProvider
+from agent.runtime.providers.meta import MetaProvider
 
 
 class ProviderRegistry:
-    """Provider-neutral registry with lazy stub registration.
+    """Provider registry with an explicitly selected runtime default.
 
     - Adapters register by key.
     - Vendor SDKs imported lazily at generate() time.
@@ -25,9 +26,10 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._adapters: dict[str, type] = {}
         self._instances: dict[str, ProviderAdapter] = {}
-        # Register echo by default — zero-dep, always available
+        # Echo remains available for tests; it must never be the runtime default.
         self.register("echo", EchoProvider)
-        self._default = "echo"
+        self.register("meta", MetaProvider)
+        self._default = "meta"
 
     def register(self, key: str, adapter_class: type) -> None:
         """Register an adapter class. Prevents shadowing."""

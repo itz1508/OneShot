@@ -1,6 +1,16 @@
 name: Research Audit Capabilities
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "agent/audit/**"
+      - "agent/reference/audit_guidance.md"
+      - "tests/audit/**"
+      - "mvp/**"
+      - "web/**"
+      - "agent/runtime/controller.py"
+      - ".github/workflows/audit-capabilities.yml"
   pull_request:
     paths:
       - "agent/audit/**"
@@ -19,19 +29,17 @@ jobs:
   repository-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
       - run: uv python install 3.11
-      - run: uv sync --locked --extra meta
-      - name: Install API dependencies
-        run: uv pip install --python .venv/bin/python -r mvp/requirements.txt
+      - run: uv sync --locked --extra meta --extra mvp
       - name: Verify Audit capability fixtures
         run: uv run --no-sync pytest tests/audit -q -rs
       - name: Audit checked-out repository
         run: |
           uv run --no-sync python -m agent.audit --root . --scope . --request "Audit accepted Research integration and repository capabilities" > audit-report.json
           uv run --no-sync python -c 'import json; p=json.load(open("audit-report.json")); print("Disposition:",p["disposition"]); print("Findings:",len(p["findings"])); [print(f["code"], f["path"], f["line"]) for f in p["findings"][:80]]'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: audit-capabilities-report
@@ -41,14 +49,13 @@ jobs:
   connected-browser:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
       - run: uv python install 3.11
-      - run: uv sync --locked --extra meta
-      - run: uv pip install --python .venv/bin/python -r mvp/requirements.txt
+      - run: uv sync --locked --extra meta --extra mvp
       - name: Install web dependencies
         working-directory: web
-        run: npm install
+        run: npm ci --no-audit --no-fund
       - name: Build frontend
         working-directory: web
         run: npm run build
@@ -58,21 +65,9 @@ jobs:
       - name: Run connected API and browser verification
         env:
           ONESHOT_STATE_ROOT: ${{ runner.temp }}/audit-browser-state
-          MCP_WORKSPACE_ROOT: ${{ github.workspace }}
-          MCP_TRUSTED_ANCESTRY: "true"
-          ONESHOT_WEB_ORIGIN: "http://127.0.0.1:5173"
-        run: |
-          uv run --no-sync uvicorn mvp.api:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/audit-api.log" 2>&1 &
-          (cd web && npm run dev > "$RUNNER_TEMP/audit-web.log" 2>&1) &
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null && curl -fsS http://127.0.0.1:5173 >/dev/null; then
-              break
-            fi
-            sleep 2
-          done
-          curl -fsS http://127.0.0.1:8000/api/health
-          (cd web && npm run test:browser)
-      - uses: actions/upload-artifact@v4
+        working-directory: web
+        run: npm run test:browser
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: audit-connected-browser-evidence

@@ -30,8 +30,8 @@ class MetaProvider:
         model: str | None = None,
         credential_ref: str = "MODEL_API_KEY",
     ) -> None:
-        self._base_url = base_url or self.DEFAULT_BASE_URL
-        self._model = model or self.DEFAULT_MODEL
+        self._base_url = base_url or os.environ.get("META_MODEL_BASE_URL") or self.DEFAULT_BASE_URL
+        self._model = model or os.environ.get("META_MODEL_ID") or self.DEFAULT_MODEL
         self._credential_ref = credential_ref
         self._client: Any = None
 
