@@ -159,21 +159,33 @@ class StageJournalService:
         return tuple(StageLogEvent.model_validate_json(row[0]) for row in rows)
 
     def rebuild(self, workspace_id: str, task_id: str, run_id: str) -> None:
-        """Idempotently regenerate all five journal projections after a crash."""
+        """Reconstruct projections while holding the SQLite writer lock.
+
+        A writer cannot publish an older snapshot after a newer writer's
+        projection. SQLite remains the authoritative recovery source.
+        """
         folder = self._run_dir(workspace_id, task_id, run_id)
-        for stage in STAGES:
-            events = self.load(workspace_id=workspace_id, task_id=task_id, run_id=run_id, stage=stage)
-            target = folder / f"{stage}.log"
-            if target.is_symlink():
-                raise StageJournalError("journal destination cannot be a symlink")
-            fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=folder)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                    for entry in events:
-                        stream.write(entry.model_dump_json() + "\n")
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, target)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for stage in STAGES:
+                rows = conn.execute(
+                    """SELECT payload FROM stage_log_events WHERE workspace_id=?
+                    AND task_id=? AND run_id=? AND stage=? ORDER BY sequence""",
+                    (workspace_id, task_id, run_id, stage),
+                ).fetchall()
+                target = folder / f"{stage}.log"
+                if target.is_symlink():
+                    raise StageJournalError("journal destination cannot be a symlink")
+                fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=folder)
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                        for (payload,) in rows:
+                            stream.write(payload + "\\n")
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    if target.is_symlink():
+                        raise StageJournalError("journal destination cannot be a symlink")
+                    os.replace(temporary, target)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
