@@ -115,7 +115,9 @@ class HostMemoryManager:
         ):
             raise MemoryPromotionError("independent Build verification did not pass")
         for evidence in memory.evidence_refs:
-            self._load(evidence, object)
+            if self._artifacts.get_digest(evidence.artifact_id, evidence.artifact_revision) != evidence.artifact_digest:
+                raise MemoryPromotionError("unverified reusable statement evidence")
+            self._artifacts.get_verified(evidence.artifact_id, evidence.artifact_revision)
         build_subject = f"build-execution-completed:{memory.source_build_ref.artifact_digest}"
         diagnostic_subject = f"build-diagnostic-valid:{memory.source_build_ref.artifact_digest}"
         verification_subject = (
