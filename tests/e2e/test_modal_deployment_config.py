@@ -172,6 +172,7 @@ def test_audit_root_set_before_api_import_and_mutations_committed(monkeypatch: A
     import os
 
     assert os.environ["MCP_TRUSTED_ANCESTRY"] == "true"
+    assert os.environ["ONESHOT_RESEARCH_DISABLED"] == "true"
     assert os.environ["MCP_WORKSPACE_ROOT"] == "/root/oneshot-source"
     assert os.environ["ONESHOT_STATE_ROOT"] == "/data"
 
