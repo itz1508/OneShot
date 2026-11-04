@@ -28,6 +28,10 @@ class StageLogEvent(ContractModel):
     artifact_ref: str | None = None
     receipt_ref: str | None = None
     evidence_ref: str | None = None
+    template_ref: str | None = None
+    source_build_ref: str | None = None
+    verification_receipt_ref: str | None = None
+    reusable_scope: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @field_validator("created_at")
