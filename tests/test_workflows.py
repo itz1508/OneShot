@@ -61,6 +61,7 @@ def _bad_contract(tmp_path: Path, edit) -> Path:
             build_admission_precedes_execution=False
         ),
         lambda d: d["host_workflows"].pop("structural_gap_analysis"),
+        lambda d: d["host_workflows"]["structural_gap_analysis"]["input_contracts"].remove("candidate_specification"),
         lambda d: d["host_workflows"]["structural_gap_analysis"]["required_work"].remove("run_walking_skeleton"),
         lambda d: d["host_workflows"]["structural_gap_analysis"]["completion"].update(
             known_critical_gap_detection_rate=0.5
@@ -95,3 +96,25 @@ def test_research_is_information_gathering_and_builder_execution_only() -> None:
     assert "new_design" in build["request_result_exchange"]["prohibits"]
     assert build["request_result_exchange"]["preflight_and_effect_gate"] == "host_owned"
     assert build["request_result_exchange"]["move_action"] == "single_admitted_action_declaring_source_and_destination"
+
+
+def test_structural_gap_workflow_declares_every_runtime_input() -> None:
+    gap = load_workflow_bundle(CONTRACT)["host_workflows"]["structural_gap_analysis"]
+    assert set(gap["input_contracts"]) == {
+        "candidate_specification",
+        "workflow_contract_bundle",
+        "registry_snapshot_set",
+        "workflow_trace",
+        "concern_matrix",
+        "gap_backtest_corpus",
+        "source_grounded_analysis",
+        "comparable_system_analysis",
+    }
+    assert gap["completion"]["successful_result"] == {
+        "execution_status": "completed",
+        "diagnostic_status": "valid",
+    }
+    assert gap["completion"]["invalid_result"] == {
+        "execution_status": "failed",
+        "diagnostic_status": "not_valid",
+    }

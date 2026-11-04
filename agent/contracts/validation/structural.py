@@ -36,6 +36,15 @@ class SourceDeclaration:
     name: str
     owner: str
     evidence_ref: str
+    resolver_ref: str = ""
+    resolution_phase: Literal["", "admission", "effect_time"] = ""
+
+
+@dataclass(frozen=True)
+class PersistenceDeclaration:
+    output: str
+    consumers: frozenset[str] = frozenset()
+    terminal: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +54,8 @@ class TraceStep:
     produces: frozenset[str]
     effect: str | None = None
     gate: str | None = None
+    persistence: tuple[PersistenceDeclaration, ...] = ()
+    ephemeral_outputs: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -76,15 +87,65 @@ def reference_gaps(
     return errors
 
 
+def registry_resolution_gaps(
+    required_registry_ids: tuple[str, ...],
+    sources: tuple[SourceDeclaration, ...],
+) -> list[str]:
+    """Require one evidenced producer and an effect-time resolver per registry."""
+    errors: list[str] = []
+    by_name = {source.name: source for source in sources}
+    for name in sorted(set(required_registry_ids)):
+        source = by_name.get(name)
+        if source is None or not source.owner or not source.evidence_ref:
+            errors.append(f"registry entry without producer: {name}")
+        if source is None or not source.resolver_ref:
+            errors.append(f"registry entry without resolver: {name}")
+        if source is None or source.resolution_phase != "effect_time":
+            errors.append(f"registry entry without effect-time resolver: {name}")
+    return errors
+
+
 def trace_gaps(steps: tuple[TraceStep, ...], external: tuple[SourceDeclaration, ...]) -> list[str]:
     """Validate temporal producer-before-consumer closure and effect gates."""
     errors = reference_gaps((), external)
     available = {item.name for item in external if item.owner and item.evidence_ref}
-    for step in steps:
+    positions: dict[str, int] = {}
+    for index, step in enumerate(steps):
+        if step.step_id in positions:
+            errors.append(f"{step.step_id}: duplicate trace step")
+        positions[step.step_id] = index
+
+    for index, step in enumerate(steps):
         for missing in sorted(step.needs - available):
             errors.append(f"{step.step_id}: nothing produces {missing}")
         if step.effect and not step.gate:
             errors.append(f"{step.step_id}: effect {step.effect} has no gate")
+        persisted: set[str] = set()
+        for declaration in step.persistence:
+            output = declaration.output
+            if output in persisted:
+                errors.append(f"{step.step_id}: duplicate persistence declaration for {output}")
+            persisted.add(output)
+            if output not in step.produces:
+                errors.append(f"{step.step_id}: persists undeclared output {output}")
+            if not declaration.consumers and not declaration.terminal:
+                errors.append(f"{step.step_id}: persisted output without consumer: {output}")
+            for consumer in sorted(declaration.consumers):
+                consumer_index = positions.get(consumer)
+                if consumer_index is None:
+                    errors.append(f"{step.step_id}: unknown consumer {consumer} for {output}")
+                elif consumer_index <= index:
+                    errors.append(f"{step.step_id}: consumer {consumer} is not after producer for {output}")
+                elif output not in steps[consumer_index].needs:
+                    errors.append(f"{consumer}: does not consume declared output {output}")
+        overlap = persisted & set(step.ephemeral_outputs)
+        for output in sorted(overlap):
+            errors.append(f"{step.step_id}: output is both persisted and ephemeral: {output}")
+        for output in sorted(set(step.ephemeral_outputs) - step.produces):
+            errors.append(f"{step.step_id}: undeclared ephemeral output {output}")
+        unclassified = step.produces - persisted - step.ephemeral_outputs
+        for output in sorted(unclassified):
+            errors.append(f"{step.step_id}: output persistence not declared: {output}")
         available.update(step.produces)
     return errors
 

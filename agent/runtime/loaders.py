@@ -207,6 +207,18 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
             raise LoaderError(f"{host_id}: missing host workflow identity or owner")
 
     gap = hosts["structural_gap_analysis"]
+    expected_gap_inputs = {
+        "candidate_specification",
+        "workflow_contract_bundle",
+        "registry_snapshot_set",
+        "workflow_trace",
+        "concern_matrix",
+        "gap_backtest_corpus",
+        "source_grounded_analysis",
+        "comparable_system_analysis",
+    }
+    if set(gap.get("input_contracts", ())) != expected_gap_inputs:
+        raise LoaderError("structural gap analysis inputs are incomplete")
     expected_passes = {
         "validate_reference_closure",
         "validate_execution_trace",
@@ -223,6 +235,22 @@ def load_workflow_bundle(path: str | Path) -> dict[str, Any]:
         raise LoaderError("walking skeleton must be verified")
     if gap.get("completion", {}).get("known_critical_gap_detection_rate") != 1.0:
         raise LoaderError("known critical backtest detection must be complete")
+    gap_completion = gap.get("completion", {})
+    if gap_completion.get("successful_result") != {
+        "execution_status": "completed",
+        "diagnostic_status": "valid",
+    }:
+        raise LoaderError("structural gap successful result status is invalid")
+    if gap_completion.get("invalid_result") != {
+        "execution_status": "failed",
+        "diagnostic_status": "not_valid",
+    }:
+        raise LoaderError("structural gap invalid result status is invalid")
+    if gap_completion.get("unavailable_runner_result") != {
+        "execution_status": "blocked",
+        "diagnostic_status": "uncertainty",
+    }:
+        raise LoaderError("structural gap unavailable-runner status is invalid")
     correction = gap.get("correction", {})
     if (
         correction.get("target_stage") != "planning"

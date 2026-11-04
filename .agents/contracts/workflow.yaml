@@ -239,11 +239,14 @@ host_workflows:
     workflow_id: structural_gap_analysis
     owner: host_gap_analyzer
     input_contracts:
+      - candidate_specification
       - workflow_contract_bundle
       - registry_snapshot_set
       - workflow_trace
       - concern_matrix
       - gap_backtest_corpus
+      - source_grounded_analysis
+      - comparable_system_analysis
     required_work:
       - validate_reference_closure
       - validate_execution_trace
@@ -260,6 +263,15 @@ host_workflows:
       required_registry_entries_without_resolvers: 0
       known_critical_gap_detection_rate: 1.0
       walking_skeleton_completed: true
+      successful_result:
+        execution_status: completed
+        diagnostic_status: valid
+      invalid_result:
+        execution_status: failed
+        diagnostic_status: not_valid
+      unavailable_runner_result:
+        execution_status: blocked
+        diagnostic_status: uncertainty
     correction:
       target_stage: planning
       requires_new_candidate_revision: true

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 from pydantic import Field
 
-from agent.contracts.common import ArtifactRef, ContractModel
+from agent.contracts.common import ArtifactRef, ContractModel, DiagnosticStatus, StepStatus
 from agent.contracts.host import ReceiptRef
 from agent.contracts.validation.structural import (
     ConcernCell,
@@ -21,6 +21,7 @@ from agent.contracts.validation.structural import (
     TraceStep,
     concern_gaps,
     reference_gaps,
+    registry_resolution_gaps,
     trace_gaps,
 )
 from agent.runtime.artifact_store import ArtifactStore
@@ -119,7 +120,8 @@ class StructuralGapResult(ContractModel):
     request_revision: int
     candidate_specification_ref: ArtifactRef
     workflow_contract_bundle_ref: ArtifactRef
-    execution_status: str
+    execution_status: StepStatus
+    diagnostic_status: DiagnosticStatus
     findings: tuple[str, ...]
     known_critical_gap_detection_rate: float
     walking_skeleton_completed: bool
@@ -209,11 +211,7 @@ class HostGapAnalyzer:
             - set(workflow.terminal_output_slots)
         )
         findings.extend(f"persisted output without consumer: {name}" for name in sorted(unknown_outputs))
-        producers = {source.name for source in registry.sources if source.owner and source.evidence_ref}
-        findings.extend(
-            f"registry entry without resolver: {name}"
-            for name in sorted(set(registry.required_registry_ids) - producers)
-        )
+        findings.extend(registry_resolution_gaps(registry.required_registry_ids, registry.sources))
 
         # Backtest all known critical cases against actual deterministic validators.
         total = 0
@@ -274,6 +272,15 @@ class HostGapAnalyzer:
 
         findings = list(dict.fromkeys(findings))
         passed = not findings
+        if passed:
+            execution_status = StepStatus.COMPLETED
+            diagnostic_status = DiagnosticStatus.VALID
+        elif walking_skeleton_runner is None:
+            execution_status = StepStatus.BLOCKED
+            diagnostic_status = DiagnosticStatus.UNCERTAINTY
+        else:
+            execution_status = StepStatus.FAILED
+            diagnostic_status = DiagnosticStatus.NOT_VALID
         result = StructuralGapResult(
             task_id=request.task_id,
             run_id=request.run_id,
@@ -281,7 +288,8 @@ class HostGapAnalyzer:
             request_revision=request.request_revision,
             candidate_specification_ref=request.candidate_specification_ref,
             workflow_contract_bundle_ref=request.workflow_contract_bundle_ref,
-            execution_status="completed" if passed else "blocked",
+            execution_status=execution_status,
+            diagnostic_status=diagnostic_status,
             findings=tuple(findings),
             known_critical_gap_detection_rate=rate,
             walking_skeleton_completed=skeleton_valid,

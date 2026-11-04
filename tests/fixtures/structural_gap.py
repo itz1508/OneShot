@@ -12,6 +12,7 @@ from agent.contracts.common import ArtifactRef
 from agent.contracts.validation.structural import (
     CONCERNS,
     ConcernCell,
+    PersistenceDeclaration,
     ReferenceNeed,
     SourceDeclaration,
     TraceStep,
@@ -65,23 +66,70 @@ def build_gap_inputs(
     stages = ("research", "audit_discovery", "planning")
     roots = (
         SourceDeclaration("requirements", "host", "requirements-ref"),
-        SourceDeclaration("tool_registry", "host", "tool-registry-ref"),
+        SourceDeclaration("tool_registry", "host", "tool-registry-ref", "tool-resolver-ref", "effect_time"),
+        SourceDeclaration(
+            "registered_command_resolver", "host", "command-resolver-ref", "command-dispatch-ref", "effect_time"
+        ),
+        SourceDeclaration(
+            "sandbox_profile_registry", "host", "sandbox-profile-ref", "sandbox-resolver-ref", "effect_time"
+        ),
+        SourceDeclaration("scanner_check_registry", "host", "scanner-check-ref", "scanner-resolver-ref", "effect_time"),
+        SourceDeclaration("runtime_root_registry", "host", "runtime-root-ref", "root-resolver-ref", "effect_time"),
+        SourceDeclaration(
+            "recovery_readiness", "host", "recovery-readiness-ref", "recovery-resolver-ref", "effect_time"
+        ),
     )
     if missing_registry_source:
-        roots = roots[:1]
+        roots = tuple(
+            source
+            for source in roots
+            if source.name not in {"tool_registry", "registered_command_resolver", "sandbox_profile_registry"}
+        )
     workflow = WorkflowContractBundle(
         stage_ids=stages,
-        reference_needs=(ReferenceNeed("tool_registry", "planning"),),
+        reference_needs=(
+            ReferenceNeed("tool_registry", "build_admission"),
+            ReferenceNeed("registered_command_resolver", "build_action_verification"),
+            ReferenceNeed("sandbox_profile_registry", "sandbox_execution"),
+            ReferenceNeed("scanner_check_registry", "scanner"),
+            ReferenceNeed("runtime_root_registry", "runtime_output_allocation"),
+            ReferenceNeed("recovery_readiness", "build_admission"),
+        ),
         persisted_output_slots=("research_record", "audit_record", "planning_record"),
         consumed_output_slots=("research_record", "audit_record"),
         terminal_output_slots=("planning_record",),
     )
-    registry = RegistrySnapshotSet(sources=roots, required_registry_ids=("tool_registry",))
+    registry = RegistrySnapshotSet(
+        sources=roots,
+        required_registry_ids=(
+            "tool_registry",
+            "registered_command_resolver",
+            "sandbox_profile_registry",
+            "scanner_check_registry",
+            "runtime_root_registry",
+            "recovery_readiness",
+        ),
+    )
     trace = WorkflowExecutionTrace(
         steps=(
-            TraceStep("research", frozenset({"requirements"}), frozenset({"research_record"})),
-            TraceStep("audit", frozenset({"research_record"}), frozenset({"audit_record"})),
-            TraceStep("planning", frozenset({"audit_record", "tool_registry"}), frozenset({"planning_record"})),
+            TraceStep(
+                "research",
+                frozenset({"requirements"}),
+                frozenset({"research_record"}),
+                persistence=(PersistenceDeclaration("research_record", frozenset({"audit"})),),
+            ),
+            TraceStep(
+                "audit",
+                frozenset({"research_record"}),
+                frozenset({"audit_record"}),
+                persistence=(PersistenceDeclaration("audit_record", frozenset({"planning"})),),
+            ),
+            TraceStep(
+                "planning",
+                frozenset({"audit_record", "tool_registry"}),
+                frozenset({"planning_record"}),
+                persistence=(PersistenceDeclaration("planning_record", terminal=True),),
+            ),
         )
     )
     matrix = WorkflowConcernMatrix(
@@ -92,15 +140,29 @@ def build_gap_inputs(
             for concern in sorted(CONCERNS)
         ),
     )
+    historical_missing_references = (
+        ("catalog", "research"),
+        ("catalog_lineage", "handoff"),
+        ("task_batch_wave", "build_compiler"),
+        ("preimage_revision", "wave_2"),
+        ("move_atomicity", "effect_executor"),
+        ("tool_registry", "build_admission"),
+        ("registered_command_resolver", "build_action_verification"),
+        ("sandbox_profile_registry", "sandbox_execution"),
+        ("scanner_check_registry", "scanner"),
+        ("runtime_root_registry", "runtime_output_allocation"),
+        ("recovery_readiness", "build_admission"),
+    )
     backtests = GapBacktestCorpus(
-        historical_cases=(
+        historical_cases=tuple(
             KnownCriticalBacktest(
-                case_id="historical-001",
+                case_id=f"historical-{index:03d}",
                 case_evidence_ref=historical_evidence,
-                reference_needs=(ReferenceNeed("missing_lock", "build_admission"),),
+                reference_needs=(ReferenceNeed(name, consumer),),
                 sources=(SourceDeclaration("requirements", "host", "req"),),
-                expected_findings=("build_admission: no producer for missing_lock",),
-            ),
+                expected_findings=(f"{consumer}: no producer for {name}",),
+            )
+            for index, (name, consumer) in enumerate(historical_missing_references, start=1)
         )
     )
     grounded = SourceGroundedAnalysis(
