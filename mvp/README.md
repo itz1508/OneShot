@@ -47,3 +47,24 @@ No approved Build/effects, automatic Research/Audit/Plan execution,
 independent E2E Build completion, memory promotion, or PR #21 merge
 is claimed by this MVP. An input edit creates a new immutable revision;
 it does not automatically restart workflow execution.
+
+## Research integration (Codex MCP first slice)
+
+Configure exactly one host-controlled transport, then restart the API:
+
+- Local stdio: set ONESHOT_MCP_COMMAND to executable, and ONESHOT_MCP_ARGS_JSON to a JSON array of args.
+- Local HTTP: set ONESHOT_MCP_URL to an HTTP loopback MCP endpoint.
+- Model API credentials belong to the MCP server, not FastAPI tool arguments.
+
+POST /api/tasks creates an immutable task input. POST /api/tasks/{task_id}/research
+negotiates an MCP session, discovers oneshot_research, and passes
+ProviderRequest.prompt as JSON with task_id and stage_payload.
+Successful responses must carry a real ResearchRecord in artifact, the exact
+task/run bindings, a host-expected artifact_id, and a matching RFC 8785 digest.
+The host persists the artifact, marks its WorkTodo completed, and advances Research
+through the existing HostController gate. Any verification error blocks advancement.
+GET /api/tasks/{task_id}/artifacts returns _research.json only when persisted.
+
+This is not a live Codex MCP E2E claim: isolated CI tests inject a controlled
+MCP response. Real endpoint credentials, handshake, and tool invocation remain
+to be independently verified after Codex delivers its runnable server.
