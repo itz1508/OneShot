@@ -109,6 +109,7 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
             run_id=state.run_id,
             prompt=json.dumps(
                 {
+                    "stage": Stage.RESEARCH.value,
                     "task_id": task_id,
                     "stage_payload": {
                         "input_text": input_record.text,
