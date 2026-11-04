@@ -26,6 +26,7 @@ from agent.runtime.providers.registry import ProviderRegistry
 
 _TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_ADAPTER_STAGE = "research"
 
 
 def research_artifact_id(task_id: str, run_id: str) -> str:
@@ -156,8 +157,10 @@ class MCPResearchAdapter:
     def generate(self, request: ProviderRequest) -> ProviderResult:
         try:
             prompt = json.loads(request.prompt)
-            if not isinstance(prompt, dict) or set(prompt) != {"task_id", "stage_payload"}:
-                raise ValueError("Research prompt must contain task_id and stage_payload")
+            if not isinstance(prompt, dict) or set(prompt) != {"stage", "task_id", "stage_payload"}:
+                raise ValueError("Research prompt must contain stage, task_id and stage_payload")
+            if prompt["stage"] != _ADAPTER_STAGE:
+                raise ValueError(f"MCPResearchAdapter received wrong stage: {prompt['stage']!r}; expected {_ADAPTER_STAGE!r}")
             task_id = prompt["task_id"]
             if not isinstance(task_id, str) or _TASK_ID.fullmatch(task_id) is None:
                 raise ValueError("invalid Research task identity")
