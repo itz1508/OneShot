@@ -92,6 +92,34 @@ def admission_receipt_subject(
     )
 
 
+def stage_receipt_subject(
+    task_id: str,
+    run_id: str,
+    stage: str,
+    artifact_revision: int,
+    artifact_digest: str,
+) -> str:
+    """One canonical host-bound stage-completion subject for issue AND verification.
+
+    Binds task, run, stage, and the exact verified work artifact
+    revision and digest. Issue and verify must use this helper so a
+    receipt cannot be replayed across tasks, runs, stages, revisions,
+    or mismatched artifacts.
+    """
+    return f"stage_complete:{task_id}:{run_id}:{stage}:{artifact_revision}:{artifact_digest}"
+
+
+def stage_receipt_id(
+    task_id: str,
+    run_id: str,
+    stage: str,
+    artifact_revision: int,
+    artifact_digest: str,
+) -> str:
+    """One canonical host-bound stage-completion receipt id."""
+    return f"receipt-{task_id}-{run_id}-{stage}-{artifact_revision}-{artifact_digest}"
+
+
 class AuthorizationReceipt(ContractModel):
     """Receipt for an authorized tool/action dispatch."""
 

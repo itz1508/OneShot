@@ -6,6 +6,7 @@ import pytest
 from pydantic import BaseModel
 
 from agent.contracts.common import ArtifactRef
+from agent.contracts.host import ReceiptRef
 from agent.contracts.work_todo import PlannedAction, TodoList, WorkBinding, WorkPlan, WorkStatus
 from agent.runtime.artifact_store import StaleRevisionError
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
@@ -68,11 +69,18 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
         expected_result="Source fact with evidence",
     )
     assert len(research_todos.actions) == 1
-    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
-    with pytest.raises(TransitionError, match="work list"):
-        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt)
     source_fact = source.read_text(encoding="utf-8").strip()
     r1 = run_action(controller, r0, "work-1", source_fact)
+    receipt = controller.issue_stage_receipt(
+        Stage.RESEARCH,
+        task_id="real-work",
+        run_id="run-real",
+        revision=r1.artifact_revision,
+        artifact_digest=r1.artifact_digest,
+        todo_ref=r1,
+    )
+    with pytest.raises(TransitionError, match="work list"):
+        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt)
     controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=r1)
 
     audit_scope = binding(controller, "audit_discovery", "audit-1")
@@ -105,7 +113,14 @@ def test_real_simple_to_complex_stage_handoff_and_restart(tmp_path) -> None:
 
     restarted = HostController(tmp_path / "state")
     assert all(x.status is WorkStatus.COMPLETED for x in restarted.work_todos.read(a2).actions)
-    audit_receipt = restarted.issue_stage_receipt(Stage.AUDIT_DISCOVERY, task_id="real-work", run_id="run-real")
+    audit_receipt = restarted.issue_stage_receipt(
+        Stage.AUDIT_DISCOVERY,
+        task_id="real-work",
+        run_id="run-real",
+        revision=a2.artifact_revision,
+        artifact_digest=a2.artifact_digest,
+        todo_ref=a2,
+    )
     state = restarted.advance_stage("real-work", "run-real", Stage.AUDIT_DISCOVERY, audit_receipt, todo_ref=a2)
     assert state.current_stage is Stage.PLANNING
     events = restarted.event_store.list("real-work")
@@ -119,17 +134,24 @@ def test_blocked_or_stale_work_cannot_complete_stage(tmp_path) -> None:
     controller.init_task("real-work", "run-real")
     scope = binding(controller, "research", "research-1")
     _, first = controller.assign_work(scope, action="Gather evidence", expected_result="Evidence")
-    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
     _, running = controller.work_todos.set_status(first, "work-1", WorkStatus.RUNNING)
     with pytest.raises(StaleRevisionError):
         controller.work_todos.set_status(first, "work-1", WorkStatus.RUNNING)
     _, blocked = controller.work_todos.set_status(
         running, "work-1", WorkStatus.BLOCKED, actual_result="Source unavailable"
     )
+    blocked_receipt = controller.issue_stage_receipt(
+        Stage.RESEARCH,
+        task_id="real-work",
+        run_id="run-real",
+        revision=blocked.artifact_revision,
+        artifact_digest=blocked.artifact_digest,
+        todo_ref=blocked,
+    )
     with pytest.raises(TransitionError, match="unfinished"):
-        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=blocked)
+        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, blocked_receipt, todo_ref=blocked)
     with pytest.raises(TransitionError, match="stale"):
-        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=running)
+        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, blocked_receipt, todo_ref=running)
     with pytest.raises(WorkTodoError, match="terminal"):
         controller.work_todos.set_status(blocked, "work-1", WorkStatus.RUNNING)
 
@@ -187,9 +209,27 @@ def test_unassigned_work_cannot_bypass_host_stage_binding(tmp_path) -> None:
     scope = binding(controller, "research", "research-1")
     _, unassigned = controller.work_todos.start(scope, action="Inspect", expected_result="Evidence")
     completed = run_action(controller, unassigned, "work-1", "source observed")
-    receipt = controller.issue_stage_receipt(Stage.RESEARCH, task_id="real-work", run_id="run-real")
     with pytest.raises(TransitionError, match="host-assigned"):
-        controller.advance_stage("real-work", "run-real", Stage.RESEARCH, receipt, todo_ref=completed)
+        controller.issue_stage_receipt(
+            Stage.RESEARCH,
+            task_id="real-work",
+            run_id="run-real",
+            revision=completed.artifact_revision,
+            artifact_digest=completed.artifact_digest,
+            todo_ref=completed,
+        )
+    with pytest.raises(TransitionError, match="host-assigned"):
+        controller.advance_stage(
+            "real-work",
+            "run-real",
+            Stage.RESEARCH,
+            ReceiptRef(
+                receipt_id="receipt-real-work-run-real-research-1-" + "0" * 64,
+                receipt_digest="0" * 64,
+                issuer_id="host",
+            ),
+            todo_ref=completed,
+        )
 
     controller.assign_work(scope, action="Inspect", expected_result="Evidence")
     conflicting = binding(controller, "research", "research-2")
