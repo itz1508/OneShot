@@ -76,3 +76,13 @@ def test_dependency_cycle_and_traversal_rejected():
     unsafe = BuildSpecification(spec_id="s", objective="create files", actions=(action("a", "../escape.py"),))
     with pytest.raises(ValueError, match="unsafe"):
         compile_build(unsafe, ref())
+
+
+def test_parent_child_workspace_paths_never_share_wave():
+    spec = BuildSpecification(
+        spec_id="nested",
+        objective="serialize namespace edits",
+        actions=(action("parent", "src"), action("child", "src/main.py")),
+    )
+    build = compile_build(spec, ref())
+    assert build.waves == (("parent",), ("child",))
