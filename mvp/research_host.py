@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 
 from agent.contracts.common import ArtifactRef
+from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_model
@@ -116,6 +117,28 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
             or len(todo.actions) != 1
         ):
             raise ValueError("work assignment or input revision changed")
+        dispatch_raw = service.artifacts.get_verified(f"agent-dispatch:{todo.request_id}", todo.request_revision)
+        dispatch = HostDispatchEnvelope.model_validate_json(dispatch_raw)
+        service.host.verify_agent_dispatch(dispatch)
+        if (
+            dispatch.input_request_ref != todo.input_request_ref
+            or dispatch.request_id != todo.request_id
+            or dispatch.request_revision != todo.request_revision
+        ):
+            raise ValueError("Research dispatch was not host-bound")
+        service.host.receive_agent_result(
+            dispatch,
+            HostDispatchResult(
+                task_id=dispatch.task_id,
+                run_id=dispatch.run_id,
+                stage=dispatch.stage,
+                role=dispatch.role,
+                request_id=dispatch.request_id,
+                request_revision=dispatch.request_revision,
+                respond_to=dispatch.respond_to,
+                output_ref=ref,
+            ),
+        )
         action = todo.actions[0]
         if action.status is WorkStatus.RUNNING:
             _, todo_ref = service.host.work_todos.set_status(
@@ -178,13 +201,17 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
+    dispatch, _ = service.host.prepare_agent_dispatch(
+        task_id, input_ref, input_record.text, requested_role="researcher"
+    )
+    service.host.verify_agent_dispatch(dispatch)
     binding = WorkBinding(
-        task_id=task_id,
-        run_id=state.run_id,
+        task_id=dispatch.task_id,
+        run_id=dispatch.run_id,
         stage="research",
-        request_id=f"research-{task_id}",
-        request_revision=input_revision,
-        input_request_ref=input_ref,
+        request_id=dispatch.request_id,
+        request_revision=dispatch.request_revision,
+        input_request_ref=dispatch.input_request_ref,
     )
     _, todo_ref = service.host.assign_work(
         binding,
@@ -202,6 +229,15 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
                     "stage_payload": {
                         "input_text": input_record.text,
                         "input_digest": input_digest,
+                        "routing": {
+                            "task_id": dispatch.task_id,
+                            "run_id": dispatch.run_id,
+                            "request_id": dispatch.request_id,
+                            "request_revision": dispatch.request_revision,
+                            "respond_to": dispatch.respond_to,
+                            "authorized_role": dispatch.role,
+                            "stage": dispatch.stage,
+                        },
                         **({"evidence_sources": evidence_sources} if evidence_sources is not None else {}),
                     },
                 },
@@ -221,6 +257,19 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         )
         if actual_digest != ref.artifact_digest:
             raise ProviderError("persisted Research digest mismatch")
+        service.host.receive_agent_result(
+            dispatch,
+            HostDispatchResult(
+                task_id=dispatch.task_id,
+                run_id=dispatch.run_id,
+                stage=dispatch.stage,
+                role=dispatch.role,
+                request_id=dispatch.request_id,
+                request_revision=dispatch.request_revision,
+                respond_to=dispatch.respond_to,
+                output_ref=ref,
+            ),
+        )
         _, done_ref = service.host.work_todos.set_status(
             running_ref,
             "work-1",
