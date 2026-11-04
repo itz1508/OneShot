@@ -500,7 +500,10 @@ class HostController:
             if output.contract_id != required_contract:
                 raise ValueError("agent result contract belongs to another stage")
             verified_record = contract_model.model_validate_json(raw)
-            if (verified_record.task_id, verified_record.run_id) != (envelope.task_id, envelope.run_id):
+            if (getattr(verified_record, "task_id", None), getattr(verified_record, "run_id", None)) != (
+                envelope.task_id,
+                envelope.run_id,
+            ):
                 raise ValueError("agent result task/run identity mismatch")
             if Stage(envelope.stage) is Stage.BUILD:
                 from agent.contracts.host import BuildAdmissionReceipt, PackageLockReceipt, admission_receipt_subject
