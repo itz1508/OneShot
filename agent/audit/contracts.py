@@ -21,7 +21,9 @@ def scan_contracts(root: Path, scope: Path) -> list[Finding]:
             else:
                 continue
             for name in names:
-                if not name.startswith("agent."):
+                if not name.startswith(("agent.", "mvp.")):
+                    continue
+                if not (root / name.split(".")[0]).is_dir():
                     continue
                 rel = root.joinpath(*name.split("."))
                 if not rel.with_suffix(".py").is_file() and not (rel / "__init__.py").is_file():
