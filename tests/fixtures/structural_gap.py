@@ -17,20 +17,20 @@ from agent.contracts.validation.structural import (
     SourceDeclaration,
     TraceStep,
 )
-from agent.runtime.controller import HostController
-from agent.runtime.host_gap_analyzer import (
+from agent.gap_analysis import (
     ComparableSystemAnalysis,
     GapBacktestCorpus,
     KnownCriticalBacktest,
     RegistrySnapshotSet,
     SourceGroundedAnalysis,
-    StructuralGapOutcome,
     StructuralGapRequest,
     WalkingSkeletonObservation,
     WorkflowConcernMatrix,
     WorkflowContractBundle,
     WorkflowExecutionTrace,
 )
+from agent.runtime.controller import HostController
+from agent.runtime.host_gap_analyzer import StructuralGapOutcome
 
 
 class FixturePayload(BaseModel):
