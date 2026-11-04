@@ -4,6 +4,7 @@ import pytest
 
 from agent.contracts.common import ArtifactRef
 from agent.contracts.planning import BuildSpecification, CreateAction
+from agent.contracts.task_todo import Build
 from agent.runtime.build_todos import compile_build
 
 
@@ -86,3 +87,18 @@ def test_parent_child_workspace_paths_never_share_wave():
     )
     build = compile_build(spec, ref())
     assert build.waves == (("parent",), ("child",))
+
+
+def test_manual_build_rejects_reused_source_action():
+    spec = BuildSpecification(
+        spec_id="duplicate",
+        objective="distinct action ownership",
+        actions=(action("a", "a.py"), action("b", "b.py")),
+    )
+    compiled = compile_build(spec, ref())
+    second = compiled.todos[1].model_copy(update={"source_action_ids": ("a",)})
+    with pytest.raises(ValueError, match="multiple TaskTodo"):
+        Build.model_validate({
+            **compiled.model_dump(),
+            "todos": [compiled.todos[0].model_dump(), second.model_dump()],
+        })
