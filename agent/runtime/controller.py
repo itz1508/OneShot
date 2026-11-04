@@ -515,7 +515,8 @@ class HostController:
                 if (
                     self.artifact_store.get_digest(
                         build.admission_ref.artifact_id, build.admission_ref.artifact_revision
-                    ) != build.admission_ref.artifact_digest
+                    )
+                    != build.admission_ref.artifact_digest
                     or self.artifact_store.get_digest(build.lock_ref.artifact_id, build.lock_ref.artifact_revision)
                     != build.lock_ref.artifact_digest
                 ):
