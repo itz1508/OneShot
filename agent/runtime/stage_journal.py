@@ -3,6 +3,7 @@
 Only the host selects roots and appends events. Model-supplied paths are never
 accepted. Successful append is committed to SQLite before its projection.
 """
+
 from __future__ import annotations
 
 import os
@@ -11,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 from agent.contracts.stage_log import StageLogEvent, StageName
-
 
 STAGES: tuple[StageName, ...] = ("search", "audit", "plan", "build", "mem")
 
