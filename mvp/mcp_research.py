@@ -10,8 +10,8 @@ import asyncio
 import json
 import os
 import re
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -24,6 +24,7 @@ from agent.runtime.providers.base import (
     ProviderResult,
 )
 from agent.runtime.providers.registry import ProviderRegistry
+from mvp.connector_store import connector_store
 
 _TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
@@ -53,10 +54,11 @@ _MCP_CHILD_ENV = frozenset(
 )
 
 
-def mcp_child_environment() -> dict[str, str]:
+def mcp_child_environment(state_root: Path | None = None) -> dict[str, str]:
     """Pass only process essentials and the configured MCP model/workspace inputs."""
     child_env = {name: value for name, value in os.environ.items() if name.upper() in _MCP_CHILD_ENV}
     child_env["MCP_SERVER_MODE"] = "oneshot"
+    child_env.update(connector_store(state_root).export_model_environment())
     return child_env
 
 
@@ -66,24 +68,22 @@ def research_artifact_id(task_id: str, run_id: str) -> str:
     return f"research-{identity[:32]}"
 
 
-def mcp_transport_config() -> tuple[str, str, list[str]]:
-    """Validate the local transport before assigning host work."""
+def mcp_transport_config(state_root: Path | None = None) -> tuple[str, str, list[str], str | None]:
+    """Resolve the active MCP transport from env or connector state."""
     url = os.environ.get("ONESHOT_MCP_URL", "").strip()
     command = os.environ.get("ONESHOT_MCP_COMMAND", "").strip()
     if bool(url) == bool(command):
-        raise ProviderError("configure exactly one of ONESHOT_MCP_URL or ONESHOT_MCP_COMMAND")
+        resolved = connector_store(state_root).mcp_transport_config()
+        return resolved
     if url:
-        address = urlsplit(url)
-        if address.scheme != "http" or address.hostname not in ("localhost", "127.0.0.1", "::1"):
-            raise ProviderError("MVP MCP HTTP endpoint must use local loopback")
-        return url, "", []
+        return url, "", [], connector_store(state_root).load_secrets().mcp_bearer_token or None
     try:
         args = json.loads(os.environ.get("ONESHOT_MCP_ARGS_JSON", "[]"))
     except ValueError as exc:
         raise ProviderError("invalid ONESHOT_MCP_ARGS_JSON") from exc
     if not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
         raise ProviderError("MCP stdio arguments must be a JSON array of strings")
-    return "", command, args
+    return "", command, args, None
 
 
 class ResearchMCPOutput(BaseModel):
@@ -149,9 +149,33 @@ async def _invoke_tool(arguments: dict[str, Any]) -> dict[str, Any]:
     except ImportError as exc:
         raise ProviderError("MCP Python SDK missing; sync the mvp extra") from exc
 
-    url, command, args = mcp_transport_config()
+    url, command, args, bearer_token = mcp_transport_config()
     if url:
         transport: Any = url
+        if bearer_token:
+            for module_name, class_name in (
+                ("mcp.client.streamable_http", "StreamableHTTPTransport"),
+                ("mcp.client.http", "HTTPTransport"),
+                ("mcp.client.sse", "SSEClientTransport"),
+            ):
+                try:
+                    module = __import__(module_name, fromlist=[class_name])
+                    transport_cls = getattr(module, class_name)
+                except Exception:
+                    continue
+                for kwargs in (
+                    {"url": url, "headers": {"Authorization": f"Bearer {bearer_token}"}},
+                    {"url": url, "authorization": bearer_token},
+                    {"url": url},
+                ):
+                    try:
+                        transport = transport_cls(**kwargs)
+                        break
+                    except TypeError:
+                        continue
+                else:
+                    continue
+                break
     else:
         transport = StdioServerParameters(command=command, args=args, env=mcp_child_environment())
     try:

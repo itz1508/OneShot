@@ -1,4 +1,4 @@
-"""FastAPI local MVP: real persisted input, state, replay and SSE; no fake agent execution."""
+"""FastAPI local MVP: real persisted input, state, replay, SSE, and connectors."""
 
 from __future__ import annotations
 
@@ -17,6 +17,17 @@ from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from agent.runtime.providers.base import ProviderError
+from mvp.connector_store import (
+    ConnectorError,
+    MCPAuthType,
+    ModelConnectionRequest,
+    connect_mcp,
+    connector_store,
+    disconnect_mcp,
+    save_model_connection,
+    test_mcp_connection,
+    test_model_connection,
+)
 from mvp.mcp_research import mcp_transport_config
 from mvp.service import MVPError, MVPService
 
@@ -64,12 +75,39 @@ class UpdateInput(BaseModel):
     expected_revision: int = Field(ge=1)
 
 
+class ConnectorSaveRequest(BaseModel):
+    url: str = Field(min_length=1)
+    auth_type: MCPAuthType = MCPAuthType.NONE
+    bearer_token: str = ""
+
+
+class ModelSaveRequest(ModelConnectionRequest):
+    pass
+
+
 def failure(exc: MVPError) -> HTTPException:
     message = str(exc)
     return HTTPException(
         status_code=404 if "not found" in message else 409 if "conflict" in message else 400,
         detail=message,
     )
+
+
+def connector_error(exc: Exception) -> HTTPException:
+    message = str(exc)
+    status = 502 if isinstance(exc, ProviderError) else 400
+    if isinstance(exc, ConnectorError):
+        status = 400
+    return HTTPException(status_code=status, detail=message)
+
+
+def require_operator(request: Request) -> None:
+    token = os.environ.get("ONESHOT_OPERATOR_TOKEN", "").strip()
+    if not token:
+        return
+    supplied = request.headers.get("x-operator-token", "").strip()
+    if supplied != token:
+        raise HTTPException(status_code=403, detail="operator authorization required")
 
 
 @app.get("/", include_in_schema=False)
@@ -93,6 +131,87 @@ def health() -> dict[str, object]:
     else:
         configured = True
     return {"status": "ok", "mcp_transport_configured": configured}
+
+
+@app.get("/api/connectors")
+def connectors() -> dict[str, object]:
+    return connector_store(DEFAULT_ROOT).snapshot()
+
+
+@app.post("/api/connectors/mcp/connect")
+def connect_mcp_route(request: Request, input: ConnectorSaveRequest) -> dict[str, object]:
+    require_operator(request)
+    try:
+        return connect_mcp(
+            state_root=DEFAULT_ROOT,
+            url=input.url,
+            auth_type=input.auth_type,
+            bearer_token=input.bearer_token,
+            persist=True,
+        )
+    except Exception as exc:
+        raise connector_error(exc) from exc
+
+
+@app.post("/api/connectors/mcp/test")
+def test_mcp(request: Request, input: ConnectorSaveRequest | None = None) -> dict[str, object]:
+    require_operator(request)
+    payload = input or ConnectorSaveRequest(url="http://localhost")
+    try:
+        return test_mcp_connection(
+            state_root=DEFAULT_ROOT,
+            url=payload.url,
+            auth_type=payload.auth_type,
+            bearer_token=payload.bearer_token or None,
+        )
+    except Exception as exc:
+        raise connector_error(exc) from exc
+
+
+@app.post("/api/connectors/mcp/disconnect")
+def disconnect_mcp_route(request: Request) -> dict[str, object]:
+    require_operator(request)
+    return disconnect_mcp(DEFAULT_ROOT)
+
+
+@app.post("/api/connectors/model/save")
+def save_model(request: Request, input: ModelSaveRequest) -> dict[str, object]:
+    require_operator(request)
+    try:
+        return save_model_connection(
+            state_root=DEFAULT_ROOT,
+            api_base_url=input.api_base_url,
+            model_id=input.model_id,
+            api_key=input.api_key,
+            persist=True,
+        )
+    except Exception as exc:
+        raise connector_error(exc) from exc
+
+
+@app.post("/api/connectors/model/test")
+def test_model(request: Request, input: ModelSaveRequest | None = None) -> dict[str, object]:
+    require_operator(request)
+    try:
+        if input is None:
+            state = connector_store(DEFAULT_ROOT).load_state().model
+            secrets = connector_store(DEFAULT_ROOT).load_secrets()
+            if not state.model_id or not secrets.model_api_key:
+                raise ConnectorError("model connection is not configured")
+            return test_model_connection(
+                state_root=DEFAULT_ROOT,
+                api_base_url=state.api_base_url or None,
+                model_id=state.model_id,
+                api_key=secrets.model_api_key,
+            )
+        return test_model_connection(
+            state_root=DEFAULT_ROOT,
+            api_base_url=input.api_base_url,
+            model_id=input.model_id,
+            api_key=input.api_key,
+        )
+    except Exception as exc:
+        raise connector_error(exc) from exc
 
 
 @app.post("/api/tasks", status_code=201)
@@ -182,8 +301,6 @@ async def stream(task_id: str, request: Request, after: int = 0) -> StreamingRes
             try:
                 batch = service.events(task_id, cursor)
             except sqlite3.Error as exc:
-                # Do not invent a persisted event or advance the replay cursor.
-                # EventSource may reconnect using its last acknowledged event ID.
                 logger.error("SSE event store read failed: %s", type(exc).__name__)
                 yield 'event: stream_error\ndata: {"code":"EVENT_READ_FAILED","retryable":true}\n\n'
                 return

@@ -55,6 +55,8 @@ addopts = "-q"
 
 [tool.deptry]
 known_first_party = ["agent", "mvp", "api_fundamentals"]
+extend_exclude = ["deployment/modal"]
 
 [tool.deptry.per_rule_ignores]
+DEP001 = ["modal"]
 DEP002 = ["claude-agent-sdk", "openai-codex", "uvicorn"]
