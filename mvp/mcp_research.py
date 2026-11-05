@@ -12,7 +12,6 @@ import os
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -25,7 +24,7 @@ from agent.runtime.providers.base import (
     ProviderResult,
 )
 from agent.runtime.providers.registry import ProviderRegistry
-from mvp.connector_store import connector_store, discover_mcp_tools_sync
+from mvp.connector_store import connector_store
 
 _TASK_ID = re.compile(r"^[a-f0-9]{32}$")
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
