@@ -10,23 +10,15 @@ OneShot organizes software work into an auditable workflow, separating model-gen
 
 ## How it works
 
-```text
-User request
-    |
-Research → Audit Discovery → Planning
-                            |
-                    Host freeze / package lock
-                            |
-                    Fixture Validation
-                            |
-                      Build Admission
-                            |
-                         Build
-                            |
-                   Independent Build Validation
-```
+[![Vertical animation of OneShot's six registered workflow stages and host-owned gates](docs/workflow-overview.gif)](docs/workflow-overview.gif)
 
-The **host** controls authorization, immutable artifacts, tool identity, stage transitions, and receipts. Research gathers evidence; Audit Discovery inspects the existing implementation; Planning specifies changes; validation gates decide whether work can advance; Build executes admitted actions; and independent verification checks the result.
+[Open the animated GIF at full size](docs/workflow-overview.gif) · [View the static, accessible diagram](docs/workflow-overview.svg)
+
+The registered role order is **Research → Audit Discovery → Planning → Fixture Validation → Build → Build Validation**. The narrow amber bands show Host operations between stages; the Build card contains the Host-created sandbox boundary. The dashed arrows show the contract's Research follow-up and Planning correction routes.
+
+The **Host** controls authorization, immutable artifacts, tool identity, stage transitions, and receipts. This diagram describes the registered contract; it does not claim a completed live six-stage run.
+
+> **Documentation-only clarification:** This README and its diagram assets changed. Application code, workflow contracts, configuration, and execution behavior did not change.
 
 ### Core design
 
