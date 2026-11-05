@@ -9,12 +9,11 @@ import hashlib
 import json
 import shutil
 import subprocess
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright  # deptry: ignore[DEP001] - optional video tool
 
 SCENARIOS = ("happy", "gap", "blocked", "recovery", "mcp", "audit")
 
