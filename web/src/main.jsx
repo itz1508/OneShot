@@ -90,6 +90,7 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [hostHealthy, setHostHealthy] = useState(false)
+  const [backendMcpConfigured, setBackendMcpConfigured] = useState(false)
   const [connectorSnapshot, setConnectorSnapshot] = useState({ mcp: {}, model: {} })
   const [configOpen, setConfigOpen] = useState(false)
   const [connectorMessage, setConnectorMessage] = useState('')
@@ -269,8 +270,14 @@ function App() {
 
   useEffect(() => {
     apiFetch('/api/health')
-      .then((health) => setHostHealthy(health.status === 'ok'))
-      .catch(() => setHostHealthy(false))
+      .then((health) => {
+        setHostHealthy(health.status === 'ok')
+        setBackendMcpConfigured(health.mcp_transport_configured === true)
+      })
+      .catch(() => {
+        setHostHealthy(false)
+        setBackendMcpConfigured(false)
+      })
     loadConnectorSnapshot()
   }, [])
 
@@ -373,7 +380,7 @@ function App() {
     }
   }, [taskId, events.length, files.length, streamState])
 
-  const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) && (task.purpose === 'audit' || mcpState.status === 'connected')
+  const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) && (task.purpose === 'audit' || mcpState.status === 'connected' || backendMcpConfigured)
   const currentStage = task?.current_stage || 'Idle'
   const streamStatusLabel =
     streamState === 'connected'
@@ -388,7 +395,7 @@ function App() {
   const nextActionLabel = task
     ? canRun
       ? `Run ${task.purpose === 'audit' ? 'Audit' : 'Research'} on the host`
-      : task.purpose !== 'audit' && mcpState.status !== 'connected' && task.execution_status === 'awaiting_mcp'
+      : task.purpose !== 'audit' && mcpState.status !== 'connected' && !backendMcpConfigured && task.execution_status === 'awaiting_mcp'
         ? 'Connect an MCP server to enable Research.'
         : task.execution_status === 'audit_completed'
           ? 'Review the audit artifact or wait for the host to advance.'

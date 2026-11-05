@@ -91,7 +91,7 @@ test('Connection settings modal supports MCP and model API configuration', async
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Open connection settings' }).click()
+  await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Open connection settings' }).click()
   const dialog = page.getByRole('dialog', { name: 'Connection settings' })
   await expect(dialog).toBeVisible()
   await page.getByLabel('MCP server URL').fill('http://127.0.0.1:9234/mcp')
@@ -105,5 +105,5 @@ test('Connection settings modal supports MCP and model API configuration', async
   await page.getByLabel('Secret API key').fill('sk-test')
   await page.getByRole('button', { name: 'Test Connection' }).last().click()
   await expect(page.getByText('Model test passed: provider-ready')).toBeVisible()
-  await expect(page.getByText('provider-ready')).toBeVisible()
+  await expect(page.getByText('Provider response: provider-ready')).toBeVisible()
 })
