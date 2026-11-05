@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="OneShot intended evidence-driven build workflow and correction routes">
+<title>OneShot — Evidence-Driven Workflow</title>
+<style>
+:root { color-scheme:dark; font-family:"Trebuchet MS", "Aptos", "Segoe UI",sans-serif; background:#071221;color:#f1f7fc;}
+*{box-sizing:border-box}
+body {margin:0; background:#071221;}
+header{max-width:1080px;margin:0 auto; padding:18px 18px 8px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+header h1{font-size:1rem;letter-spacing:.03em;margin:0;color:#acc2d3;font-weight:500}
+.controls{display:flex;gap:8px;align-items:center}
+button, .link{appearance:none;border:1px solid #325269;border-radius:10px;background:#102438;padding:8px 14px;color:#e3f4ff;font:600 .88rem inherit; cursor:pointer;text-decoration:none}
+button:hover,.link:hover{border-color:#4ad5dd}
+button:focus-visible,.link:focus-visible{outline:3px solid #4ad5dd;outline-offset:2px}
+main{max-width:1100px;margin:0 auto;}
+svg.diagram{display:block;width:100%;height:auto;max-width:1100px; overflow:visible;}
+.mono{font-family:"Consolas", "DejaVu Sans Mono", monospace}
+.main-edge{stroke:#486982;stroke-width:4;stroke-linecap:round}
+.context-edge{stroke:#3b8190;stroke-width:3;stroke-dasharray:12 10}
+.return-edge{stroke:#497e97;stroke-width:3;stroke-dasharray:12 10}
+.revision-edge{stroke:#a97769;stroke-width:3;stroke-dasharray:12 10}
+.prereq-edge{stroke:#8b7955;stroke-width:3;stroke-dasharray:12 10}
+.scope-edge{stroke:#407a70;stroke-width:3;stroke-dasharray:12 10}
+.main-edge,.context-edge,.return-edge,.revision-edge,.prereq-edge,.scope-edge{animation:travel 3s linear infinite}
+@keyframes travel{to{stroke-dashoffset:-88}}
+.stage .card{animation:highlight 12s linear infinite;animation-delay:var(--delay)}
+.stage .activity{opacity:0;animation:appear 12s linear infinite;animation-delay:var(--delay)}
+.stage .accent{opacity:.75}
+@keyframes highlight{0%,7%{stroke:var(--tone);stroke-width:4;fill:#173446}10%,100%{stroke:#35556d;stroke-width:2;fill:#101e30}}
+@keyframes appear{0%,7%{opacity:1;filter:drop-shadow(0 0 8px var(--tone))}10%,100%{opacity:0}}
+.paused .diagram *{animation-play-state:paused!important}
+footer{max-width:960px;color:#9bb0c5; font-size:.91rem;line-height:1.5;margin:auto;padding:12px 22px 32px}
+footer b{color:#dce8f4}
+@media (prefers-reduced-motion:reduce){.diagram *{animation:none!important}.stage .activity{opacity:0}}
+</style>
+</head>
+<body>
+<header><h1>OneShot / Workflow Visualization</h1><div class="controls"><button type="button" id="motion" aria-pressed="false">Pause animation</button><a class="link" href="workflow.gif" download>Animated GIF</a></div></header>
+<main><svg class="diagram" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="diagram-title diagram-desc" width="1480" height="2100" viewBox="0 0 1480 2100" preserveAspectRatio="xMidYMin meet">
+<title id="diagram-title">OneShot intended workflow</title>
+<desc id="diagram-desc">Twelve stages from User Request to Completion and Retention. Catalog supplies Discovery and Research. Audit asks Research for more evidence. Review revisions return to Planning. Preflight prerequisites are resolved and rechecked. Validation returns same-scope corrections to Builder or changed scope to Planning.</desc>
+<defs><pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#0c1b2c" stroke-width="1"/></pattern></defs>
+<defs><marker id="arrow-main-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#486982"/></marker></defs>
+<defs><marker id="arrow-context-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#3b8190"/></marker></defs>
+<defs><marker id="arrow-return-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#497e97"/></marker></defs>
+<defs><marker id="arrow-revision-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#a97769"/></marker></defs>
+<defs><marker id="arrow-prereq-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#8b7955"/></marker></defs>
+<defs><marker id="arrow-scope-edge" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1,1 L10,6 L1,11 Z" fill="#407a70"/></marker></defs>
+<rect class="" x="0" y="0" width="1480" height="2100" rx="0" fill="#071221" stroke="none" stroke-width="0"/>
+<rect x="0" y="0" width="1480" height="2100" fill="url(#grid)"/>
+<rect class="" x="404" y="260" width="693" height="1610" rx="32" fill="#0C1B2B" stroke="#1A2C3F" stroke-width="2"/>
+<rect class="" x="58" y="45" width="1364" height="180" rx="26" fill="#0B1C2F" stroke="#204057" stroke-width="2"/>
+<rect class="" x="91" y="77" width="61" height="61" rx="17" fill="#133D4B" stroke="#348B9B" stroke-width="2"/>
+<text class="" x="121" y="122" font-size="39" fill="#F1F7FC" font-weight="800" text-anchor="middle">O</text>
+<text class="" x="182" y="132" font-size="46" fill="#F1F7FC" font-weight="750" text-anchor="start">OneShot</text>
+<text class="mono" x="185" y="168" font-size="22" fill="#4AD5DD" font-weight="600" text-anchor="start">EVIDENCE-DRIVEN BUILD WORKFLOW</text>
+<g><rect class="" x="1177" y="84" width="162.66" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="1190" y="109" font-size="18" fill="#78B7FF" font-weight="700" text-anchor="start">README VIEW</text></g>
+<text class="mono" x="1179" y="166" font-size="19" fill="#9BB0C5" font-weight="400" text-anchor="start">INTENDED FLOW</text>
+<text class="mono" x="72" y="257" font-size="19" fill="#9BB0C5" font-weight="600" text-anchor="start">CONTEXT</text>
+<text class="mono" x="1137" y="257" font-size="19" fill="#9BB0C5" font-weight="600" text-anchor="start">CORRECTION ROUTES</text>
+<rect class="" x="426" y="1224" width="665" height="411" rx="26" fill="none" stroke="#23544E" stroke-width="3"/>
+<g><rect class="" x="442" y="1210" width="162.66" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="455" y="1235" font-size="18" fill="#7EE3BA" font-weight="700" text-anchor="start">BUILD PHASE</text></g>
+<path class="main-edge" d="M759 390 V427" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 526 V563" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 662 V699" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 798 V835" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 934 V971" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1070 V1107" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1206 V1243" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1342 V1379" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1478 V1515" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1614 V1651" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<path class="main-edge" d="M759 1750 V1787" fill="none" stroke="#486982" stroke-width="4" marker-end="url(#arrow-main-edge)"/>
+<rect class="" x="64" y="558" width="291" height="131" rx="17" fill="#13283C" stroke="#3C8095" stroke-width="2"/>
+<text class="mono" x="86" y="609" font-size="23" fill="#4AD5DD" font-weight="700" text-anchor="start">CATALOG</text>
+<text class="" x="86" y="647" font-size="22" fill="#F1F7FC" font-weight="700" text-anchor="start">Versioned templates</text>
+<text class="" x="86" y="674" font-size="18" fill="#9BB0C5" font-weight="400" text-anchor="start">Guidance, not proof</text>
+<path class="context-edge" d="M458 476 H363 V570 H355" fill="none" stroke="#3b8190" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-context-edge)"/>
+<path class="context-edge" d="M355 610 H409 V614 H455" fill="none" stroke="#3b8190" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-context-edge)"/>
+<path class="context-edge" d="M355 655 H389 V750 H455" fill="none" stroke="#3b8190" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-context-edge)"/>
+<path class="return-edge" d="M1057 885 H1139 V749 H1062" fill="none" stroke="#497e97" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-return-edge)"/>
+<g><rect class="" x="1164" y="772" width="178.07000000000002" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="1177" y="797" font-size="17" fill="#78B7FF" font-weight="700" text-anchor="start">MORE EVIDENCE</text></g>
+<path class="revision-edge" d="M1056 1157 H1193 V1021 H1062" fill="none" stroke="#a97769" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-revision-edge)"/>
+<g><rect class="" x="1208" y="1072" width="155.29000000000002" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="1221" y="1097" font-size="17" fill="#FF9B73" font-weight="700" text-anchor="start">REVISE PLAN</text></g>
+<rect class="" x="65" y="1348" width="300" height="90" rx="15" fill="#1B282E" stroke="#8A7447" stroke-width="2"/>
+<text class="mono" x="82" y="1382" font-size="20" fill="#EBC783" font-weight="700" text-anchor="start">RESOLVE</text>
+<text class="" x="82" y="1417" font-size="20" fill="#F1F7FC" font-weight="700" text-anchor="start">Prerequisite + recheck</text>
+<path class="prereq-edge" d="M458 1415 H384 V1372 H370" fill="none" stroke="#8b7955" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-prereq-edge)"/>
+<path class="prereq-edge" d="M370 1415 H402 V1446 H455" fill="none" stroke="#8b7955" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-prereq-edge)"/>
+<path class="scope-edge" d="M1059 1701 H1391 V1293 H1063" fill="none" stroke="#407a70" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-scope-edge)"/>
+<g><rect class="" x="1151" y="1570" width="143.9" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="1164" y="1595" font-size="17" fill="#7EE3BA" font-weight="700" text-anchor="start">SAME SCOPE</text></g>
+<path class="revision-edge" d="M458 1719 H40 V1033 H455" fill="none" stroke="#a97769" stroke-width="3" stroke-dasharray="12 10" marker-end="url(#arrow-revision-edge)"/>
+<g><rect class="" x="63" y="1546" width="166.68" height="37" rx="10" fill="#10263B" stroke="none" stroke-width="0"/><text class="mono" x="76" y="1571" font-size="17" fill="#FF9B73" font-weight="700" text-anchor="start">SCOPE CHANGE</text></g>
+<g class="stage" data-step="1" style="--tone:#4AD5DD;--delay:0s">
+<rect class="card" x="463" y="297" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="309" width="6" height="65" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="321" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="349" font-size="21" fill="#4AD5DD" font-weight="700" text-anchor="middle">01</text>
+<text class="" x="559" y="341" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">User Request</text>
+<text class="" x="560" y="370" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Accepted intent, unchanged</text>
+<rect class="activity" x="1033" y="321" width="6" height="42" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="2" style="--tone:#78B7FF;--delay:1s">
+<rect class="card" x="463" y="433" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="445" width="6" height="65" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="457" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="485" font-size="21" fill="#78B7FF" font-weight="700" text-anchor="middle">02</text>
+<text class="" x="559" y="477" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Intent Summary</text>
+<text class="" x="560" y="506" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Concise restatement only</text>
+<rect class="activity" x="1033" y="457" width="6" height="42" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="3" style="--tone:#78B7FF;--delay:2s">
+<rect class="card" x="463" y="569" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="581" width="6" height="65" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="593" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="621" font-size="21" fill="#78B7FF" font-weight="700" text-anchor="middle">03</text>
+<text class="" x="559" y="613" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Discovery</text>
+<text class="" x="560" y="642" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Research request + fixture guidance</text>
+<rect class="activity" x="1033" y="593" width="6" height="42" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="4" style="--tone:#78B7FF;--delay:3s">
+<rect class="card" x="463" y="705" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="717" width="6" height="65" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="729" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="757" font-size="21" fill="#78B7FF" font-weight="700" text-anchor="middle">04</text>
+<text class="" x="559" y="749" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Research</text>
+<text class="" x="560" y="778" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Sources, evidence, provenance</text>
+<rect class="activity" x="1033" y="729" width="6" height="42" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="5" style="--tone:#78B7FF;--delay:4s">
+<rect class="card" x="463" y="841" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="853" width="6" height="65" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="865" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="893" font-size="21" fill="#78B7FF" font-weight="700" text-anchor="middle">05</text>
+<text class="" x="559" y="885" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Repository Audit</text>
+<text class="" x="560" y="914" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Read-only codebase inspection</text>
+<rect class="activity" x="1033" y="865" width="6" height="42" rx="3" fill="#78B7FF" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="6" style="--tone:#FF9B73;--delay:5s">
+<rect class="card" x="463" y="977" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="989" width="6" height="65" rx="3" fill="#FF9B73" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1001" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1029" font-size="21" fill="#FF9B73" font-weight="700" text-anchor="middle">06</text>
+<text class="" x="559" y="1021" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Planning</text>
+<text class="" x="560" y="1050" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Design · Gap Resolution · Scanner</text>
+<rect class="activity" x="1033" y="1001" width="6" height="42" rx="3" fill="#FF9B73" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="7" style="--tone:#EBC783;--delay:6s">
+<rect class="card" x="463" y="1113" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1125" width="6" height="65" rx="3" fill="#EBC783" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1137" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1165" font-size="21" fill="#EBC783" font-weight="700" text-anchor="middle">07</text>
+<text class="" x="559" y="1157" font-size="27" fill="#F1F7FC" font-weight="750" text-anchor="start">User Review and Approval</text>
+<text class="" x="560" y="1186" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Exact plan revision + source checkpoint</text>
+<rect class="activity" x="1033" y="1137" width="6" height="42" rx="3" fill="#EBC783" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="8" style="--tone:#7EE3BA;--delay:7s">
+<rect class="card" x="463" y="1249" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1261" width="6" height="65" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1273" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1301" font-size="21" fill="#7EE3BA" font-weight="700" text-anchor="middle">08</text>
+<text class="" x="559" y="1293" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Builder</text>
+<text class="" x="560" y="1322" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Approved task list + candidate</text>
+<rect class="activity" x="1033" y="1273" width="6" height="42" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="9" style="--tone:#7EE3BA;--delay:8s">
+<rect class="card" x="463" y="1385" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1397" width="6" height="65" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1409" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1437" font-size="21" fill="#7EE3BA" font-weight="700" text-anchor="middle">09</text>
+<text class="" x="559" y="1429" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Preflight</text>
+<text class="" x="560" y="1458" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Authorization + execution readiness</text>
+<rect class="activity" x="1033" y="1409" width="6" height="42" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="10" style="--tone:#7EE3BA;--delay:9s">
+<rect class="card" x="463" y="1521" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1533" width="6" height="65" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1545" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1573" font-size="21" fill="#7EE3BA" font-weight="700" text-anchor="middle">10</text>
+<text class="" x="559" y="1565" font-size="31" fill="#F1F7FC" font-weight="750" text-anchor="start">Sandbox Execution</text>
+<text class="" x="560" y="1594" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Apply changes · checks · evidence</text>
+<rect class="activity" x="1033" y="1545" width="6" height="42" rx="3" fill="#7EE3BA" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="11" style="--tone:#4AD5DD;--delay:10s">
+<rect class="card" x="463" y="1657" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1669" width="6" height="65" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1681" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1709" font-size="21" fill="#4AD5DD" font-weight="700" text-anchor="middle">11</text>
+<text class="" x="559" y="1701" font-size="27" fill="#F1F7FC" font-weight="750" text-anchor="start">Independent Validation</text>
+<text class="" x="560" y="1730" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Real E2E outcome verification</text>
+<rect class="activity" x="1033" y="1681" width="6" height="42" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+</g>
+<g class="stage" data-step="12" style="--tone:#4AD5DD;--delay:11s">
+<rect class="card" x="463" y="1793" width="592" height="89" rx="16" fill="#101E30" stroke="#35556D" stroke-width="2"/>
+<rect class="accent" x="476" y="1805" width="6" height="65" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+<rect class="" x="496" y="1817" width="48" height="40" rx="11" fill="#0A1B2B" stroke="#2D485B" stroke-width="1"/>
+<text class="mono" x="520" y="1845" font-size="21" fill="#4AD5DD" font-weight="700" text-anchor="middle">12</text>
+<text class="" x="559" y="1837" font-size="27" fill="#F1F7FC" font-weight="750" text-anchor="start">Completion and Retention</text>
+<text class="" x="560" y="1866" font-size="21" fill="#9BB0C5" font-weight="400" text-anchor="start">Reconcile · cleanup · preserve evidence</text>
+<rect class="activity" x="1033" y="1817" width="6" height="42" rx="3" fill="#4AD5DD" stroke="none" stroke-width="0"/>
+</g>
+<rect class="" x="64" y="1902" width="1354" height="134" rx="22" fill="#0B1C2F" stroke="#21435B" stroke-width="2"/>
+<text class="mono" x="88" y="1950" font-size="20" fill="#4AD5DD" font-weight="700" text-anchor="start">READ THE FLOW</text>
+<text class="" x="88" y="1993" font-size="22" fill="#F1F7FC" font-weight="700" text-anchor="start">Evidence to design · Approval to execution · Independent verification to retention</text>
+<text class="" x="90" y="2023" font-size="18" fill="#9BB0C5" font-weight="400" text-anchor="start">Scanner is the final Planning check. Corrections preserve approved scope and source identity.</text>
+</svg></main>
+<footer><b>Intended architecture, not a runtime trace.</b> Scanner is the final Planning check. The diagram distinguishes supporting Catalog context, exact user approval, build execution, and independent verification.</footer>
+<script>
+const button=document.querySelector('#motion');
+button.addEventListener('click',()=>{const paused=document.body.classList.toggle('paused');button.textContent=paused?'Resume animation':'Pause animation';button.setAttribute('aria-pressed',String(paused));});
+</script>
+</body></html>
