@@ -47,9 +47,7 @@ def capture(
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
         "request",
-        lambda request: requests.append(request.url)
-        if "/api/" in request.url or "/mcp" in request.url
-        else None,
+        lambda request: requests.append(request.url) if "/api/" in request.url or "/mcp" in request.url else None,
     )
     if base_url:
         page.goto(base_url.rstrip("/") + "/demo.html?scenario=" + scenario, wait_until="domcontentloaded")
@@ -58,9 +56,7 @@ def capture(
         page.locator("#scenario").select_option(scenario)
 
     count = next(
-        value["scenes"]
-        for value in page.evaluate("window.__oneshotDemo.scenarios")
-        if value["id"] == scenario
+        value["scenes"] for value in page.evaluate("window.__oneshotDemo.scenarios") if value["id"] == scenario
     )
     visited: list[str] = []
     storyboard: list[dict] = []
@@ -75,7 +71,7 @@ def capture(
         status = state["presentation"]["status"]
         assert state["sceneIndex"] == i
         if stage != last_stage or status == "error" or i == count - 1:
-            image_path = images / f'{i + 1:03}-{stage.lower().replace(" ", "-")}.png'
+            image_path = images / f"{i + 1:03}-{stage.lower().replace(' ', '-')}.png"
             page.screenshot(path=str(image_path))
             visited.append(image_path.name)
         storyboard.append(
@@ -123,9 +119,22 @@ def capture(
     if shutil.which("ffmpeg"):
         conversion = subprocess.run(
             [
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(webm),
-                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                "-movflags", "+faststart", str(mp4),
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(webm),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                str(mp4),
             ],
             capture_output=True,
             text=True,
