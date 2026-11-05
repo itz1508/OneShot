@@ -31,6 +31,30 @@ for (const scenario of scenarios) {
   })
 }
 
+test('visual model routing changes line colors without contacting providers', async ({ page }) => {
+  const calls = []
+  page.on('request', (request) => {
+    if (request.url().includes('/api/') || request.url().includes('/mcp')) calls.push(request.url())
+  })
+  await page.goto('/demo.html?scenario=happy')
+  await expect(page.locator('#route-sidebar')).toBeVisible()
+  const initial = await page.locator('#route-sidebar').evaluate((element) =>
+    getComputedStyle(element).getPropertyValue('--build-route').trim())
+  await page.selectOption('#route-build', 'wonder')
+  await expect(page.locator('#route-label-build')).toContainText('Muse Wonder')
+  const switched = await page.locator('#route-sidebar').evaluate((element) =>
+    getComputedStyle(element).getPropertyValue('--build-route').trim())
+  expect(switched).not.toBe(initial)
+  await page.selectOption('#route-research', 'meta')
+  await expect(page.locator('#route-label-research')).toContainText('Meta Muse Spark')
+  await page.selectOption('#route-view', 'parallel')
+  await expect(page.locator('.route-only-parallel')).toBeVisible()
+  await page.selectOption('#route-view', 'audit')
+  await expect(page.locator('.route-build-chain')).toBeHidden()
+  await expect(page.locator('.route-only-audit')).toBeVisible()
+  expect(calls).toEqual([])
+})
+
 test('playback control preserves stage behavior on pause and reset', async ({ page }) => {
   await page.goto('/demo.html?scenario=happy&step=5')
   expect(await page.evaluate(() => window.__oneshotDemo.getState().sceneIndex)).toBe(5)
