@@ -564,6 +564,10 @@ function App() {
             <FileJson2 size={18} />
             <span>Files</span>
           </button>
+          <a className="rail-button" href="/demo.html" aria-label="Open video demo">
+            <Sparkles size={18} />
+            <span>Demo</span>
+          </a>
         </nav>
         <button className="rail-button rail-settings" type="button" aria-label="Open connection settings" onClick={openConfig}>
           <Settings2 size={18} />

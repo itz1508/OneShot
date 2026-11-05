@@ -1,0 +1,29 @@
+name: Video Demo Browser E2E
+
+on:
+  pull_request:
+    paths:
+      - 'web/public/demo.*'
+      - 'web/demo/**'
+      - 'web/tests/demo.spec.js'
+      - 'web/playwright.demo.config.js'
+      - 'web/package.json'
+      - '.github/workflows/video-demo.yml'
+  workflow_dispatch:
+
+jobs:
+  demo-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:demo
