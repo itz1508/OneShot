@@ -91,7 +91,7 @@ test('Connection settings modal supports MCP and model API configuration', async
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Open connection settings' }).click()
+  await page.getByRole('complementary', { name: 'Primary navigation' }).getByRole('button', { name: 'Open connection settings' }).click()
   const dialog = page.getByRole('dialog', { name: 'Connection settings' })
   await expect(dialog).toBeVisible()
   await page.getByLabel('MCP server URL').fill('http://127.0.0.1:9234/mcp')
