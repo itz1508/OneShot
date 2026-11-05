@@ -105,5 +105,5 @@ test('Connection settings modal supports MCP and model API configuration', async
   await page.getByLabel('Secret API key').fill('sk-test')
   await page.getByRole('button', { name: 'Test Connection' }).last().click()
   await expect(page.getByText('Model test passed: provider-ready')).toBeVisible()
-  await expect(page.getByText('provider-ready')).toBeVisible()
+  await expect(page.getByText('Provider response: provider-ready')).toBeVisible()
 })
