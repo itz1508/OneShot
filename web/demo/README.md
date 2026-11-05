@@ -10,6 +10,14 @@ Run from the existing `web/` Vite app, open `/demo.html?scenario=happy`. Use Sce
 
 Synthetic scenarios: `happy` (17), `gap` (12), `blocked` (7), `recovery` (13), `mcp` (11), `audit` (10). All 70 scenes feed the original OneShot view through its existing test-only event projection, with sequential event IDs and the original stage-specific visualizations.
 
+## Host and model routing side panel
+
+The existing /demo.html playback now includes a **right-side routing inspector** with Standard Workflow, Parallel Task Execution (40-task example) and Repository Audit views. It shows **Host intake → Research Catalog → shared user intent → Research / Audit Discovery / Planning → WorkTodo and gates → Builder → Modal Sandbox → host verification**, with proposed LangGraph tracing below.
+
+Use the Research, Audit Discovery, Planning and Builder model menus to change **the highlighted line color and displayed model name**. Solid lines represent host-owned steps; dashed lines represent model calls; double lines identify Modal Sandbox execution; dotted lines represent tracing. The Builder menu can show Qwen3.8 or Muse Wonder; those integrations remain proposed. The 40-task view describes four proposed worker lanes with dependency barriers, not four independently verified simultaneous builds.
+
+**These controls never change MODEL_API_KEY, contact a provider, schedule a sandbox or authorize execution.** Credentials remain server-side. LangGraph is proposed; the host's events and checkpoints are the current source of truth.
+
 ## Verification
 
 `cd web && npm ci && npx playwright install chromium && npm run test:demo`
