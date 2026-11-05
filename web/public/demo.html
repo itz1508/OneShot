@@ -56,6 +56,22 @@
 .demo-artifact{border:1px solid var(--role);padding:6px 9px;border-radius:6px;background:var(--roleSoft);color:var(--role);font:10px 'Liberation Mono',monospace}
 .composer .send[disabled]{opacity:.4}
 @media(max-width:760px){.demo-toolbar{padding:9px 10px;gap:6px}.demo-toolbar select{max-width:166px}.demo-caption{padding:7px 10px}.demo-toolbar label{font-size:9px}.demo-toolbar button{padding:7px}.demo-toolbar .demo-flag{width:100%}}
+
+/* Synthetic routing inspector: visuals only; no secrets, host calls or execution. */
+.route-sidebar{flex:0 0 295px;max-width:325px;border-left:1px solid var(--line);background:var(--panel);overflow:auto;scrollbar-color:var(--line) transparent;--research-route:#e8c56a;--audit-route:#65e4c5;--planning-route:#65e4c5;--build-route:#8bbcff;--host-route:#d3dfd9;--sandbox-route:#a3ea95;--trace-route:#e4b889}
+.route-sidebar details{padding:16px 13px 25px}.route-sidebar summary{cursor:pointer;list-style:none;font:12px 'Liberation Mono',monospace;border-bottom:1px solid var(--line);padding-bottom:12px}.route-sidebar summary::before{content:'▦';color:var(--accent);padding-right:10px}.route-sidebar summary::-webkit-details-marker{display:none}.route-sub{font:10px 'Liberation Mono',monospace;color:var(--muted);line-height:1.55;margin:10px 0}
+.route-sidebar label{display:block;font:10px 'Liberation Mono',monospace;color:var(--muted);margin:9px 0}.route-sidebar select{display:block;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:7px;font:11px 'Liberation Mono',monospace;padding:7px 6px;margin-top:4px}
+.route-legend{display:flex;flex-wrap:wrap;gap:6px 10px;padding:10px 0;margin:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font:9px 'Liberation Mono',monospace;color:var(--muted)}.route-legend b{font-size:14px;color:var(--text)}
+.route-box{padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);font:10px 'Liberation Mono',monospace;line-height:1.45}.route-box strong{display:block;font-size:11px}.route-box small{display:block;color:var(--muted);margin-top:4px;word-break:break-word}
+.route-host{border-color:var(--host-route)}.route-catalog{border-color:#e8c56a}.route-context{border-color:#65e4c5}.route-modal{border:3px double var(--sandbox-route)}.route-model.build{border-left:3px solid var(--build-route)}
+.route-wire{position:relative;height:20px;margin-left:19px;border-left:3px solid var(--host-route);color:var(--host-route)}.route-wire:after{content:'';position:absolute;left:-5px;top:1px;width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor;animation:route-flow 1.3s ease-in-out infinite alternate}.route-wire.model{border-left-style:dashed}.route-wire.sandbox{border-left:5px double var(--sandbox-route);color:var(--sandbox-route)}.route-wire.trace{border-left:3px dotted var(--trace-route);color:var(--trace-route)}.route-wire.build{border-left-color:var(--build-route);color:var(--build-route)}
+@keyframes route-flow{from{transform:translateY(0);opacity:.25}to{transform:translateY(13px);opacity:1}}
+.route-roles{border-left:1px solid var(--line);margin-left:13px;padding:7px 0 7px 13px;display:grid;gap:7px}.route-role{padding:6px 8px;background:var(--panel2);border-left:3px dashed var(--research-route);font:10px 'Liberation Mono',monospace}.route-role.audit{border-left-color:var(--audit-route)}.route-role.planning{border-left-color:var(--planning-route)}.route-role small{display:block;color:var(--muted);margin-top:4px;line-height:1.35}.route-role strong{font-size:11px}
+.route-callout{border-left:2px dashed var(--trace-route);background:var(--panel2);padding:8px;margin:8px 0;font:10px 'Liberation Mono',monospace;color:var(--muted)}.route-model.build{padding-left:10px}.route-footer{border:1px dashed var(--line);color:var(--warn);padding:9px;margin-top:13px;font:10px 'Liberation Mono',monospace;line-height:1.5}.route-only-parallel,.route-only-audit{display:none}.route-sidebar[data-view="parallel"] .route-only-parallel,.route-sidebar[data-view="audit"] .route-only-audit{display:block}.route-sidebar[data-view="audit"] .route-build-chain{display:none}
+@media(max-width:1150px){.route-sidebar{flex-basis:248px}.chat-column{padding-left:16px;padding-right:16px}}
+@media(max-width:900px){.route-sidebar{position:fixed;z-index:30;bottom:9px;right:9px;width:min(320px,calc(100vw - 18px));max-height:76vh;box-shadow:0 15px 45px var(--shadow);border:1px solid var(--line);border-radius:12px}.route-sidebar details{padding:12px}.route-sidebar details[open]{overflow-y:auto;max-height:75vh}}
+@media(prefers-reduced-motion:reduce){.route-wire:after{animation:none}}
+
 </style></head>
 <body>
 <div class="app-shell">
@@ -92,6 +108,36 @@
    </div></div>
    <div class="composer-dock"><form id="query-form" class="composer"><button type="button" class="plus" id="composer-plus" title="View sources and controls" aria-label="Open run controls">+</button><input type="text" id="query" maxlength="300" autocomplete="off" aria-label="Research query" placeholder="Ask OneShot to research code, files, dependencies…" value="Find source entrypoints, dependencies and configuration"><button type="submit" id="start" class="send">Ask agent <span aria-hidden="true">↗</span></button></form><div class="composer-tools" id="composer-tools"><label class="mode-choice"><input type="checkbox" id="agent-mode" checked> Agent-generated screen (sends bounded source excerpts to provider)</label><button id="restart" type="button" disabled>New run</button><span>AGENT MODE = LIVE PROVIDER TEXT · UNAVAILABLE WITHOUT CREDENTIALS</span></div></div>
   </main>
+<aside class="route-sidebar" id="route-sidebar" data-view="standard" aria-label="Visual Host and model routing inspector">
+<details id="route-details" open><summary>HOST / CATALOG / ROUTES</summary>
+<p class="route-sub">Model routing preview · synthetic only · no API calls.</p>
+<label>Workflow<select id="route-view" aria-label="Route workflow view"><option value="standard">Standard Workflow</option><option value="parallel">Parallel Task Execution · 40 tasks</option><option value="audit">Repository Audit</option></select></label>
+<label>Research model API<select id="route-research" aria-label="Research model API"><option data-color="#e8c56a" value="baseten">Baseten Model APIs · proposed</option><option data-color="#65e4c5" value="meta">Meta Muse Spark 1.3 · configured</option></select></label>
+<label>Audit Discovery model<select id="route-audit" aria-label="Audit Discovery model"><option data-color="#65e4c5" value="meta">Meta Muse Spark 1.3</option><option data-color="#f2b7a4" value="compatible">Other compatible model · proposed</option></select></label>
+<label>Planning model<select id="route-planning" aria-label="Planning model"><option data-color="#65e4c5" value="meta">Meta Muse Spark 1.3</option><option data-color="#f2b7a4" value="compatible">Other compatible model · proposed</option></select></label>
+<label>Builder model<select id="route-build" aria-label="Builder model"><option data-color="#8bbcff" value="qwen">Qwen3.8 · proposed</option><option data-color="#f2aabb" value="wonder">Muse Wonder · complex Build</option></select></label>
+<div class="route-legend"><span><b>━━</b> Host</span><span><b>····</b> Model</span><span><b>════</b> Modal</span><span><b>┄┄</b> Trace</span></div>
+<div class="route-box route-host"><strong>HOST · USER REQUEST</strong><small>Original intent + optional summary + revision</small></div>
+<div class="route-wire"></div>
+<div class="route-box route-catalog"><strong>CATALOG · 11 SYNTHETIC SAMPLES</strong><small>Investigation templates → work checklist</small></div>
+<div class="route-wire"></div>
+<div class="route-box route-context"><strong>SHARED INTENT · ALL THREE ROLES</strong><small>Same request; host-owned evidence references</small></div>
+<div class="route-roles"><div class="route-role research"><strong>·· Research</strong><small id="route-label-research">Baseten Model APIs · proposed</small></div><div class="route-role audit"><strong>·· Audit Discovery</strong><small id="route-label-audit">Meta Muse Spark 1.3</small></div><div class="route-role planning"><strong>·· Planning</strong><small id="route-label-planning">Meta Muse Spark 1.3</small></div></div>
+<div class="route-callout">Audit / Planning ··· Host Research router ··· requester-specific result</div>
+<div class="route-wire"></div>
+<div class="route-box route-host"><strong>HOST · WORK TODO + GATES</strong><small>Gap → Scanner → Fixture → Build Admission</small></div>
+<div class="route-only-parallel route-callout">40 tasks · 4 proposed Builder lanes; dependency-safe waves and isolated failures.</div>
+<div class="route-build-chain">
+<div class="route-wire model build"></div><div class="route-box route-model build"><strong>·· BUILDER MODEL</strong><small id="route-label-build">Qwen3.8 · proposed</small></div>
+<div class="route-wire sandbox"></div><div class="route-box route-modal"><strong>════ MODAL SANDBOX v3</strong><small>Sandbox.create → upload → sandbox.exec → export</small></div>
+<div class="route-wire sandbox"></div><div class="route-box route-host"><strong>HOST · RETURN & RECONCILE</strong><small>result.json · after.tar · evidence.zip</small></div>
+<div class="route-wire"></div><div class="route-box route-host"><strong>INDEPENDENT BUILD VERIFICATION</strong><small>Trusted completion receipt only on pass</small></div>
+</div>
+<div class="route-only-audit route-box route-context"><strong>READ-ONLY REPOSITORY AUDIT</strong><small>Source evidence → findings · no Build effects</small></div>
+<div class="route-wire trace"></div>
+<div class="route-box"><strong>LANGGRAPH · PROPOSED</strong><small>Graph/span tracing → host event, checkpoint and receipt contracts</small></div>
+<div class="route-footer" id="route-summary" aria-live="polite">Visual selection only · MODEL_API_KEY remains on the server.</div>
+</details></aside>
 </div>
 <dialog id="inspector" class="inspector"><div class="inspector-head"><span class="eyebrow" id="inspect-kicker">SOURCE EVIDENCE</span><button id="inspect-close" aria-label="Close inspector" type="button">×</button></div><h2 id="inspect-title">Source</h2><pre id="inspect-content"></pre><p id="inspect-foot">Only observed information is shown here.</p></dialog>
 <dialog id="about" class="about"><div class="inspector-head"><span class="eyebrow">ONE SHOT / DISPLAY CONTRACT</span><button id="about-close" aria-label="Close about" type="button">×</button></div><h2>Why the screen changes.</h2><p>Research shows queries and linked source findings. Build Discovery reveals the physical file map. Planning presents decisions and action contracts. Scanner displays findings. Build shows file actions. Verification shows actual check records. The final screen shows artifacts and receipts.</p><p>Agent mode streams provider-authored text for Research, Build Discovery and a provisional Planning draft. It does not execute Build. The read-only producer observes local files; the tour is sample data.</p><p>Correlated operations, source lines, errors, and receipts remain inspectable. Animations only follow received events. Private model reasoning is never displayed.</p></dialog>
@@ -349,6 +395,26 @@ reset();
 const wanted=Number(params.get('step'));
 if(params.has('step')&&Number.isInteger(wanted)&&wanted>=0)for(let i=0;i<=Math.min(wanted,entries().length-1);i++)next();
 if(params.get('autoplay')==='1')play();
+})();
+</script>
+<script>
+/* Synthetic inspector only: provider selection never modifies host execution or sends credentials. */
+(()=>{'use strict';
+ const panel=document.getElementById('route-sidebar');if(!panel)return;
+ const fields=['research','audit','planning','build'];
+ function repaint(){
+  const mode=document.getElementById('route-view').value;panel.dataset.view=mode;
+  for(const id of fields){
+   const select=document.getElementById('route-'+id),option=select.selectedOptions[0];
+   panel.style.setProperty('--'+id+'-route',option.dataset.color);
+   document.getElementById('route-label-'+id).textContent=option.textContent;
+  }
+  document.getElementById('route-summary').textContent=(mode==='parallel'?'40-task, four-lane illustration':mode==='audit'?'Read-only Audit route':'Gated Build lifecycle')+' · changing models redraws routes only. No API calls or secret changes.';
+ }
+ document.getElementById('route-view').addEventListener('change',repaint);
+ fields.forEach(id=>document.getElementById('route-'+id).addEventListener('change',repaint));
+ if(window.matchMedia&&window.matchMedia('(max-width:900px)').matches)document.getElementById('route-details').open=false;
+ repaint();
 })();
 </script>
 </body></html>
