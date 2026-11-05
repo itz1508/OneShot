@@ -1,31 +1,23 @@
-# OneShot video demonstration fixtures
+# OneShot — work-screen video demo
 
-**Summary:** Six synthetic, repeatable UI action sequences support video capture without impersonating real OneShot execution.
+**Status:** synthetic video visualization; no production execution, MCP requests, or host authorization.
 
-Open `/demo.html` through the web server, or use `?scenario=happy&autoplay=1&speed=2`.
+**Visual source:** user-provided `OneShot_Agent_Live_Screen.html` from ChatGPT Library, inspected in headless Chromium at desktop and mobile viewports. The original seven-role robot, role-specific work scene, requirement pane, running-step timeline, and stage handoff graphics are preserved. Extra host-stage labels explicitly distinguish Input, Fixture Validation, and Build Admission from Builder operations.
 
-- `happy`: full workflow to synthetic E2E verification receipt.
-- `gap`: scanner rejection, Planner correction, revalidation.
-- `blocked`: unsupported source; run blocked before Build Admission.
-- `recovery`: interrupted Build, checkpoint reconciliation, resume.
-- `mcp`: frontend API/MCP configuration and synthetic tool discovery (never connects).
-- `audit`: multi-step repository audit and findings handoff.
-- `all`: sequential playlist for long-form recordings.
+## Browser usage
 
-Controls: **Play/Pause**, **Next scene**, **Restart**, **Speed**, and **Export action log**. `?step=N` renders a deterministic scene snapshot. `window.__oneshotDemo.getState()` exposes the in-browser capture state to E2E tests. Exported JSONL includes scenario, scene, elapsed time, status, and artifact references.
+Run from the existing `web/` Vite app, open `/demo.html?scenario=happy`. Use Scenario, Play/Pause, Next Scene, Restart, Inspect Artifact, Export JSONL and playback Speed. Offline use: open the standalone HTML with a browser that permits local file URLs or use Playwright `page.set_content()`; no other CSS/JS imports are required.
 
-Run a static local preview from repository root:
+Synthetic scenarios: `happy` (17), `gap` (12), `blocked` (7), `recovery` (13), `mcp` (11), `audit` (10). All 70 scenes feed the original OneShot view through its existing test-only event projection, with sequential event IDs and the original stage-specific visualizations.
 
-```bash
-python3 -m http.server 5174 --directory web/public
-# visit http://127.0.0.1:5174/demo.html
-```
+## Verification
 
-Run the isolated browser test (only this config; production E2E suite remains separate):
+`cd web && npm ci && npx playwright install chromium && npm run test:demo`
 
-```bash
-cd web
-npx playwright test -c playwright.demo.config.js
-```
+`python web/demo/capture.py --source web/public/demo.html --chromium /usr/bin/chromium --out demo-capture --scenario all`
 
-**Isolation contract:** Demo scripts do not call any OneShot API, MCP endpoint, or secret store. Every screen and exported artifact is marked synthetic. This verifies interactive playback and capture only—not backend E2E or real Build Admission. Do not promote synthetic event logs or demo receipts as evidence of production execution.
+The capture script records MP4/WebM, screenshots, JSONL action logs, and storyboards. Offline recordings test visual projection, controls, warnings, and navigation. They are **not** production Build/E2E evidence. The `web/public/live.html` production-style reference and React host frontend are unchanged.
+
+## Boundary
+
+This demo never submits tasks to `/api`, never calls MCP, never authorizes Build, and never generates trusted receipts. Real OneShot workflow verification requires a runnable repository, working host/provider integration and independently observed persisted records.
