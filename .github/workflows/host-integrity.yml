@@ -1,0 +1,39 @@
+name: Host integrity connected tests
+
+on:
+  pull_request:
+    paths:
+      - 'agent/runtime/controller.py'
+      - 'agent/runtime/receipt_store.py'
+      - 'mvp/**'
+      - 'tests/e2e/test_host_integrity.py'
+      - 'tests/e2e/test_host_dispatch.py'
+      - 'tests/e2e/test_mvp_*.py'
+      - '.github/workflows/host-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --locked --extra meta --extra mvp
+      - name: Validate host types
+        run: uv run --no-sync mypy agent/
+      - name: Verify host and HTTP regression tests
+        run: |
+          uv run --no-sync pytest -q \
+            tests/e2e/test_host_integrity.py \
+            tests/e2e/test_host_dispatch.py \
+            tests/e2e/test_mvp_mcp_research.py \
+            tests/e2e/test_mvp_api.py \
+            tests/e2e/test_mvp_service.py \
+            tests/e2e/test_work_todo.py
