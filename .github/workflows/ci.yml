@@ -27,5 +27,7 @@ jobs:
         run: uv run --no-sync ruff format --check .
       - name: Type check
         run: uv run --no-sync mypy agent
+      - name: Validate Modal 1.6.3 ASGI image declaration (no cloud access)
+        run: uv run --no-sync --with modal==1.6.3 python -c "import modal_app; assert modal_app.APP_NAME; print('Modal declaration OK')"
       - name: Tests
         run: uv run --no-sync pytest -q

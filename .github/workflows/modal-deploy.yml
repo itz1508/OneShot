@@ -1,0 +1,108 @@
+name: Deploy OneShot Modal Audit demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: Existing Modal App name (inspect Modal resources first)
+        required: true
+        default: oneshot
+        type: string
+      volume_name:
+        description: Existing durable Modal Volume name
+        required: true
+        default: oneshot-state
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oneshot-modal-audit-demo
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+      ONESHOT_MODAL_APP_NAME: ${{ inputs.app_name }}
+      ONESHOT_MODAL_VOLUME_NAME: ${{ inputs.volume_name }}
+      # Public demo: intentionally no MODEL_API_KEY or MCP server.
+      ONESHOT_MODAL_MODEL_SECRET: ""
+      ONESHOT_MODAL_PRIVATE_MODE: "false"
+      NO_COLOR: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+      - name: Verify deployment credentials are configured
+        shell: bash
+        run: |
+          if [[ -z "$MODAL_TOKEN_ID" || -z "$MODAL_TOKEN_SECRET" ]]; then
+            echo "::error::Missing GitHub Actions secrets MODAL_TOKEN_ID / MODAL_TOKEN_SECRET"
+            exit 1
+          fi
+      - name: Inspect existing Modal apps and volumes
+        run: |
+          uvx --from modal==1.6.3 modal app list --json
+          uvx --from modal==1.6.3 modal volume list
+      - name: Deploy the existing ASGI App without overlapping old SQLite writers
+        id: deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --from modal==1.6.3 modal deploy --strategy recreate modal_app.py 2>&1 | tee "$RUNNER_TEMP/modal-deploy.log"
+          ENDPOINT="$(python3 - "$RUNNER_TEMP/modal-deploy.log" <<'PY'
+          import re
+          import sys
+          log = open(sys.argv[1], encoding="utf-8").read()
+          candidates = re.findall(r"https://[A-Za-z0-9.-]+\.modal\.run/?", log)
+          print(candidates[0].rstrip("/") if candidates else "")
+          PY
+          )"
+          if [[ -z "$ENDPOINT" ]]; then
+            echo "::error::Deployment output did not provide a verifiable Modal endpoint"
+            exit 1
+          fi
+          echo "url=$ENDPOINT" >> "$GITHUB_OUTPUT"
+          echo "OneShot Modal HTTPS: $ENDPOINT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify real API, Audit, persistence and concurrent SSE
+        id: live_probe
+        shell: bash
+        env:
+          MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
+        run: |
+          set -euo pipefail
+          python3 scripts/modal_live_probe.py --base-url "$MODAL_BASE_URL" | tee "$RUNNER_TEMP/modal-live-probe.json"
+          TASK_ID="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["task_id"])' "$RUNNER_TEMP/modal-live-probe.json")"
+          echo "task_id=$TASK_ID" >> "$GITHUB_OUTPUT"
+      - name: Install browser dependencies
+        working-directory: web
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Verify deployed live.html in Chromium
+        working-directory: web
+        env:
+          MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
+        run: npx playwright test --config=playwright.modal.config.js
+      - name: Replace live Modal containers and verify persisted state
+        shell: bash
+        env:
+          MODAL_BASE_URL: ${{ steps.deployment.outputs.url }}
+          SAVED_TASK_ID: ${{ steps.live_probe.outputs.task_id }}
+        run: |
+          set -euo pipefail
+          uvx --from modal==1.6.3 modal app rollover "$ONESHOT_MODAL_APP_NAME" --strategy recreate
+          python3 scripts/modal_live_probe.py --base-url "$MODAL_BASE_URL" --verify-task-id "$SAVED_TASK_ID"
+          echo "Modal rollover and persisted task recovery verified" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: modal-live-browser-evidence
+          path: |
+            web/playwright-report
+            web/test-results
+          if-no-files-found: ignore
