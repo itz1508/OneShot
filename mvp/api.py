@@ -22,6 +22,7 @@ from mvp.connector_store import (
     MCPAuthType,
     MCPConnectionRequest,
     ModelConnectionRequest,
+    connect_mcp,
     connector_store,
     disconnect_mcp,
     save_model_connection,
@@ -49,7 +50,7 @@ allowed_hosts = _csv_env(
 )
 allowed_origin_regex = os.environ.get(
     "ONESHOT_WEB_ORIGIN_REGEX",
-    r"^(https?://(localhost|127\.0\.1|\[::1\])(:\d+)?|https://.*\.modal\.run)$",
+    r"^(https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|https://.*\.modal\.run)$",
 )
 
 app = FastAPI(title="OneShot MVP API", version="0.1.0")
@@ -132,9 +133,10 @@ def connectors() -> dict[str, object]:
 
 
 @app.post("/api/connectors/mcp/connect")
-def connect_mcp(input: ConnectorSaveRequest) -> dict[str, object]:
+def connect_mcp_route(input: ConnectorSaveRequest) -> dict[str, object]:
     try:
-        return connector_store(DEFAULT_ROOT).connect_mcp(
+        return connect_mcp(
+            state_root=DEFAULT_ROOT,
             url=input.url,
             auth_type=input.auth_type,
             bearer_token=input.bearer_token,
