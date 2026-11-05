@@ -442,6 +442,8 @@ def test_mcp_connection(
     if resolved_auth is MCPAuthType.BEARER and not token.strip():
         raise ConnectorError("bearer token is required for bearer authentication")
     tools = _normalize_tools(discover_mcp_tools_sync(resolved_url, token.strip() or None))
+    state.url = resolved_url
+    state.auth_type = resolved_auth
     state.tools = tools
     state.status = "connected"
     state.error = ""
