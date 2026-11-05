@@ -48,6 +48,23 @@ def test_mcp_connect_persists_tools_but_not_bearer_token(client, monkeypatch):
     assert "secret-token" not in json.dumps(snapshot)
 
 
+def test_mcp_test_persists_connection_settings(client, monkeypatch):
+    monkeypatch.setattr(
+        "mvp.connector_store.discover_mcp_tools_sync",
+        lambda url, bearer_token=None: [{"name": "oneshot_research", "description": "Research tool"}],
+    )
+    response = client.post(
+        "/api/connectors/mcp/test",
+        json={"url": "http://127.0.0.1:9222/mcp", "auth_type": "bearer", "bearer_token": "secret-token"},
+    )
+    assert response.status_code == 200
+    snapshot = client.get("/api/connectors").json()
+    assert snapshot["mcp"]["url"] == "http://127.0.0.1:9222/mcp"
+    assert snapshot["mcp"]["auth_type"] == "bearer"
+    assert snapshot["mcp"]["has_bearer_token"] is True
+    assert snapshot["mcp"]["tools"][0]["name"] == "oneshot_research"
+
+
 def test_mcp_invalid_url_and_missing_bearer_are_rejected(client):
     invalid = client.post(
         "/api/connectors/mcp/connect",
