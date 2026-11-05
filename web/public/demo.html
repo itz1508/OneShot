@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>OneShot | Workflow video demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="demo.css" />
+  <script src="demo.js" defer></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="rail" aria-label="Demo navigation">
+      <div class="brand" aria-label="OneShot"><span class="brand-orbit"></span></div>
+      <div class="rail-nav">
+        <a class="rail-button active" href="#transcript" aria-label="System chat"><span class="nav-icon">✦</span><span>Chat</span></a>
+        <a class="rail-button" href="#summary" aria-label="Task summary"><span class="nav-icon">▤</span><span>Task</span></a>
+        <a class="rail-button" href="#artifacts" aria-label="Artifacts"><span class="nav-icon">▧</span><span>Files</span></a>
+      </div>
+      <a class="rail-button rail-settings" href="/" aria-label="Return to OneShot live application"><span class="nav-icon">↗</span><span>Live UI</span></a>
+    </aside>
+    <main class="workspace">
+      <header class="topbar">
+        <div class="topbar-title">
+          <div class="wordmark">OneShot</div>
+          <div class="title-copy"><strong>Workflow demonstration</strong><span>Repeatable visual sequence for recording</span></div>
+        </div>
+        <div class="topbar-meta"><span class="chip warning" id="simulatedBadge">SIMULATED · NO BACKEND</span><span class="chip muted" id="scenarioCounter">Scene 0 / 0</span><a class="icon-button" href="/" aria-label="Open live application">↗</a></div>
+      </header>
+      <section class="demo-toolbar" aria-label="Demo playback controls">
+        <label class="toolbar-field">Scenario <select id="scenario" aria-label="Demo scenario"></select></label>
+        <label class="toolbar-field">Speed <select id="speed" aria-label="Playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+        <button class="primary-button" id="play" type="button">Play</button>
+        <button class="secondary-button" id="next" type="button">Next scene</button>
+        <button class="secondary-button" id="restart" type="button">Restart</button>
+        <button class="secondary-button" id="export" type="button">Export action log</button>
+        <div class="toolbar-progress"><div class="progress-track"><div id="progress" class="progress-fill"></div></div><span id="percent">0%</span></div>
+      </section>
+      <section class="main-grid">
+        <div class="chat-panel panel">
+          <div class="panel-head"><div><div class="eyebrow">SYSTEM CHAT · DEMONSTRATION</div><h1 id="headline">One workflow, visualized</h1></div><div class="panel-status"><span id="eventCount">0 events</span><span id="artifactCount">0 artifacts</span></div></div>
+          <div class="transcript" id="transcript" aria-label="Simulated chat transcript" role="log" aria-live="polite">
+            <article class="message left host"><div class="avatar">O</div><div class="bubble-wrap"><div class="bubble-meta"><strong>OneShot</strong><span>Video demonstration</span></div><div class="bubble">Select a sample scenario and press Play. Events and outputs here are simulated, not results of an actual task.</div></div></article>
+          </div>
+          <div class="composer-area">
+            <div class="composer demo-composer"><textarea id="intent" aria-label="Sample task request" rows="2" readonly></textarea><div class="composer-row"><span class="composer-hint">Sample intent · no real task is submitted</span><span class="demo-tag">DEMO MODE</span></div></div>
+          </div>
+        </div>
+        <aside class="summary-panel panel" id="summary">
+          <div class="summary-block"><div class="eyebrow">TASK SUMMARY</div><h2 id="taskTitle">Demo ready</h2><p id="taskDescription">Scripted actions follow the OneShot workflow stages.</p></div>
+          <div class="summary-stat"><span>Current stage</span><strong id="currentStage">Idle</strong></div>
+          <div class="summary-stat"><span>Execution</span><strong id="execution">idle</strong></div>
+          <div class="summary-stat"><span>Worker</span><strong id="worker">Unassigned</strong></div>
+          <div class="artifact-block"><div class="artifact-head"><div class="eyebrow">STAGE PROGRESS</div><span id="stageCount">0 stages</span></div><div id="stages" class="stages"></div></div>
+          <div class="artifact-block"><div class="artifact-head"><div class="eyebrow">ACTIVE TODO</div><span id="todoCount">0 tasks</span></div><div id="todos" class="todos"></div></div>
+          <div class="artifact-block" id="artifacts"><div class="artifact-head"><div class="eyebrow">ARTIFACTS</div><span id="artifactTotal">0 files</span></div><div id="files" class="artifact-list"></div></div>
+          <div class="artifact-block"><div class="artifact-head"><div class="eyebrow">EVIDENCE STREAM</div><span id="evidenceCount">0 events</span></div><div id="evidence" class="event-list"></div></div>
+          <div class="hint-block"><div class="eyebrow">RECORDING NOTE</div><p id="captureNote">All entries are synthetic. Exported action logs include stable scenario and scene identifiers for later video editing.</p></div>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <div class="modal-backdrop" id="modal" hidden><div class="review-modal" role="dialog" aria-modal="true" aria-label="Review artifact"><header><span id="modalTitle">Artifact</span><button id="modalClose" class="icon-button" aria-label="Close artifact" type="button">✕</button></header><div class="modal-meta">SIMULATED · Read-only sample artifact</div><label for="fileEditor">Artifact content</label><textarea id="fileEditor" readonly spellcheck="false"></textarea><footer><span>Generated locally for recording; not persisted by OneShot.</span><button class="secondary-button" id="modalDone" type="button">Close</button></footer></div></div>
+</body>
+</html>
