@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import {
  ArrowUp,
@@ -61,6 +61,24 @@ const eventSide = (type) => {
  if (normalized.includes('audit') || normalized.includes('research') || normalized.includes('stream')) return 'left host'
  return 'left'
 }
+const readStoredValue = (key) => {
+ if (typeof window === 'undefined') return ''
+ try {
+ return window.localStorage.getItem(key) || ''
+ } catch {
+ return ''
+ }
+}
+const normalizeBaseUrl = (value) => {
+ const trimmed = String(value || '').trim()
+ if (!trimmed) return ''
+ try {
+ const resolved = new URL(trimmed, window.location.origin)
+ return resolved.toString().replace(/\/$/, '')
+ } catch {
+ return ''
+ }
+}
 
 function App() {
  const [prompt, setPrompt] = useState('')
@@ -73,22 +91,45 @@ function App() {
  const [loading, setLoading] = useState(false)
  const [error, setError] = useState('')
  const [hostHealthy, setHostHealthy] = useState(false)
- const [mcpConfigured, setMcpConfigured] = useState(false)
+ const [backendMcpReady, setBackendMcpReady] = useState(false)
+ const [apiBaseUrl, setApiBaseUrl] = useState(() => readStoredValue('oneshot-api-base-url'))
+ const [mcpUrl, setMcpUrl] = useState(() => readStoredValue('oneshot-mcp-url'))
+ const [configOpen, setConfigOpen] = useState(false)
+ const [draftApiBaseUrl, setDraftApiBaseUrl] = useState(() => readStoredValue('oneshot-api-base-url'))
+ const [draftMcpUrl, setDraftMcpUrl] = useState(() => readStoredValue('oneshot-mcp-url'))
+ const [configMessage, setConfigMessage] = useState('')
  const [streamState, setStreamState] = useState('idle')
  const [pinnedToBottom, setPinnedToBottom] = useState(true)
- const [focusMode, setFocusMode] = useState(false)
  const streamRef = useRef(null)
  const transcriptRef = useRef(null)
  const endRef = useRef(null)
  const pinnedRef = useRef(true)
  const streamCursor = useRef(0)
  const taskId = task?.task_id
+ const apiBase = normalizeBaseUrl(apiBaseUrl)
+ const hasFrontendMcpUrl = Boolean(mcpUrl.trim())
 
- async function fetchDetails(id) {
+ function apiUrl(path, baseUrl = apiBaseUrl) {
+ return new URL(path, normalizeBaseUrl(baseUrl) || window.location.origin).toString()
+ }
+
+ async function apiFetch(path, options = {}, baseUrl = apiBaseUrl) {
+ let response
+ try {
+ response = await fetch(apiUrl(path, baseUrl), options)
+ } catch {
+ const error = new Error('Network request failed')
+ error.network = true
+ throw error
+ }
+ return json(response)
+ }
+
+ async function fetchDetails(id, baseUrl = apiBaseUrl) {
  const [record, artifacts, timeline] = await Promise.all([
- fetch('/api/tasks/' + id).then(json),
- fetch('/api/tasks/' + id + '/artifacts').then(json),
- fetch('/api/tasks/' + id + '/events').then(json),
+ apiFetch('/api/tasks/' + id, {}, baseUrl),
+ apiFetch('/api/tasks/' + id + '/artifacts', {}, baseUrl),
+ apiFetch('/api/tasks/' + id + '/events', {}, baseUrl),
  ])
 
  const orderedEvents = mergeEvents([], timeline)
@@ -101,15 +142,63 @@ function App() {
  return record
  }
 
+ const openConfig = () => {
+ setDraftApiBaseUrl(apiBaseUrl)
+ setDraftMcpUrl(mcpUrl)
+ setConfigMessage('')
+ setConfigOpen(true)
+ }
+
+ const closeConfig = () => {
+ setConfigOpen(false)
+ }
+
+ const saveConfig = async () => {
+ const nextApiBase = normalizeBaseUrl(draftApiBaseUrl)
+ const nextMcpUrl = draftMcpUrl.trim()
+ if (draftApiBaseUrl.trim() && !nextApiBase) {
+ setConfigMessage('The API URL is invalid. Use a full URL such as https://example.com or leave it blank for same-origin.')
+ return
+ }
+
+ try {
+ window.localStorage.setItem('oneshot-api-base-url', nextApiBase)
+ window.localStorage.setItem('oneshot-mcp-url', nextMcpUrl)
+ } catch {
+ // localStorage is best-effort; the UI can still proceed.
+ }
+
+ setApiBaseUrl(nextApiBase)
+ setMcpUrl(nextMcpUrl)
+ setConfigOpen(false)
+ setConfigMessage(nextApiBase ? `API base saved: ${nextApiBase}` : 'API base cleared. The app will use the current origin.')
+ if (taskId) {
+ fetchDetails(taskId, nextApiBase).catch((exc) => setError(exc.message))
+ }
+ }
+
+ const testApi = async () => {
+ const nextApiBase = normalizeBaseUrl(draftApiBaseUrl)
+ if (draftApiBaseUrl.trim() && !nextApiBase) {
+ setConfigMessage('The API URL is invalid. Save or test a full URL to continue.')
+ return
+ }
+ try {
+ const health = await apiFetch('/api/health', {}, nextApiBase)
+ setConfigMessage(health.status === 'ok' ? `API test passed: ${nextApiBase || 'same-origin'}` : 'API returned an unexpected response.')
+ } catch (exc) {
+ setConfigMessage(`API test failed: ${exc.message}`)
+ }
+ }
+
  useEffect(() => {
- fetch('/api/health')
- .then(json)
+ apiFetch('/api/health')
  .then((health) => {
  setHostHealthy(health.status === 'ok')
- setMcpConfigured(health.mcp_transport_configured === true)
+ setBackendMcpReady(health.mcp_transport_configured === true)
  })
  .catch(() => setHostHealthy(false))
- }, [])
+ }, [apiBaseUrl])
 
  useEffect(() => {
  let cancelled = false
@@ -152,7 +241,7 @@ function App() {
  cancelled = true
  window.removeEventListener('popstate', restore)
  }
- }, [])
+ }, [apiBaseUrl])
 
  useEffect(() => {
  streamRef.current?.close()
@@ -161,7 +250,7 @@ function App() {
  return undefined
  }
 
- const source = new EventSource('/api/tasks/' + taskId + '/stream?after=' + streamCursor.current)
+ const source = new EventSource(apiUrl('/api/tasks/' + taskId + '/stream?after=' + streamCursor.current))
  streamRef.current = source
  setStreamState('connecting')
 
@@ -193,7 +282,14 @@ function App() {
  }
 
  return () => source.close()
- }, [taskId])
+ }, [taskId, apiBaseUrl])
+
+ useEffect(() => {
+ if (configOpen) {
+ setDraftApiBaseUrl(apiBaseUrl)
+ setDraftMcpUrl(mcpUrl)
+ }
+ }, [configOpen, apiBaseUrl, mcpUrl])
 
  useEffect(() => {
  if (pinnedRef.current) {
@@ -201,7 +297,7 @@ function App() {
  }
  }, [taskId, events.length, files.length, streamState])
 
- const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) && (task.purpose === 'audit' || mcpConfigured)
+ const canRun = task && task.current_stage === 'research' && ['audit_pending', 'awaiting_mcp', 'audit_recovery_required'].includes(task.execution_status) && (task.purpose === 'audit' || backendMcpReady)
  const currentStage = task?.current_stage || 'Idle'
  const streamStatusLabel =
  streamState === 'connected'
@@ -216,14 +312,14 @@ function App() {
  const nextActionLabel = task
  ? canRun
  ? `Run ${task.purpose === 'audit' ? 'Audit' : 'Research'} on the host`
- : task.purpose !== 'audit' && !mcpConfigured && task.execution_status === 'awaiting_mcp'
+ : task.purpose !== 'audit' && !backendMcpReady && task.execution_status === 'awaiting_mcp'
  ? 'Configure an MCP Research server in the host environment, then restart the API.'
  : task.execution_status === 'audit_completed'
  ? 'Review the audit artifact or wait for the host to advance.'
  : 'The host controls completion, approvals, and receipts.'
  : 'Create a task to begin a live workflow.'
 
- const messages = useMemo(() => {
+ const messages = React.useMemo(() => {
  const items = []
  if (!task) {
  items.push({
@@ -306,11 +402,11 @@ function App() {
  setLoading(true)
  setError('')
  try {
- const record = await fetch('/api/tasks', {
+ const record = await apiFetch('/api/tasks', {
  method: 'POST',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({ prompt, purpose }),
- }).then(json)
+ })
  window.history.replaceState(null, '', '?task=' + record.task_id)
  setPrompt('')
  await fetchDetails(record.task_id)
@@ -327,7 +423,7 @@ function App() {
  setError('')
  try {
  const selected = task.purpose === 'audit' ? 'audit' : 'research'
- await fetch('/api/tasks/' + task.task_id + '/' + selected, { method: 'POST' }).then(json)
+ await apiFetch('/api/tasks/' + task.task_id + '/' + selected, { method: 'POST' })
  await fetchDetails(task.task_id)
  } catch (exc) {
  await fetchDetails(task.task_id).catch(() => {})
@@ -346,11 +442,11 @@ function App() {
  if (!task || !activeFile || activeFile.kind !== 'input') return
  setLoading(true)
  try {
- const updated = await fetch('/api/tasks/' + task.task_id + '/input', {
+ const updated = await apiFetch('/api/tasks/' + task.task_id + '/input', {
  method: 'PATCH',
  headers: { 'Content-Type': 'application/json' },
  body: JSON.stringify({ text: editText, expected_revision: task.input_revision }),
- }).then(json)
+ })
  await fetchDetails(updated.task_id)
  setActiveFile(null)
  setError('')
@@ -367,7 +463,7 @@ function App() {
  const fileListPreview = files.slice().reverse().slice(0, 4)
 
  return (
- <div className={'app ' + (focusMode ? 'focus' : '')}>
+ <div className="app">
  <aside className="rail" aria-label="Primary navigation">
  <div className="brand">
  <span className="brand-orbit" />
@@ -386,9 +482,9 @@ function App() {
  <span>Files</span>
  </button>
  </nav>
- <button className="rail-button rail-settings" type="button" aria-label="Settings" onClick={() => setFocusMode((value) => !value)}>
+ <button className="rail-button rail-settings" type="button" aria-label="Open connection settings" onClick={openConfig}>
  <Settings2 size={18} />
- <span>{focusMode ? 'Exit' : 'Focus'}</span>
+ <span>Connect</span>
  </button>
  </aside>
 
@@ -406,12 +502,23 @@ function App() {
  <span className="dot" />
  {hostHealthy ? 'Host connected' : 'Host unavailable'}
  </span>
- <span className={streamState === 'connected' ? 'chip live' : 'chip muted'}>
+ <span className={backendMcpReady ? 'chip live' : 'chip muted'}>
  <span className="dot" />
- {streamStatusLabel}
+ {backendMcpReady ? 'Backend MCP ready' : 'Backend MCP not ready'}
+ </span>
+ <span className={apiBase ? 'chip live' : 'chip muted'}>
+ <span className="dot" />
+ {apiBase ? 'API saved' : 'Same-origin API'}
+ </span>
+ <span className={hasFrontendMcpUrl ? 'chip live' : 'chip muted'}>
+ <span className="dot" />
+ {hasFrontendMcpUrl ? 'MCP URL saved' : 'MCP URL not set'}
  </span>
  <button className="icon-button" type="button" onClick={() => task && fetchDetails(task.task_id).catch((exc) => setError(exc.message))} aria-label="Refresh task">
  <RefreshCw size={16} />
+ </button>
+ <button className="icon-button" type="button" onClick={openConfig} aria-label="Open connection settings">
+ <Settings2 size={16} />
  </button>
  </div>
  </header>
@@ -572,6 +679,49 @@ function App() {
  </aside>
  </section>
  </main>
+
+ {configOpen ? (
+ <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeConfig() }}>
+ <div className="review-modal" role="dialog" aria-modal="true" aria-label="Connection settings">
+ <header>
+ <span>
+ <Settings2 size={18} />
+ Connection settings
+ </span>
+ <button className="icon-button" aria-label="Close connection settings" onClick={closeConfig}>
+ <X size={18} />
+ </button>
+ </header>
+ <div className="modal-meta">
+ Frontend-only URL settings. The API base controls browser calls and the MCP URL is stored for the UI connection flow.
+ </div>
+ <label htmlFor="api-base-url">API base URL</label>
+ <textarea
+ id="api-base-url"
+ spellCheck="false"
+ rows={1}
+ value={draftApiBaseUrl}
+ onChange={(e) => setDraftApiBaseUrl(e.target.value)}
+ placeholder="Leave blank for same-origin"
+ />
+ <label htmlFor="mcp-url">MCP server URL</label>
+ <textarea
+ id="mcp-url"
+ spellCheck="false"
+ rows={1}
+ value={draftMcpUrl}
+ onChange={(e) => setDraftMcpUrl(e.target.value)}
+ placeholder="https://example-mcp-server"
+ />
+ <footer>
+ <span>{configMessage || 'Changes are saved locally in this browser only.'}</span>
+ <button className="secondary-button" onClick={() => { setDraftApiBaseUrl(apiBaseUrl); setDraftMcpUrl(mcpUrl); setConfigMessage('') }}>Reset</button>
+ <button className="secondary-button" onClick={testApi}>Test API</button>
+ <button className="primary-button" onClick={saveConfig}>Save</button>
+ </footer>
+ </div>
+ </div>
+ ) : null}
 
  {activeFile ? (
  <div className="modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setActiveFile(null) }}>
