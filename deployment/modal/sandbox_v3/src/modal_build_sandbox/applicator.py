@@ -107,7 +107,7 @@ def prepare_changes(
         text_lines = original.decode("utf-8").splitlines(keepends=True) if original is not None else []
         output: list[str] = []
         cursor = 0
-        for old_start, old_count, new_start, new_count, hunk in file_patch.hunks:
+        for old_start, old_count, _new_start, _new_count, hunk in file_patch.hunks:
             start = old_start - 1 if old_count else old_start
             if start < cursor or start > len(text_lines):
                 raise ValueError("overlapping or invalid hunk position")
