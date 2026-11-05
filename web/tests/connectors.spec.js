@@ -1,18 +1,34 @@
 import { test, expect } from '@playwright/test'
 
 test('Connection settings modal supports MCP and model API configuration', async ({ page }) => {
+  let snapshot = {
+    mcp: { status: 'disconnected', transport: 'http', tools: [], error: '', url: '', auth_type: 'none', has_bearer_token: false },
+    model: { status: 'disconnected', api_base_url: '', model_id: '', error: '', provider_response: '', has_api_key: false },
+  }
+
   await page.route('**/api/health', async (route) => {
     await route.fulfill({ json: { status: 'ok', mcp_transport_configured: false } })
   })
   await page.route('**/api/connectors', async (route) => {
-    await route.fulfill({
-      json: {
-        mcp: { status: 'disconnected', transport: 'http', tools: [], error: '', url: '', auth_type: 'none', has_bearer_token: false },
-        model: { status: 'disconnected', api_base_url: '', model_id: '', error: '', provider_response: '', has_api_key: false },
-      },
-    })
+    await route.fulfill({ json: snapshot })
   })
   await page.route('**/api/connectors/mcp/test', async (route) => {
+    snapshot = {
+      ...snapshot,
+      mcp: {
+        status: 'connected',
+        transport: 'http',
+        url: 'http://127.0.0.1:9234/mcp',
+        auth_type: 'none',
+        error: '',
+        tool_count: 2,
+        tools: [
+          { name: 'oneshot_research', description: 'Research tool' },
+          { name: 'source_lookup', description: 'Lookup source data' },
+        ],
+        has_bearer_token: false,
+      },
+    }
     await route.fulfill({
       json: {
         status: 'connected',
@@ -29,6 +45,17 @@ test('Connection settings modal supports MCP and model API configuration', async
     })
   })
   await page.route('**/api/connectors/model/test', async (route) => {
+    snapshot = {
+      ...snapshot,
+      model: {
+        status: 'connected',
+        api_base_url: 'https://api.example.test/v1',
+        model_id: 'test-model',
+        error: '',
+        provider_response: 'provider-ready',
+        has_api_key: true,
+      },
+    }
     await route.fulfill({
       json: {
         status: 'connected',
@@ -40,6 +67,18 @@ test('Connection settings modal supports MCP and model API configuration', async
     })
   })
   await page.route('**/api/connectors/model/save', async (route) => {
+    snapshot = {
+      ...snapshot,
+      model: {
+        ...snapshot.model,
+        status: 'saved',
+        api_base_url: 'https://api.example.test/v1',
+        model_id: 'test-model',
+        error: '',
+        provider_response: snapshot.model.provider_response,
+        has_api_key: true,
+      },
+    }
     await route.fulfill({
       json: {
         status: 'saved',
