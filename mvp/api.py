@@ -20,7 +20,6 @@ from agent.runtime.providers.base import ProviderError
 from mvp.connector_store import (
     ConnectorError,
     MCPAuthType,
-    MCPConnectionRequest,
     ModelConnectionRequest,
     connect_mcp,
     connector_store,
@@ -82,10 +81,8 @@ class ConnectorSaveRequest(BaseModel):
     bearer_token: str = ""
 
 
-class ModelSaveRequest(BaseModel):
-    api_base_url: str = Field(min_length=1)
-    model_id: str = Field(min_length=1)
-    api_key: str = Field(min_length=1)
+class ModelSaveRequest(ModelConnectionRequest):
+    pass
 
 
 def failure(exc: MVPError) -> HTTPException:
@@ -102,6 +99,15 @@ def connector_error(exc: Exception) -> HTTPException:
     if isinstance(exc, ConnectorError):
         status = 400
     return HTTPException(status_code=status, detail=message)
+
+
+def require_operator(request: Request) -> None:
+    token = os.environ.get("ONESHOT_OPERATOR_TOKEN", "").strip()
+    if not token:
+        return
+    supplied = request.headers.get("x-operator-token", "").strip()
+    if supplied != token:
+        raise HTTPException(status_code=403, detail="operator authorization required")
 
 
 @app.get("/", include_in_schema=False)
@@ -133,7 +139,8 @@ def connectors() -> dict[str, object]:
 
 
 @app.post("/api/connectors/mcp/connect")
-def connect_mcp_route(input: ConnectorSaveRequest) -> dict[str, object]:
+def connect_mcp_route(request: Request, input: ConnectorSaveRequest) -> dict[str, object]:
+    require_operator(request)
     try:
         return connect_mcp(
             state_root=DEFAULT_ROOT,
@@ -147,7 +154,8 @@ def connect_mcp_route(input: ConnectorSaveRequest) -> dict[str, object]:
 
 
 @app.post("/api/connectors/mcp/test")
-def test_mcp(input: ConnectorSaveRequest | None = None) -> dict[str, object]:
+def test_mcp(request: Request, input: ConnectorSaveRequest | None = None) -> dict[str, object]:
+    require_operator(request)
     payload = input or ConnectorSaveRequest(url="http://localhost")
     try:
         return test_mcp_connection(
@@ -161,12 +169,14 @@ def test_mcp(input: ConnectorSaveRequest | None = None) -> dict[str, object]:
 
 
 @app.post("/api/connectors/mcp/disconnect")
-def disconnect_mcp_route() -> dict[str, object]:
+def disconnect_mcp_route(request: Request) -> dict[str, object]:
+    require_operator(request)
     return disconnect_mcp(DEFAULT_ROOT)
 
 
 @app.post("/api/connectors/model/save")
-def save_model(input: ModelSaveRequest) -> dict[str, object]:
+def save_model(request: Request, input: ModelSaveRequest) -> dict[str, object]:
+    require_operator(request)
     try:
         return save_model_connection(
             state_root=DEFAULT_ROOT,
@@ -180,7 +190,8 @@ def save_model(input: ModelSaveRequest) -> dict[str, object]:
 
 
 @app.post("/api/connectors/model/test")
-def test_model(input: ModelSaveRequest | None = None) -> dict[str, object]:
+def test_model(request: Request, input: ModelSaveRequest | None = None) -> dict[str, object]:
+    require_operator(request)
     try:
         if input is None:
             state = connector_store(DEFAULT_ROOT).load_state().model
