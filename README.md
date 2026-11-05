@@ -1,84 +1,113 @@
-# OneShot — Clean Rebuild
+# OneShot
 
-A host-owned workflow harness for Research, Audit Discovery, Planning, Fixture Validation, Build, and Build Validation stages with explicit host gates between them.
+**Evidence-driven AI software engineering with host-controlled execution.**
 
-## Quick start
+OneShot organizes software work into an auditable workflow, separating model-generated reasoning from permission to modify files, advance stages, or claim completion.
+
+[![CI](https://github.com/itz1508/OneShot/actions/workflows/ci.yml/badge.svg)](https://github.com/itz1508/OneShot/actions/workflows/ci.yml)
+[![MVP integration](https://github.com/itz1508/OneShot/actions/workflows/mvp.yml/badge.svg)](https://github.com/itz1508/OneShot/actions/workflows/mvp.yml)
+[![Research and Audit](https://github.com/itz1508/OneShot/actions/workflows/audit-capabilities.yml/badge.svg)](https://github.com/itz1508/OneShot/actions/workflows/audit-capabilities.yml)
+
+## How it works
+
+```text
+User request
+    |
+Research → Audit Discovery → Planning
+                            |
+                    Host freeze / package lock
+                            |
+                    Fixture Validation
+                            |
+                      Build Admission
+                            |
+                         Build
+                            |
+                   Independent Build Validation
+```
+
+The **host** controls authorization, immutable artifacts, tool identity, stage transitions, and receipts. Research gathers evidence; Audit Discovery inspects the existing implementation; Planning specifies changes; validation gates decide whether work can advance; Build executes admitted actions; and independent verification checks the result.
+
+### Core design
+
+- **Typed contracts:** Python 3.11+, Pydantic v2, and cross-stage validation.
+- **Evidence and provenance:** RFC 8785 canonical serialization, SHA-256 digests, content-addressed artifacts, and host-issued receipts.
+- **Execution boundaries:** default-deny authorization, allowed-path checks, pinned tool identities, and host-controlled Build Admission.
+- **Recovery:** persisted checkpoints, compare-and-swap updates, and explicit reconciliation of interrupted effects.
+- **Model integration:** Meta Muse Spark is the configured default profile; provider adapters keep model inference separate from execution authority. Echo is for testing.
+
+## Current application
+
+The working **React/Vite System Chat + FastAPI MVP** offers task submission, persisted state, streamed events (SSE), artifact inspection, controlled input revision, MCP-backed Research, a separate read-only repository Audit capability, and connection settings.
+
+**Scope boundary:** The MVP is a real host-backed application slice, not a complete six-stage agent execution product. Audit is separate from the Audit Discovery stage. Planning, Fixture Validation, and Build do **not** currently have MVP HTTP execution routes. Browser tests use deterministic MCP fixtures; these do not prove live model output or external MCP-server connectivity.
+
+See [MVP documentation](mvp/README.md) for configuration, security boundaries, and integration evidence.
+
+## Get started
+
+Requires [uv](https://docs.astral.sh/uv/), Python 3.11+, and Node.js/npm for the web UI.
+
+**1. Install the backend (repository root)**
 
 ```sh
-# Install dependencies
-uv sync --locked --extra meta
-
-# Run environment check
-uv run --no-sync python scripts/doctor.py
-
-# Run tests
-uv run --no-sync pytest -q
-
-# CLI
+uv sync --locked --extra meta --extra mvp
 uv run --no-sync python -m agent doctor
-uv run --no-sync python -m agent run task-001
-uv run --no-sync python -m agent status task-001
-uv run --no-sync python -m agent resume task-001
-uv run --no-sync python -m agent verify task-001
 ```
 
-## Architecture
+**2. Start the local API**
 
-Six stages with host-owned gates:
-
-```
-Research → Audit Discovery → Planning → [host freeze] → Fixture Validation → [host lock + admission] → Build → Build Validation
+```sh
+uv run --no-sync uvicorn mvp.api:app --host 127.0.0.1 --port 8000
 ```
 
-### Key design decisions
+**3. Start the frontend (second terminal)**
 
-- **Provider configuration**: Meta Muse Spark is the default profile; its model can be overridden with `META_MODEL_ID`. Other OpenAI-compatible profiles are supported by the capability probe adapter. Echo is a test double. SDK-specific Claude/Codex adapters are not implemented.
-- **RFC 8785/JCS canonical serialization** with SHA-256 for all digest-bearing artifacts
-- **Content-addressed artifact store** with immutable revision tracking
-- **CAS-based checkpoint store** for interruption recovery
-- **Default-deny authorization** with path containment and symlink escape prevention
-- **Bounded recovery** with no-progress detection
-- **Two CodeIntent origins**: `existing_implementation_gap` and `new_feature`
-
-### File structure
-
-```
-agent/
-  contracts/       # Pydantic v2 typed contracts (no runtime imports)
-    common.py      # Shared primitives
-    host.py        # Receipt types (host-only)
-    research.py    # Research stage
-    audit_discovery.py  # Audit Discovery stage
-    planning.py    # Planning stage with BuildAction types
-    scanner.py     # Scanner capability shapes
-    fixture_validation.py
-    build.py
-    build_validation.py
-    validation/    # Pure semantic validators
-  runtime/         # Host kernel
-    canonical_serialization.py  # RFC 8785/JCS + SHA-256
-    artifact_store.py    # Content-addressed storage
-    receipt_store.py     # Host-only receipts
-    event_store.py       # Append-only events
-    checkpoint_store.py  # CAS checkpoints
-    authorization.py     # Default-deny enforcement
-    controller.py        # Single transition authority
-    specification_freezer.py
-    package_lock.py
-    build_admission.py
-    effect_executor.py
-    recovery.py
-    scanner_gateway.py
-    providers/     # Provider adapters
-      base.py      # Protocol and types
-      echo.py      # Deterministic test double
-      meta.py      # Meta Muse Spark
-      registry.py  # Provider-neutral registry
-  cli.py           # Thin host entrypoint
-tests/             # Contract, boundary, artifact, authorization, scanner, E2E tests
-settings/config.yaml  # Runtime configuration
-scripts/doctor.py     # Environment diagnostics
+```sh
+cd web
+npm ci
+npm run dev
 ```
 
-Run the checks in `AGENTS.md` against the current checkout for verification results.
-The historical connected MCP claim is scoped in `audit/e2e-verification-correction-2026-11-04.md`.
+Open **http://127.0.0.1:5173**. The development server proxies `/api` to the local FastAPI backend.
+
+To run Research, configure the host-owned MCP transport (`ONESHOT_MCP_COMMAND` and `ONESHOT_MCP_ARGS_JSON` for stdio, or `ONESHOT_MCP_URL` for HTTP). A health response means the API is reachable; it does **not** establish an active MCP connection. See [MCP Research setup](mvp/README.md#research-integration).
+
+> Do not expose the development API publicly or commit model/API credentials. The operator owns runtime configuration and secrets.
+
+## Verify
+
+```sh
+uv lock --check
+uv run --no-sync ruff check .
+uv run --no-sync ruff format --check .
+uv run --no-sync mypy agent
+uv run --no-sync pytest -q
+```
+
+Browser E2E requires Playwright Chromium:
+
+```sh
+cd web
+npm ci
+npx playwright install chromium
+npm run build
+npm run test:browser
+```
+
+The browser suite exercises Research through a deterministic MCP fixture, the read-only Audit path, task persistence, and connector UI. CI results are recorded in [GitHub Actions](https://github.com/itz1508/OneShot/actions); local and live-provider verification must be run separately.
+
+## Repository guide
+
+| Location | Purpose |
+| --- | --- |
+| [`agent/contracts/`](agent/contracts/) | Stage, host, scanner, and validation contracts |
+| [`agent/runtime/`](agent/runtime/) | Controller, artifact/receipt stores, admission, effects, recovery |
+| [`agent/audit/`](agent/audit/) | Read-only repository auditing |
+| [`mvp/`](mvp/) | FastAPI MVP and MCP Research adapter |
+| [`web/`](web/) | React System Chat and Playwright tests |
+| [`tests/`](tests/) | Contract, fixture, security, and workflow tests |
+| [`deployment/modal/`](deployment/modal/) | Standalone serverless deployment starter, not integrated Build execution |
+| [`AGENTS.md`](AGENTS.md) | Contributor and workflow boundaries |
+
+**Canonical source:** [itz1508/OneShot](https://github.com/itz1508/OneShot), `main`. Verification claims always refer to the exact tested revision.
