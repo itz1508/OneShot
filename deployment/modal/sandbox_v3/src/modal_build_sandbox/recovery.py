@@ -33,8 +33,10 @@ class AttemptStore:
         with sqlite3.connect(self.path, timeout=10) as db:
             try:
                 db.execute(
-                    ("INSERT INTO attempts(operation_id,attempt_id,state,version,sandbox_name,updated_at) "
-                     "VALUES(?,?,?,?,?,?)"),
+                    (
+                        "INSERT INTO attempts(operation_id,attempt_id,state,version,sandbox_name,updated_at) "
+                        "VALUES(?,?,?,?,?,?)"
+                    ),
                     (operation_id, attempt_id, "INTENT_RECORDED", 1, sandbox_name, now),
                 )
             except sqlite3.IntegrityError as exc:
@@ -62,8 +64,10 @@ class AttemptStore:
         with sqlite3.connect(self.path, timeout=10) as db:
             db.execute("BEGIN IMMEDIATE")
             n = db.execute(
-                ("UPDATE attempts SET state=?,version=version+1,sandbox_id=COALESCE(?,sandbox_id),"
-                     "detail=?,updated_at=? WHERE operation_id=? AND attempt_id=? AND state=?"),
+                (
+                    "UPDATE attempts SET state=?,version=version+1,sandbox_id=COALESCE(?,sandbox_id),"
+                    "detail=?,updated_at=? WHERE operation_id=? AND attempt_id=? AND state=?"
+                ),
                 (new, sandbox_id, detail[:300], now, operation_id, attempt_id, old),
             ).rowcount
             if n != 1:
@@ -90,7 +94,7 @@ class AttemptStore:
             return [
                 dict(r)
                 for r in db.execute(
-                    ("SELECT * FROM attempts WHERE state NOT IN ('TERMINATION_RECORDED','BLOCKED_PRE_EFFECT') "
-                     "ORDER BY updated_at")
+                    "SELECT * FROM attempts WHERE state NOT IN ('TERMINATION_RECORDED','BLOCKED_PRE_EFFECT') "
+                    "ORDER BY updated_at"
                 )
             ]
