@@ -87,7 +87,9 @@ class ModalRuntime:
     def download(self, sb: Any, target: Path) -> tuple[Path, Path, Path]:
         target.mkdir(parents=True, exist_ok=True)
         files = (target / "result.json", target / "after.tar", target / "evidence.zip")
-        for remote, local in zip(("/output/result.json", "/output/after.tar", "/output/evidence.zip"), files, strict=True):
+        for remote, local in zip(
+            ("/output/result.json", "/output/after.tar", "/output/evidence.zip"), files, strict=True
+        ):
             sb.filesystem.copy_to_local(remote, local)
         return files
 
