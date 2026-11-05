@@ -1,0 +1,60 @@
+name: Modal Sandbox v3 standalone validation
+
+on:
+  pull_request:
+    paths:
+      - 'deployment/modal/sandbox_v3/**'
+      - '.github/workflows/modal-sandbox-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modal-sandbox-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  standalone:
+    name: Python ${{ matrix.python-version }} · standalone
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12']
+    defaults:
+      run:
+        working-directory: deployment/modal/sandbox_v3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
+      - name: Install selected Python
+        run: uv python install ${{ matrix.python-version }}
+      - name: Resolve standalone dependencies
+        run: uv lock --python ${{ matrix.python-version }}
+      - name: Verify resolved lock and install
+        run: |
+          uv lock --check --python ${{ matrix.python-version }}
+          uv sync --locked --python ${{ matrix.python-version }} --extra modal --group dev
+      - name: Compile Python sources
+        run: uv run --no-sync python -m compileall -q src scripts tests
+      - name: Ruff lint
+        run: uv run --no-sync ruff check src tests scripts
+      - name: Ruff format
+        if: success() || failure()
+        run: uv run --no-sync ruff format --check src tests scripts
+      - name: Mypy
+        if: success() || failure()
+        run: uv run --no-sync mypy src
+      - name: Standalone local tests
+        if: success() || failure()
+        env:
+          RUN_MODAL_E2E: '0'
+        run: uv run --no-sync pytest -q tests --ignore=tests/integration
+      - name: Report standalone lockfile requirement
+        if: success() || failure()
+        run: |
+          if ! git ls-files --error-unmatch deployment/modal/sandbox_v3/uv.lock >/dev/null 2>&1; then
+            echo "::warning::The standalone uv.lock is not committed. CI generated a temporary lock only."
+          fi
