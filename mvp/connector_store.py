@@ -244,11 +244,11 @@ def _validate_url_shape(url: str) -> tuple[str, str, int | None]:
     return parsed.hostname, parsed.scheme, port
 
 
-def _resolve_public_addresses(hostname: str) -> list[ipaddress._BaseAddress]:
+def _resolve_public_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
     try:
         ip = ipaddress.ip_address(hostname)
     except ValueError:
-        addresses: list[ipaddress._BaseAddress] = []
+        addresses: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
         try:
             infos = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
         except socket.gaierror as exc:
