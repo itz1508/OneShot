@@ -140,7 +140,10 @@ def test_model_save_and_test_persist_non_sensitive_settings(client, monkeypatch)
 
 
 def test_model_connection_failure_returns_502(client, monkeypatch):
-    monkeypatch.setattr("mvp.connector_store.test_model_provider_sync", lambda *_args: (_ for _ in ()).throw(ProviderError("provider unavailable")))
+    monkeypatch.setattr(
+        "mvp.connector_store.test_model_provider_sync",
+        lambda *_args: (_ for _ in ()).throw(ProviderError("provider unavailable")),
+    )
     response = client.post(
         "/api/connectors/model/test",
         json={
