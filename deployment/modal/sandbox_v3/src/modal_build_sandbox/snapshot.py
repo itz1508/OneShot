@@ -7,7 +7,7 @@ import os
 import stat
 import tarfile
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import cast
 
@@ -33,10 +33,8 @@ def _parent_fd(root: Path, path: str, *, create_dirs: bool = False) -> Iterator[
         parts = path.split("/")
         for part in parts[:-1]:
             if create_dirs:
-                try:
+                with suppress(FileExistsError):
                     os.mkdir(part, 0o755, dir_fd=fd)
-                except FileExistsError:
-                    pass
             next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             os.close(fd)
             fd = next_fd
@@ -190,10 +188,8 @@ def extract_verified_tar(
             seen.add(folded)
             if m.isdir():
                 with _parent_fd(target, rel, create_dirs=True) as (fd, name):
-                    try:
+                    with suppress(FileExistsError):
                         os.mkdir(name, 0o755, dir_fd=fd)
-                    except FileExistsError:
-                        pass
                     ck = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
                     os.close(ck)
                 continue
