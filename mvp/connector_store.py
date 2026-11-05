@@ -7,6 +7,7 @@ secrets stay on the host in runtime state owned by the MVP process.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import json
 import os
@@ -209,10 +210,8 @@ class ConnectorStore:
         tmp.write_text(json.dumps(payload, indent=2, sort_keys=True))
         os.replace(tmp, path)
         if private:
-            try:
+            with contextlib.suppress(OSError):
                 path.chmod(0o600)
-            except OSError:
-                pass
 
 
 def connector_state_root(state_root: Path | None = None) -> Path:
@@ -260,7 +259,7 @@ def _resolve_public_addresses(hostname: str) -> list[ipaddress.IPv4Address | ipa
             except ValueError:
                 continue
         if not addresses:
-            raise ConnectorError("unable to resolve host")
+            raise ConnectorError("unable to resolve host") from None
         return addresses
     return [ip]
 
