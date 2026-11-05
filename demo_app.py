@@ -1,4 +1,5 @@
 """Local demo entrypoint: serves the existing API and web/public/live.html from one origin (no npm, no Modal)."""
+
 from pathlib import Path
 
 from fastapi.staticfiles import StaticFiles
