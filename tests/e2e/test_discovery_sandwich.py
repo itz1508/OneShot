@@ -16,6 +16,8 @@ from agent.runtime.discovery_sandwich import (
     DiscoverySandwich,
     inspect_scoped_workspace,
 )
+from mvp.mcp_research import research_artifact_id
+from mvp.research_host import execute_research
 from mvp.service import MVPService
 
 
@@ -220,6 +222,39 @@ def test_post_detects_source_drift(tmp_path: Path) -> None:
     )
     assert not post.source_stable
     assert "Repository changed" in post.contradictions[0]
+
+
+def test_recovered_research_uses_pre_request_binding_and_runs_post(tmp_path: Path) -> None:
+    service = MVPService(tmp_path)
+    task_id = str(service.create("Research integration changes")["task_id"])
+    request, _, request_ref = pre(service, task_id)
+    state = service.host.get_state(task_id)
+    assert state is not None
+    _, _, todo_ref = service.host.prepare_agent_dispatch(
+        task_id, request_ref, request.information_needed, requested_role="researcher"
+    )
+    service.host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
+    research = ResearchRecord(
+        task_id=task_id,
+        run_id=state.run_id,
+        stage_revision=1,
+        requirements=(
+            Requirement(
+                requirement_id="REQ-001",
+                source_reference="user",
+                original_wording="Research integration changes",
+                statement="Research integration changes",
+            ),
+        ),
+    )
+    service.artifacts.put_immutable(
+        research, research_artifact_id(task_id, state.run_id), 1, "research_record", "1.0"
+    )
+    outcome = execute_research(service, task_id)
+    assert outcome["status"] == "completed"
+    assert outcome["discovery_post_status"] == "ready_for_audit"
+    assert service.host.get_state(task_id).current_stage is Stage.AUDIT_DISCOVERY
+    assert service.artifacts.latest_revision(f"discovery-post:{task_id}") == 1
 
 
 def test_scoped_scan_skips_symlinks(tmp_path: Path) -> None:
