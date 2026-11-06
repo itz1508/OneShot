@@ -25,7 +25,8 @@ from agent.contracts.discovery_sandwich import (
     InspectionStatus,
     ReconciledResearchItem,
 )
-from agent.contracts.research import ResearchRecord
+from agent.contracts.research import CatalogMatchStatus, ResearchIntent, ResearchRecord
+from agent.research_catalog import ResearchCatalog
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE
 from agent.runtime.controller import Stage, TransitionError
 
@@ -134,8 +135,8 @@ class DiscoverySandwich:
         source: DiscoverySource,
         summary: Callable[[str], str] = extractive_summary,
         summary_method: str = "extractive",
-        template_id: str = "research-intent",
-        template_version: str = "1.0",
+        template_id: str | None = None,
+        template_version: str | None = None,
         research_questions: tuple[str, ...] = (),
     ) -> tuple[DiscoveryResearchRequest, ArtifactRef, ArtifactRef]:
         state = self.host.get_state(task_id)
@@ -155,10 +156,27 @@ class DiscoverySandwich:
         summarized = summary(user_intent).strip()
         if not summarized:
             raise DiscoveryError("summary provider returned empty output")
+        # Catalog contributes synthetic investigation guidance, never evidence.
+        catalog = ResearchCatalog()
+        words = tuple(sorted(set(re.findall(r"[a-z0-9_]+", user_intent.lower()))))
+        match = catalog.match(ResearchIntent.INVESTIGATE_QUESTION, words)
+        sample = (
+            catalog.get_sample(match.catalog_id)
+            if match.match_status in {CatalogMatchStatus.MATCHED, CatalogMatchStatus.EXACT}
+            else None
+        )
+        if sample is not None:
+            template_id = sample.catalog_id
+            template_version = sample.version
+        else:
+            template_id = "NONE"
+            template_version = catalog.version
         questions = tuple(q.strip() for q in research_questions if q.strip()) or (
-            "Identify evidence, constraints and open questions required to satisfy the original intent.",
-            "Investigate compatibility with observed repository components.",
-            "Identify source-grounded fixture and verification guidance without claiming execution.",
+            sample.research_checklist if sample is not None else (
+                "Identify evidence, constraints and open questions required to satisfy the original intent.",
+                "Investigate compatibility with observed repository components.",
+                "Identify source-grounded fixture and verification guidance without claiming execution.",
+            )
         )
         source_ref = self._store(source, f"discovery-source:{task_id}", input_ref.artifact_revision, "discovery_source")
         pre = DiscoveryPre(
@@ -173,6 +191,7 @@ class DiscoverySandwich:
             template_id=template_id,
             template_version=template_version,
             research_questions=questions,
+            provisional_success_criteria=sample.success_criteria if sample is not None else (),
         )
         pre_ref = self._store(pre, f"discovery-pre:{task_id}", pre.message_revision, "discovery_pre")
         # Preserve original text even when a model-generated summary is supplied.
@@ -180,7 +199,8 @@ class DiscoverySandwich:
             (
                 f"Original user intent: {user_intent}",
                 f"Intent summary ({summary_method}): {summarized}",
-                "Discovery research questions:",
+                f"Catalog guidance (synthetic): {template_id}@{template_version}",
+            "Discovery research questions:",
                 *(f"- {q}" for q in questions),
                 f"Repository inventory status: {source.status.value}",
                 f"Repository inventory digest: {source.manifest_digest}",
