@@ -131,6 +131,19 @@ def test_pre_binds_original_message_to_request(tmp_path: Path) -> None:
     assert envelope.respond_to == "workflow_entry"
 
 
+def test_pre_uses_registered_catalog_without_promoting_it_to_evidence(tmp_path: Path) -> None:
+    service = MVPService(tmp_path)
+    task_id = str(service.create("Add integration")["task_id"])
+    request, pre_ref, _ = pre(service, task_id)
+    record = DiscoveryPre.model_validate_json(
+        service.artifacts.get_verified(pre_ref.artifact_id, pre_ref.artifact_revision)
+    )
+    assert record.template_id == "SAMPLE-INTEGRATION-001"
+    assert record.template_version == "1.0.0"
+    assert record.provisional_success_criteria
+    assert "Catalog guidance (synthetic)" in request.information_needed
+
+
 def test_pre_rejects_spoofed_message(tmp_path: Path) -> None:
     service = MVPService(tmp_path)
     task_id = str(service.create("Original intent")["task_id"])
