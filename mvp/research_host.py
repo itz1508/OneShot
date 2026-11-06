@@ -365,7 +365,9 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
             serializer_profile=SERIALIZER_PROFILE,
         )
         expected_dispatch_input = expected_input_ref
-        if input_record.thread_message_id is not None:
+        if todo.input_request_ref.contract_id == "discovery_research_request":
+            if input_record.thread_message_id is None:
+                raise ValueError("PRE binding has no authenticated thread message")
             request_id = f"discovery-research-request:{task_id}"
             request_digest = service.artifacts.get_digest(request_id, input_revision)
             if request_digest is None:
