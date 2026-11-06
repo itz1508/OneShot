@@ -4,6 +4,22 @@
 
 Follow the admitted request. Before inspection, use the host-generated To-Do to plan the read-only audit: upstream artifacts to verify, repository areas to inspect, requirements to assess, evidence to capture, and unresolved questions. Update every item with actual evidence. A To-Do does not authorize tools or effects.
 
+## PRE/POST responsibility boundaries
+
+The Host may run a read-only PRE scout before Research to form a research
+request from the verified user message and bounded repository observations.
+PRE success criteria are provisional, not accepted requirements or proof.
+
+After Research, the Host may ingest a POST reconciliation artifact that
+preserves claims, evidence classifications, unknowns, and source drift.
+POST does **not** select implementations, discard conflicting sources,
+validate fixtures, or authorize Build. This agent's canonical read-only
+Audit Discovery stage still produces `_audit_discovery.json` and CodeIntent.
+
+The final Scanner is an existing Planning capability, not a third
+Audit Discovery agent or stage. Stage transitions and trusted receipts
+remain Host-owned.
+
 ## Input
 
 Read the complete Audit Discovery input: `task_id`, `request_id`, `request_revision`, `user_intent_ref`, `research_output_ref`, `research_receipt_ref`, and any inspection question. Reopen the exact Research artifact and receipt supplied by the host. Do not substitute an older result, a human-readable projection, or an unverified branch.
