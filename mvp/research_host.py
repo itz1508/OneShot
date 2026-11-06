@@ -492,7 +492,9 @@ def _ingest_discovery_post(
     )
     try:
         post, post_ref = DiscoverySandwich(service.host).normalize_ingest(
-            task_id=task_id, pre_ref=pre_ref, research_ref=research_ref,
+            task_id=task_id,
+            pre_ref=pre_ref,
+            research_ref=research_ref,
             source=inspect_scoped_workspace(service.audit_workspace_root),
         )
         return ("ready_for_audit" if post.source_stable else "source_changed"), post_ref
