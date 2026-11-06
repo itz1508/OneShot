@@ -495,10 +495,14 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
                         "input_text": input_record.text,
                         "input_digest": input_digest,
                         "requested_search": information_needed,
-                        **({
-                            "thread_message_id": input_record.thread_message_id,
-                            "discovery_pre_ref": pre_ref.model_dump(mode="json"),
-                        } if pre_ref is not None else {}),
+                        **(
+                            {
+                                "thread_message_id": input_record.thread_message_id,
+                                "discovery_pre_ref": pre_ref.model_dump(mode="json"),
+                            }
+                            if pre_ref is not None
+                            else {}
+                        ),
                         "routing": {
                             "task_id": dispatch.task_id,
                             "run_id": dispatch.run_id,
@@ -578,9 +582,7 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
                 post_status = "ready_for_audit" if post.source_stable else "source_changed"
             except Exception as post_exc:
                 post_status = "blocked"
-                service.host.event_store.append(
-                    task_id, "discovery_post_blocked", type(post_exc).__name__
-                )
+                service.host.event_store.append(task_id, "discovery_post_blocked", type(post_exc).__name__)
         return {
             "task_id": task_id,
             "run_id": state.run_id,
