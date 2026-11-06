@@ -172,7 +172,9 @@ class DiscoverySandwich:
             template_id = "NONE"
             template_version = catalog.version
         questions = tuple(q.strip() for q in research_questions if q.strip()) or (
-            sample.research_checklist if sample is not None else (
+            sample.research_checklist
+            if sample is not None
+            else (
                 "Identify evidence, constraints and open questions required to satisfy the original intent.",
                 "Investigate compatibility with observed repository components.",
                 "Identify source-grounded fixture and verification guidance without claiming execution.",
@@ -200,7 +202,7 @@ class DiscoverySandwich:
                 f"Original user intent: {user_intent}",
                 f"Intent summary ({summary_method}): {summarized}",
                 f"Catalog guidance (synthetic): {template_id}@{template_version}",
-            "Discovery research questions:",
+                "Discovery research questions:",
                 *(f"- {q}" for q in questions),
                 f"Repository inventory status: {source.status.value}",
                 f"Repository inventory digest: {source.manifest_digest}",
