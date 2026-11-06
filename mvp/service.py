@@ -177,7 +177,9 @@ class MVPService:
         task_id = uuid4().hex
         run_id = f"run-{task_id}"
         record = TaskInput(
-            task_id=task_id, text=cleaned, purpose=purpose,
+            task_id=task_id,
+            text=cleaned,
+            purpose=purpose,
             thread_message_id=f"msg_{uuid4().hex}",
         )
         self.artifacts.put_immutable(record, self._artifact_id(task_id), 1, "mvp_task_input", "1.0")
@@ -291,7 +293,9 @@ class MVPService:
             if self.artifacts.latest_revision(audit_artifact_id(task_id, state.run_id)) > 0:
                 raise MVPError("input locked after Audit output; create a new task")
         record = TaskInput(
-            task_id=task_id, text=content, purpose=current.purpose,
+            task_id=task_id,
+            text=content,
+            purpose=current.purpose,
             thread_message_id=current.thread_message_id,
         )
         try:
@@ -364,11 +368,13 @@ class MVPService:
             aid = f"{artifact_prefix}{task_id}"
             rev = self.artifacts.latest_revision(aid)
             if rev > 0:
-                files.append({
-                    "name": display_name,
-                    "kind": kind,
-                    "revision": rev,
-                    "digest": self.artifacts.get_digest(aid, rev),
-                    "content": self.artifacts.get_verified(aid, rev).decode("utf-8"),
-                })
+                files.append(
+                    {
+                        "name": display_name,
+                        "kind": kind,
+                        "revision": rev,
+                        "digest": self.artifacts.get_digest(aid, rev),
+                        "content": self.artifacts.get_verified(aid, rev).decode("utf-8"),
+                    }
+                )
         return files
