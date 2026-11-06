@@ -250,9 +250,7 @@ def test_recovered_research_uses_pre_request_binding_and_runs_post(tmp_path: Pat
             ),
         ),
     )
-    service.artifacts.put_immutable(
-        research, research_artifact_id(task_id, state.run_id), 1, "research_record", "1.0"
-    )
+    service.artifacts.put_immutable(research, research_artifact_id(task_id, state.run_id), 1, "research_record", "1.0")
     outcome = execute_research(service, task_id)
     assert outcome["status"] == "completed"
     assert outcome["discovery_post_status"] == "ready_for_audit"
