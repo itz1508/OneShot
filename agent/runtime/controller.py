@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from agent.contracts.common import ArtifactRef
+from agent.contracts.discovery_sandwich import DiscoveryPost, DiscoveryPre, DiscoverySource
 from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult, ReceiptRef
 from agent.contracts.scanner import ScannerResult
 from agent.contracts.work_todo import TodoList, WorkBinding
@@ -126,6 +127,8 @@ class HostController:
             raise TransitionError("stage transition task/run binding mismatch")
 
         receipt_artifact = self._verify_stage_receipt(state, completion_receipt_ref)
+        if state.current_stage is Stage.AUDIT_DISCOVERY:
+            self._verify_discovery_gate(task_id, run_id)
         if state.current_stage is Stage.PLANNING:
             self._verify_structural_gap(task_id, run_id, gap_result_ref, gap_receipt_ref)
 
@@ -165,6 +168,56 @@ class HostController:
 
         self.event_store.append(task_id, "stage_transition", f"{state.current_stage} -> {new_stage}")
         return new_state
+
+    def _verify_discovery_gate(self, task_id: str, run_id: str) -> None:
+        """Reject stale or missing PRE/POST lineage before Audit transitions.
+
+        Legacy tasks without a PRE artifact retain the registered workflow.
+        The canonical Audit receipt and To-Do checks remain mandatory.
+        """
+        pre_id = f"discovery-pre:{task_id}"
+        revision = self.artifact_store.latest_revision(pre_id)
+        if revision == 0:
+            return
+        post_id = f"discovery-post:{task_id}"
+        if self.artifact_store.latest_revision(post_id) != revision:
+            raise TransitionError("Audit Discovery requires the matching POST artifact")
+        try:
+            pre_bytes = self.artifact_store.get_verified(pre_id, revision)
+            post_bytes = self.artifact_store.get_verified(post_id, revision)
+            pre = DiscoveryPre.model_validate_json(pre_bytes)
+            post = DiscoveryPost.model_validate_json(post_bytes)
+            pre_digest = self.artifact_store.get_digest(pre_id, revision)
+            if (
+                pre.task_id != task_id
+                or post.task_id != task_id
+                or pre.run_id != run_id
+                or post.run_id != run_id
+                or pre.thread_message_id != post.thread_message_id
+                or post.discovery_pre_ref.artifact_id != pre_id
+                or post.discovery_pre_ref.artifact_revision != revision
+                or post.discovery_pre_ref.artifact_digest != pre_digest
+            ):
+                raise ValueError("cross-task, stale, or mismatched PRE/POST identity")
+            left = DiscoverySource.model_validate_json(
+                self.artifact_store.get_verified(
+                    post.source_at_pre_ref.artifact_id, post.source_at_pre_ref.artifact_revision
+                )
+            )
+            right = DiscoverySource.model_validate_json(
+                self.artifact_store.get_verified(
+                    post.source_at_post_ref.artifact_id, post.source_at_post_ref.artifact_revision
+                )
+            )
+            for ref in (pre.source_ref, post.source_at_pre_ref, post.source_at_post_ref, post.research_ref):
+                if self.artifact_store.get_digest(ref.artifact_id, ref.artifact_revision) != ref.artifact_digest:
+                    raise ValueError("PRE/POST evidence digest changed")
+            if pre.source_ref != post.source_at_pre_ref:
+                raise ValueError("PRE source lineage mismatch")
+            if not post.source_stable or left != right:
+                raise ValueError("repository observations changed between PRE and POST")
+        except Exception as exc:
+            raise TransitionError(f"Audit Discovery POST gate blocked: {exc}") from exc
 
     def _verify_stage_receipt(self, state: TaskState, completion_receipt_ref: ReceiptRef | None) -> ArtifactRef:
         """Verify host provenance and exact stage artifact; never accept legacy subjects."""
