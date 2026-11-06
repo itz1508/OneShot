@@ -51,6 +51,38 @@ bundle:
   implementation_note: declared_host_services_require_runtime_validation
 
 execution:
+  # PRE and POST are Host capabilities; the six role stages below are unchanged.
+  discovery_sandwich:
+    entry: user_intent_and_verified_thread_message
+    order:
+      - auto_summary
+      - audit_discovery_pre
+      - compose_research_request
+      - research
+      - audit_discovery_post
+      - canonical_audit_discovery
+      - planning_and_scanner
+    pre:
+      owner: host_controller
+      implementation: agent.runtime.discovery_sandwich.DiscoverySandwich.pre_scan
+      output_contract: discovery_pre
+      success_criteria: provisional_only
+      source_scope: bounded_read_only
+    compose:
+      owner: host_controller
+      output_contract: discovery_research_request
+      preserve_original_user_intent: true
+      route_via: prepare_agent_dispatch
+    post:
+      owner: host_controller
+      implementation: agent.runtime.discovery_sandwich.DiscoverySandwich.normalize_ingest
+      output_contract: discovery_post
+      may_select_build_actions: false
+      requires_canonical_audit: true
+    final_check:
+      owner: planning_scanner_gateway
+      existing_structural_gap_and_scanner_required: true
+      does_not_authorize_build: true
   research_to_planning:
     - run_initialization
     - registry_snapshot
