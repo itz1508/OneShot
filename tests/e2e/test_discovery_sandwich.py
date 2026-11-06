@@ -202,6 +202,7 @@ def test_post_preserves_research_and_does_not_advance_audit(tmp_path: Path) -> N
     assert post.research_items[0].repository_applicability == "unassessed"
     assert "Referenced verified evidence is missing" in post.research_items[0].limitations
     assert post_ref.contract_id == "discovery_post"
+    service.host._verify_discovery_gate(task_id, service.host.get_state(task_id).run_id)
     assert service.host.get_state(task_id).current_stage is Stage.AUDIT_DISCOVERY
 
 
@@ -222,6 +223,8 @@ def test_post_detects_source_drift(tmp_path: Path) -> None:
     )
     assert not post.source_stable
     assert "Repository changed" in post.contradictions[0]
+    with pytest.raises(TransitionError, match="POST gate blocked"):
+        service.host._verify_discovery_gate(task_id, service.host.get_state(task_id).run_id)
 
 
 def test_recovered_research_uses_pre_request_binding_and_runs_post(tmp_path: Path) -> None:
