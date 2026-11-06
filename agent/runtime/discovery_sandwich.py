@@ -64,8 +64,10 @@ def inspect_scoped_workspace(root: Path | None, max_files: int = 500) -> Discove
     incomplete = False
     for directory, dirs, files in os.walk(root, followlinks=False):
         dirs[:] = sorted(
-            d for d in dirs
-            if not d.startswith(".") and d not in {"node_modules", "__pycache__", "dist", "build"}
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d not in {"node_modules", "__pycache__", "dist", "build"}
             and not (Path(directory) / d).is_symlink()
         )
         for filename in sorted(files):
@@ -158,9 +160,7 @@ class DiscoverySandwich:
             "Investigate compatibility with observed repository components.",
             "Identify source-grounded fixture and verification guidance without claiming execution.",
         )
-        source_ref = self._store(
-            source, f"discovery-source:{task_id}", input_ref.artifact_revision, "discovery_source"
-        )
+        source_ref = self._store(source, f"discovery-source:{task_id}", input_ref.artifact_revision, "discovery_source")
         pre = DiscoveryPre(
             task_id=task_id,
             run_id=state.run_id,
@@ -176,14 +176,16 @@ class DiscoverySandwich:
         )
         pre_ref = self._store(pre, f"discovery-pre:{task_id}", pre.message_revision, "discovery_pre")
         # Preserve original text even when a model-generated summary is supplied.
-        info = "\n".join((
-            f"Original user intent: {user_intent}",
-            f"Intent summary ({summary_method}): {summarized}",
-            "Discovery research questions:",
-            *(f"- {q}" for q in questions),
-            f"Repository inventory status: {source.status.value}",
-            f"Repository inventory digest: {source.manifest_digest}",
-        ))
+        info = "\n".join(
+            (
+                f"Original user intent: {user_intent}",
+                f"Intent summary ({summary_method}): {summarized}",
+                "Discovery research questions:",
+                *(f"- {q}" for q in questions),
+                f"Repository inventory status: {source.status.value}",
+                f"Repository inventory digest: {source.manifest_digest}",
+            )
+        )
         request = DiscoveryResearchRequest(
             task_id=task_id,
             run_id=state.run_id,
@@ -220,9 +222,7 @@ class DiscoverySandwich:
         if research.task_id != task_id or research.run_id != state.run_id:
             raise DiscoveryError("Research belongs to another task/run")
         before = DiscoverySource.model_validate_json(self._verified(pre.source_ref))
-        source_ref = self._store(
-            source, f"discovery-post-source:{task_id}", pre.message_revision, "discovery_source"
-        )
+        source_ref = self._store(source, f"discovery-post-source:{task_id}", pre.message_revision, "discovery_source")
         stable = before.manifest_digest == source.manifest_digest and before.status == source.status
         valid_evidence = {e.evidence_id for e in research.evidence if e.status.value == "valid"}
         items = tuple(
@@ -233,8 +233,11 @@ class DiscoverySandwich:
                 evidence_status=claim.status.value,
                 repository_applicability="unassessed",
                 limitations=("Research evidence not independently mapped to repository",)
-                + (("Referenced verified evidence is missing",)
-                   if any(ref not in valid_evidence for ref in claim.evidence_refs) else ()),
+                + (
+                    ("Referenced verified evidence is missing",)
+                    if any(ref not in valid_evidence for ref in claim.evidence_refs)
+                    else ()
+                ),
             )
             for claim in research.claims
         )
@@ -251,8 +254,6 @@ class DiscoverySandwich:
             contradictions=("Repository changed between PRE and POST",) if not stable else (),
             unresolved=research.unknowns,
         )
-        post_ref = self._store(
-            post, f"discovery-post:{task_id}", pre.message_revision, "discovery_post"
-        )
+        post_ref = self._store(post, f"discovery-post:{task_id}", pre.message_revision, "discovery_post")
         self.host.event_store.append(task_id, "discovery_post_created", post_ref.artifact_id)
         return post, post_ref
