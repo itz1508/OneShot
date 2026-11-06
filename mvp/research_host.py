@@ -9,12 +9,14 @@ from pathlib import Path, PurePosixPath
 from agent.audit.core import Finding as AuditCoreFinding
 from agent.contracts.audit import AuditFinding, AuditFindingsRecord
 from agent.contracts.common import ArtifactRef
+from agent.contracts.discovery_sandwich import DiscoveryResearchRequest
 from agent.contracts.host import HostDispatchEnvelope, HostDispatchResult
 from agent.contracts.research import ResearchRecord
 from agent.contracts.work_todo import WorkBinding, WorkStatus
 from agent.runtime.authorization import Capability
 from agent.runtime.canonical_serialization import SERIALIZER_PROFILE, digest_dict, digest_model
 from agent.runtime.controller import Stage
+from agent.runtime.discovery_sandwich import DiscoverySandwich, inspect_scoped_workspace
 from agent.runtime.providers.base import ProviderError, ProviderRequest
 from agent.runtime.work_todo import WorkTodoManager
 from mvp.mcp_research import ResearchMCPOutput, mcp_transport_config, research_artifact_id
@@ -354,16 +356,48 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
         todo_ref = WorkTodoManager._ref(todo_id, todo_rev, todo_digest, "work_todo")
         todo = service.host.work_todos.read(todo_ref)
         input_record, input_revision, input_digest = service.read_input(task_id)
+        expected_input_ref = ArtifactRef(
+            artifact_id=f"mvp-input:{task_id}",
+            artifact_revision=input_revision,
+            artifact_digest=input_digest,
+            contract_id="mvp_task_input",
+            contract_version="1.0",
+            serializer_profile=SERIALIZER_PROFILE,
+        )
+        expected_dispatch_input = expected_input_ref
+        if todo.input_request_ref.contract_id == "discovery_research_request":
+            if input_record.thread_message_id is None:
+                raise ValueError("PRE binding has no authenticated thread message")
+            request_id = f"discovery-research-request:{task_id}"
+            request_digest = service.artifacts.get_digest(request_id, input_revision)
+            if request_digest is None:
+                raise ValueError("Discovery Research request missing during reconciliation")
+            composed = DiscoveryResearchRequest.model_validate_json(
+                service.artifacts.get_verified(request_id, input_revision)
+            )
+            if (
+                composed.user_intent_ref != expected_input_ref
+                or composed.thread_message_id != input_record.thread_message_id
+                or composed.request_revision != input_revision
+                or composed.task_id != task_id
+                or composed.run_id != state.run_id
+            ):
+                raise ValueError("Discovery Research request binding mismatch")
+            expected_dispatch_input = ArtifactRef(
+                artifact_id=request_id,
+                artifact_revision=input_revision,
+                artifact_digest=request_digest,
+                contract_id="discovery_research_request",
+                contract_version="1.0",
+                serializer_profile=SERIALIZER_PROFILE,
+            )
         if (
             todo.task_id != task_id
             or todo.run_id != state.run_id
             or todo.stage != Stage.RESEARCH.value
             or todo.request_id != f"research-{task_id}"
             or todo.request_revision != input_revision
-            or todo.input_request_ref.artifact_id != f"mvp-input:{task_id}"
-            or todo.input_request_ref.contract_id != "mvp_task_input"
-            or todo.input_request_ref.artifact_revision != input_revision
-            or todo.input_request_ref.artifact_digest != input_digest
+            or todo.input_request_ref != expected_dispatch_input
             or input_record.task_id != task_id
             or len(todo.actions) != 1
         ):
@@ -423,6 +457,7 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
         service.host.event_store.append(task_id, "mcp_research_recovery_required", type(exc).__name__)
         raise MVPError(f"Research recovery blocked: {type(exc).__name__}") from exc
     service.host.event_store.append(task_id, "mcp_research_reconciled", artifact_id)
+    discovery_status, discovery_ref = _ingest_discovery_post(service, task_id, ref)
     return {
         "task_id": task_id,
         "run_id": state.run_id,
@@ -430,7 +465,42 @@ def _reconcile_research(service: MVPService, task_id: str) -> dict[str, object]:
         "stage": "research",
         "current_stage": advanced.current_stage.value,
         "artifact_ref": ref.model_dump(mode="json"),
+        "discovery_post_status": discovery_status,
+        "discovery_post_ref": discovery_ref.model_dump(mode="json") if discovery_ref else None,
     }
+
+
+def _ingest_discovery_post(
+    service: MVPService, task_id: str, research_ref: ArtifactRef
+) -> tuple[str, ArtifactRef | None]:
+    """Reconcile verified Research through POST after normal or recovered completion."""
+    input_record, revision, _ = service.read_input(task_id)
+    if input_record.thread_message_id is None:
+        return "not_applicable", None
+    pre_id = f"discovery-pre:{task_id}"
+    digest = service.artifacts.get_digest(pre_id, revision)
+    if digest is None:
+        service.host.event_store.append(task_id, "discovery_post_blocked", "missing_pre")
+        return "blocked", None
+    pre_ref = ArtifactRef(
+        artifact_id=pre_id,
+        artifact_revision=revision,
+        artifact_digest=digest,
+        contract_id="discovery_pre",
+        contract_version="1.0",
+        serializer_profile=SERIALIZER_PROFILE,
+    )
+    try:
+        post, post_ref = DiscoverySandwich(service.host).normalize_ingest(
+            task_id=task_id,
+            pre_ref=pre_ref,
+            research_ref=research_ref,
+            source=inspect_scoped_workspace(service.audit_workspace_root),
+        )
+        return ("ready_for_audit" if post.source_stable else "source_changed"), post_ref
+    except Exception as exc:
+        service.host.event_store.append(task_id, "discovery_post_blocked", type(exc).__name__)
+        return "blocked", None
 
 
 def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
@@ -458,10 +528,25 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
         contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
+    # PRE is a Host capability inside the Research stage; it does not advance
+    # the stage or grant any permissions. Legacy inputs without message identity
+    # retain the original route until they are explicitly migrated.
+    pre_ref = None
+    request_ref = input_ref
+    information_needed = input_record.text
+    if input_record.thread_message_id is not None:
+        composed, pre_ref, request_ref = DiscoverySandwich(service.host).pre_scan(
+            task_id=task_id,
+            thread_message_id=input_record.thread_message_id,
+            input_ref=input_ref,
+            user_intent=input_record.text,
+            source=inspect_scoped_workspace(service.audit_workspace_root),
+        )
+        information_needed = composed.information_needed
     dispatch, _, todo_ref = service.host.prepare_agent_dispatch(
         task_id,
-        input_ref,
-        input_record.text,
+        request_ref,
+        information_needed,
         requested_role="researcher",
         action="Execute verified MCP Research",
         expected_result="ResearchRecord validated and persisted by the host",
@@ -478,6 +563,15 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
                     "stage_payload": {
                         "input_text": input_record.text,
                         "input_digest": input_digest,
+                        "requested_search": information_needed,
+                        **(
+                            {
+                                "thread_message_id": input_record.thread_message_id,
+                                "discovery_pre_ref": pre_ref.model_dump(mode="json"),
+                            }
+                            if pre_ref is not None
+                            else {}
+                        ),
                         "routing": {
                             "task_id": dispatch.task_id,
                             "run_id": dispatch.run_id,
@@ -542,6 +636,7 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
             todo_ref=done_ref,
         )
         service.host.event_store.append(task_id, "mcp_research_completed", ref.artifact_id)
+        post_status, post_ref = _ingest_discovery_post(service, task_id, ref)
         return {
             "task_id": task_id,
             "run_id": state.run_id,
@@ -549,6 +644,8 @@ def _execute_research(service: MVPService, task_id: str) -> dict[str, object]:
             "stage": "research",
             "current_stage": advanced.current_stage.value,
             "artifact_ref": ref.model_dump(mode="json"),
+            "discovery_post_status": post_status,
+            "discovery_post_ref": post_ref.model_dump(mode="json") if post_ref else None,
         }
     except Exception as exc:
         try:

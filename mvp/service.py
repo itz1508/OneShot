@@ -33,6 +33,7 @@ class TaskInput(BaseModel):
     task_id: str
     text: str = Field(min_length=1, max_length=20000)
     purpose: str = Field(default="research", pattern=r"^(research|audit)$")
+    thread_message_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$")
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -175,7 +176,12 @@ class MVPService:
             raise MVPError("purpose must be research or audit")
         task_id = uuid4().hex
         run_id = f"run-{task_id}"
-        record = TaskInput(task_id=task_id, text=cleaned, purpose=purpose)
+        record = TaskInput(
+            task_id=task_id,
+            text=cleaned,
+            purpose=purpose,
+            thread_message_id=f"msg_{uuid4().hex}",
+        )
         self.artifacts.put_immutable(record, self._artifact_id(task_id), 1, "mvp_task_input", "1.0")
         self.host.init_task(task_id, run_id)
         self.host.event_store.append(task_id, "mvp_input_persisted", "input revision 1")
@@ -242,6 +248,7 @@ class MVPService:
             "input_revision": revision,
             "input_digest": digest,
             "input_text": input_record.text,
+            "thread_message_id": input_record.thread_message_id,
             "purpose": input_record.purpose,
             "audit_completed": audit_done,
             "audit_disposition": audit_disposition,
@@ -285,7 +292,12 @@ class MVPService:
 
             if self.artifacts.latest_revision(audit_artifact_id(task_id, state.run_id)) > 0:
                 raise MVPError("input locked after Audit output; create a new task")
-        record = TaskInput(task_id=task_id, text=content, purpose=current.purpose)
+        record = TaskInput(
+            task_id=task_id,
+            text=content,
+            purpose=current.purpose,
+            thread_message_id=current.thread_message_id,
+        )
         try:
             self.artifacts.put_cas(record, self._artifact_id(task_id), expected_revision, "mvp_task_input", "1.0")
         except StaleRevisionError as exc:
@@ -345,6 +357,24 @@ class MVPService:
                         "revision": 1,
                         "digest": self.artifacts.get_digest(audit_id, 1),
                         "content": self.artifacts.get_verified(audit_id, 1).decode("utf-8"),
+                    }
+                )
+        # PRE/POST are supporting artifacts, not new canonical stages.
+        for artifact_prefix, display_name, kind in (
+            ("discovery-pre:", "_discovery_pre.json", "discovery"),
+            ("discovery-research-request:", "input_request_search.json", "research_request"),
+            ("discovery-post:", "_discovery_post.json", "audit_discovery"),
+        ):
+            aid = f"{artifact_prefix}{task_id}"
+            rev = self.artifacts.latest_revision(aid)
+            if rev > 0:
+                files.append(
+                    {
+                        "name": display_name,
+                        "kind": kind,
+                        "revision": rev,
+                        "digest": self.artifacts.get_digest(aid, rev),
+                        "content": self.artifacts.get_verified(aid, rev).decode("utf-8"),
                     }
                 )
         return files
