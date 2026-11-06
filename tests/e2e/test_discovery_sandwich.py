@@ -22,8 +22,11 @@ from mvp.service import MVPService
 def input_ref(service: MVPService, task_id: str) -> ArtifactRef:
     _, rev, digest = service.read_input(task_id)
     return ArtifactRef(
-        artifact_id=f"mvp-input:{task_id}", artifact_revision=rev, artifact_digest=digest,
-        contract_id="mvp_task_input", contract_version="1.0",
+        artifact_id=f"mvp-input:{task_id}",
+        artifact_revision=rev,
+        artifact_digest=digest,
+        contract_id="mvp_task_input",
+        contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
 
@@ -32,9 +35,11 @@ def pre(service: MVPService, task_id: str, root: Path | None = None):
     record, _, _ = service.read_input(task_id)
     assert record.thread_message_id is not None
     return DiscoverySandwich(service.host).pre_scan(
-        task_id=task_id, thread_message_id=record.thread_message_id,
+        task_id=task_id,
+        thread_message_id=record.thread_message_id,
         input_ref=input_ref(service, task_id),
-        user_intent=record.text, source=inspect_scoped_workspace(root),
+        user_intent=record.text,
+        source=inspect_scoped_workspace(root),
     )
 
 
@@ -42,41 +47,66 @@ def finish_research(service: MVPService, task_id: str, request_ref: ArtifactRef,
     host = service.host
     state = host.get_state(task_id)
     assert state is not None
-    dispatch, _, todo_ref = host.prepare_agent_dispatch(
-        task_id, request_ref, question, requested_role="researcher"
-    )
+    dispatch, _, todo_ref = host.prepare_agent_dispatch(task_id, request_ref, question, requested_role="researcher")
     record = ResearchRecord(
-        task_id=task_id, run_id=state.run_id, stage_revision=1,
-        requirements=(Requirement(
-            requirement_id="REQ-001", source_reference="user",
-            original_wording="Integrate leads", statement="Integrate incoming leads",
-        ),),
-        claims=(ResearchClaim(
-            claim_id="claim-1", requirement_ids=("REQ-001",),
-            statement="An external service could be used", evidence_refs=("EVD-001",),
-        ),),
+        task_id=task_id,
+        run_id=state.run_id,
+        stage_revision=1,
+        requirements=(
+            Requirement(
+                requirement_id="REQ-001",
+                source_reference="user",
+                original_wording="Integrate leads",
+                statement="Integrate incoming leads",
+            ),
+        ),
+        claims=(
+            ResearchClaim(
+                claim_id="claim-1",
+                requirement_ids=("REQ-001",),
+                statement="An external service could be used",
+                evidence_refs=("EVD-001",),
+            ),
+        ),
     )
     aid = f"research-output:{task_id}"
     digest = host.artifact_store.put_immutable(record, aid, 1, "research_record", "1.0")
     result_ref = ArtifactRef(
-        artifact_id=aid, artifact_revision=1, artifact_digest=digest,
-        contract_id="research_record", contract_version="1.0",
+        artifact_id=aid,
+        artifact_revision=1,
+        artifact_digest=digest,
+        contract_id="research_record",
+        contract_version="1.0",
         serializer_profile=SERIALIZER_PROFILE,
     )
-    host.receive_agent_result(dispatch, HostDispatchResult(
-        task_id=dispatch.task_id, run_id=dispatch.run_id, stage=dispatch.stage,
-        role=dispatch.role, request_id=dispatch.request_id,
-        request_revision=dispatch.request_revision, respond_to=dispatch.respond_to,
-        output_ref=result_ref,
-    ))
+    host.receive_agent_result(
+        dispatch,
+        HostDispatchResult(
+            task_id=dispatch.task_id,
+            run_id=dispatch.run_id,
+            stage=dispatch.stage,
+            role=dispatch.role,
+            request_id=dispatch.request_id,
+            request_revision=dispatch.request_revision,
+            respond_to=dispatch.respond_to,
+            output_ref=result_ref,
+        ),
+    )
     _, running = host.work_todos.set_status(todo_ref, "work-1", WorkStatus.RUNNING)
     _, completed = host.work_todos.set_status(
-        running, "work-1", WorkStatus.COMPLETED,
-        actual_result="Research artifact persisted", evidence_refs=(result_ref,),
+        running,
+        "work-1",
+        WorkStatus.COMPLETED,
+        actual_result="Research artifact persisted",
+        evidence_refs=(result_ref,),
     )
     receipt = host.issue_stage_receipt(
-        Stage.RESEARCH, task_id=task_id, run_id=state.run_id,
-        artifact_id=result_ref.artifact_id, revision=1, artifact_digest=digest,
+        Stage.RESEARCH,
+        task_id=task_id,
+        run_id=state.run_id,
+        artifact_id=result_ref.artifact_id,
+        revision=1,
+        artifact_digest=digest,
     )
     host.advance_stage(task_id, state.run_id, Stage.RESEARCH, receipt, todo_ref=completed)
     return result_ref
@@ -106,9 +136,11 @@ def test_pre_rejects_spoofed_message(tmp_path: Path) -> None:
     task_id = str(service.create("Original intent")["task_id"])
     with pytest.raises(DiscoveryError, match="thread message identity"):
         DiscoverySandwich(service.host).pre_scan(
-            task_id=task_id, thread_message_id="forged",
+            task_id=task_id,
+            thread_message_id="forged",
             input_ref=input_ref(service, task_id),
-            user_intent="Original intent", source=inspect_scoped_workspace(None),
+            user_intent="Original intent",
+            source=inspect_scoped_workspace(None),
         )
     assert service.host.get_state(task_id).active_work_artifact_id is None
 
@@ -121,7 +153,8 @@ def test_pre_rejects_changed_intent(tmp_path: Path) -> None:
             task_id=str(task["task_id"]),
             thread_message_id=str(task["thread_message_id"]),
             input_ref=input_ref(service, str(task["task_id"])),
-            user_intent="Injected requirements", source=inspect_scoped_workspace(None),
+            user_intent="Injected requirements",
+            source=inspect_scoped_workspace(None),
         )
 
 
@@ -131,7 +164,8 @@ def test_post_requires_research_completion(tmp_path: Path) -> None:
     _, pre_ref, _ = pre(service, task_id)
     with pytest.raises(TransitionError, match="POST requires active"):
         DiscoverySandwich(service.host).normalize_ingest(
-            task_id=task_id, pre_ref=pre_ref,
+            task_id=task_id,
+            pre_ref=pre_ref,
             research_ref=input_ref(service, task_id),
             source=inspect_scoped_workspace(None),
         )
@@ -143,7 +177,9 @@ def test_post_preserves_research_and_does_not_advance_audit(tmp_path: Path) -> N
     request, pre_ref, request_ref = pre(service, task_id)
     research_ref = finish_research(service, task_id, request_ref, request.information_needed)
     post, post_ref = DiscoverySandwich(service.host).normalize_ingest(
-        task_id=task_id, pre_ref=pre_ref, research_ref=research_ref,
+        task_id=task_id,
+        pre_ref=pre_ref,
+        research_ref=research_ref,
         source=inspect_scoped_workspace(None),
     )
     assert post.requires_audit
@@ -164,7 +200,9 @@ def test_post_detects_source_drift(tmp_path: Path) -> None:
     research_ref = finish_research(service, task_id, request_ref, request.information_needed)
     (root / "app.py").write_text("revision = 2\n")
     post, _ = DiscoverySandwich(service.host).normalize_ingest(
-        task_id=task_id, pre_ref=pre_ref, research_ref=research_ref,
+        task_id=task_id,
+        pre_ref=pre_ref,
+        research_ref=research_ref,
         source=inspect_scoped_workspace(root),
     )
     assert not post.source_stable
